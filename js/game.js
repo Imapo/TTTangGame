@@ -316,24 +316,40 @@ class Game {
 
             const bulletBounds = bullet.getBounds();
 
-            // В методе updateBullets() в game.js:
             if (bullet.owner === 'player') {
                 for (let j = this.enemies.length - 1; j >= 0; j--) {
                     const enemy = this.enemies[j];
                     if (bulletBounds.intersects(enemy.getBounds())) {
+
+                        // СОХРАНЯЕМ СОСТОЯНИЕ ДО УДАРА
+                        const healthBefore = enemy.health;
+                        const isHeavyTank = enemy.enemyType === 'HEAVY';
+
                         if (enemy.takeDamage()) {
+                            // УНИЧТОЖЕНИЕ
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
                             this.screenShake = 10;
                             this.soundManager.play('tankExplosion');
-
-                            // ЗАПОМИНАЕМ УБИТОГО ВРАГА ПЕРЕД УДАЛЕНИЕМ
-                            const killedEnemy = enemy;
 
                             this.enemies.splice(j, 1);
                             this.enemiesDestroyed++;
                             this.score += 100;
                             this.updateUI();
+                        } else {
+                            // ПОПАДАНИЕ БЕЗ УНИЧТОЖЕНИЯ
+                            console.log('Попадание без уничтожения:', {
+                                тип: enemy.enemyType,
+                                здоровьеДо: healthBefore,
+                                здоровьеПосле: enemy.health
+                            });
+
+                            // ЕСЛИ ЭТО ТЯЖЕЛЫЙ ТАНК И ОН ВЫЖИЛ
+                            if (isHeavyTank && enemy.health > 0) {
+                                console.log('Воспроизводим звук попадания по тяжелому танку!');
+                                this.soundManager.play('heavyTankHit');
+                            }
                         }
+
                         this.bullets.splice(i, 1);
                         break;
                     }
