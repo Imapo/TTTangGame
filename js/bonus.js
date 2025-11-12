@@ -1,101 +1,162 @@
-// === КЛАСС БОНУСА ===
+// === СИСТЕМА БОНУСОВ ===
+
 class Bonus {
     constructor(x, y, type) {
         this.position = new Vector2(x, y);
         this.type = type;
-        this.size = TILE_SIZE - 10;
         this.active = true;
+        this.spawnTime = Date.now();
+        this.lifetime = typeof BONUS_LIFETIME !== 'undefined' ? BONUS_LIFETIME : 10000;
+        this.size = TILE_SIZE - 8;
         this.blinkTimer = 0;
-        this.visible = true;
+        this.animationPhase = 0;
+        this.pulsePhase = 0;
+
+        console.log(`🎁 Создан бонус ${type.id} в (${Math.round(x)}, ${Math.round(y)})`);
     }
 
     update() {
-        // Мигание бонуса
-        this.blinkTimer++;
-        if (this.blinkTimer >= BONUS_BLINK_INTERVAL) {
-            this.blinkTimer = 0;
-            this.visible = !this.visible;
+        if (!this.active) return false;
+
+        const elapsed = Date.now() - this.spawnTime;
+        if (elapsed >= this.lifetime) {
+            this.active = false;
+            console.log(`⏰ Бонус ${this.type.id} исчез по времени`);
+            return false;
         }
+
+        this.blinkTimer++;
+        this.animationPhase = (this.animationPhase + 0.05) % (Math.PI * 2);
+        this.pulsePhase = (this.pulsePhase + 0.1) % (Math.PI * 2);
+
+        return true;
     }
 
     draw(ctx) {
-        if (!this.active || !this.visible) return;
+        if (!this.active) return;
+
+        const timeLeft = this.lifetime - (Date.now() - this.spawnTime);
+
+        // Мигание перед исчезновением (последние 3 секунды)
+        const shouldDraw = timeLeft > 3000 || Math.floor(this.blinkTimer / 10) % 2 === 0;
+        if (!shouldDraw) return;
 
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        switch(this.type) {
-            case BONUS_TYPES.STAR:
-                this.drawStar(ctx);
-                break;
-            case BONUS_TYPES.FREEZE:
-                this.drawFreeze(ctx);
-                break;
+        // Плавающая анимация
+        const floatOffset = Math.sin(this.animationPhase) * 3;
+        ctx.translate(0, floatOffset);
+
+        // Пульсирующий размер
+        const pulseScale = 1 + Math.sin(this.pulsePhase) * 0.1;
+
+        // Фон бонуса (закругленный)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.beginPath();
+        ctx.roundRect(-this.size/2 * pulseScale, -this.size/2 * pulseScale, this.size * pulseScale, this.size * pulseScale, 5);
+        ctx.fill();
+
+        // Светящаяся рамка
+        const glowIntensity = 0.5 + Math.sin(this.pulsePhase * 2) * 0.3;
+        ctx.strokeStyle = this.type.color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = this.type.color;
+        ctx.shadowBlur = 15 * glowIntensity;
+        ctx.beginPath();
+        ctx.roundRect(-this.size/2 * pulseScale, -this.size/2 * pulseScale, this.size * pulseScale, this.size * pulseScale, 5);
+        ctx.stroke();
+
+        // Сброс тени
+        ctx.shadowBlur = 0;
+
+        // Символ бонуса (тоже пульсирует)
+        ctx.fillStyle = this.type.color;
+        ctx.font = `bold ${Math.floor(18 * pulseScale)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.type.symbol, 0, 0);
+
+        // Таймер исчезновения (полоска внизу)
+        if (timeLeft < 5000) {
+            const progress = timeLeft / 5000;
+            ctx.fillStyle = progress > 0.3 ? '#FFD700' : '#FF4444';
+            ctx.fillRect(
+                -this.size/2 + 2,
+                this.size/2 - 4,
+                (this.size - 4) * progress,
+                         3
+            );
         }
 
         ctx.restore();
     }
 
-    drawStar(ctx) {
-        // Рисуем звезду
-        ctx.fillStyle = '#FFD700';
-        ctx.strokeStyle = '#FFA500';
-        ctx.lineWidth = 2;
-
-        const spikes = 5;
-        const outerRadius = this.size / 2;
-        const innerRadius = outerRadius / 2;
-
-        ctx.beginPath();
-        for (let i = 0; i < spikes * 2; i++) {
-            const radius = i % 2 === 0 ? outerRadius : innerRadius;
-            const angle = (Math.PI / spikes) * i;
-            const x = Math.cos(angle) * radius;
-            const y = Math.sin(angle) * radius;
-
-            if (i === 0) {
-                ctx.moveTo(x, y);
-            } else {
-                ctx.lineTo(x, y);
-            }
-        }
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-    }
-
-    drawFreeze(ctx) {
-        // Рисуем снежинку (заморозка)
-        ctx.fillStyle = '#00FFFF';
-        ctx.strokeStyle = '#0088FF';
-        ctx.lineWidth = 2;
-
-        ctx.beginPath();
-        ctx.arc(0, 0, this.size / 3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Лучи снежинки
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI / 3) * i;
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(Math.cos(angle) * this.size / 2, Math.sin(angle) * this.size / 2);
-            ctx.stroke();
-        }
-    }
-
     getBounds() {
         return new Rectangle(
-            this.position.x - this.size / 2,
-            this.position.y - this.size / 2,
+            this.position.x - this.size/2,
+            this.position.y - this.size/2,
             this.size,
             this.size
         );
     }
 
-    collect() {
-        this.active = false;
-        return this.type;
+    applyBonus(game) {
+        console.log(`Подобран бонус: ${this.type.id}`);
+
+        switch(this.type.id) {
+            case 'LIFE':
+                this.applyLifeBonus(game);
+                break;
+                // Место для будущих бонусов:
+                // case 'STAR':
+                //     this.applyStarBonus(game);
+                //     break;
+                // case 'GRENADE':
+                //     this.applyGrenadeBonus(game);
+                //     break;
+            default:
+                console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
+        }
+
+        // Воспроизводим звук бонуса
+        if (game.soundManager) {
+            game.soundManager.play(this.type.sound || 'bonusPickup');
+        }
     }
+
+    applyLifeBonus(game) {
+        game.lives++;
+        game.updateUI();
+
+        // Визуальный эффект
+        game.explosions.push(new Explosion(
+            this.position.x,
+            this.position.y,
+            'bonus'
+        ));
+    }
+
+    // Методы для будущих бонусов:
+    /*
+     *   applyStarBonus(game) {
+     *       game.player.upgradeTank();
+}
+
+applyGrenadeBonus(game) {
+game.destroyAllEnemies();
+}
+
+applyHelmetBonus(game) {
+game.player.activateInvincibility(this.type.duration);
+}
+
+applyShovelBonus(game) {
+game.fortifyBase(this.type.duration);
+}
+
+applyClockBonus(game) {
+game.freezeEnemies(this.type.duration);
+}
+*/
 }

@@ -22,14 +22,14 @@ class SoundManager {
             engineMoving: this.createSound('sounds/engine_moving.wav', true),
 
             // ДОБАВЛЯЕМ НОВЫЕ ЗВУКИ ДЛЯ ТИПОВ ТАНКОВ
-            fastTankShot: this.createSound('sounds/fast_tank_shot.wav'), // Можно использовать тот же звук или заменить
-            heavyTankShot: this.createSound('sounds/heavy_tank_shot.wav'), // Можно использовать тот же звук или заменить
-            sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),     // Можно использовать тот же звук или заменить
-            // НОВЫЙ ЗВУК ДЛЯ ПОПАДАНИЯ ПО ТЯЖЕЛОМУ ТАНКУ
+            fastTankShot: this.createSound('sounds/fast_tank_shot.wav'),
+            heavyTankShot: this.createSound('sounds/heavy_tank_shot.wav'),
+            sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),
             heavyTankHit: this.createSound('sounds/battle_city_bullet_armor.wav'),
 
-            starPickup: this.createSound('sounds/star_bonus.wav'),
-            freezePickup: this.createSound('sounds/time_bonus.wav')
+            // ЗВУКИ БОНУСОВ
+            bonusPickup: this.createSound('sounds/star_bonus.wav'), // Временно используем star_bonus
+            lifeBonus: this.createSound('sounds/star_bonus.wav')    // Можно заменить позже
         };
 
         // Настройка громкости
@@ -38,11 +38,15 @@ class SoundManager {
         this.sounds.tankExplosion.volume = 0.6;
         this.sounds.baseExplosion.volume = 0.7;
 
-        // Настройка громкости для новых звуков (можно настроить по-разному)
+        // Настройка громкости для новых звуков
         this.sounds.fastTankShot.volume = 0.5;
         this.sounds.heavyTankShot.volume = 0.7;
         this.sounds.sniperShot.volume = 0.4;
-        this.sounds.heavyTankHit.volume = 0.6; // Громкость для звука попадания
+        this.sounds.heavyTankHit.volume = 0.6;
+
+        // Громкость для бонусов
+        this.sounds.bonusPickup.volume = 0.8;
+        this.sounds.lifeBonus.volume = 0.8;
     }
 
     createSound(src, loop = false) {
@@ -100,9 +104,6 @@ class SoundManager {
 
     // Управление звуком двигателя
     updateEngineSound(isMoving, isPlayerAlive, gameState = {}) {
-        // gameState передается из игры и содержит gameOver, levelComplete
-
-        // Останавливаем звук при gameOver ИЛИ levelComplete ИЛИ если игрок мертв
         if (gameState.gameOver || gameState.levelComplete || !isPlayerAlive) {
             this.stopLoop('engineIdle');
             this.stopLoop('engineMoving');
@@ -118,7 +119,7 @@ class SoundManager {
         }
     }
 
-    // НОВЫЙ МЕТОД ДЛЯ ЗВУКОВ ВЫСТРЕЛОВ РАЗНЫХ ТИПОВ ТАНКОВ
+    // Метод для звуков выстрелов разных типов танков
     playEnemyShot(enemyType) {
         switch(enemyType) {
             case 'FAST':
@@ -127,7 +128,7 @@ class SoundManager {
             case 'HEAVY':
                 this.play('heavyTankShot');
                 break;
-            case 'SNIPER': // если добавишь снайперов позже
+            case 'SNIPER':
                 this.play('sniperShot');
                 break;
             default:

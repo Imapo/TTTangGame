@@ -28,6 +28,7 @@ class Game {
         this.explosions = [];
         this.bulletExplosions = [];
         this.spawnAnimations = [];
+        this.bonuses = []; // НОВОЕ: массив бонусов
         this.screenShake = 0;
 
         this.currentSpawnIndex = 0;
@@ -35,10 +36,10 @@ class Game {
         this.soundManager = new SoundManager();
         this.isPlayerMoving = false;
         this.lastPlayerPosition = new Vector2(0, 0);
-        this.leaderboard = this.loadLeaderboard(); // Загружаем из localStorage
-        this.showFullLeaderboard = false; // Флаг для отображения полной таблицы
+        this.leaderboard = this.loadLeaderboard();
+        this.showFullLeaderboard = false;
         this.updateLeaderboardUI();
-        this.usedEnemyNames = new Set(); // Для отслеживания использованных имен
+        this.usedEnemyNames = new Set();
 
         this.initLevel();
         this.setupEventListeners();
@@ -47,13 +48,13 @@ class Game {
 
     initLevel() {
         this.map = new GameMap(this.level);
-        // Спавн игрока слева от базы (координаты 224, 750)
         this.player = new Tank(224, 750);
         this.enemies = [];
         this.bullets = [];
         this.explosions = [];
         this.bulletExplosions = [];
         this.spawnAnimations = [];
+        this.bonuses = []; // НОВОЕ: очищаем бонусы
         this.screenShake = 0;
 
         this.enemiesDestroyed = 0;
@@ -65,19 +66,105 @@ class Game {
         this.showLevelCompleteScreen = false;
         this.baseDestroyed = false;
 
-        // Сбрасываем индекс спавна
         this.currentSpawnIndex = 0;
-
-        this.usedEnemyNames.clear(); // Очищаем при новом уровне
+        this.usedEnemyNames.clear();
 
         this.updateUI();
         this.updateShieldIndicator();
-        this.soundManager.updateEngineSound(false, true); // Сброс звука двигателя
+        this.soundManager.updateEngineSound(false, true);
 
         document.getElementById('levelComplete').style.display = 'none';
         document.getElementById('gameOver').style.display = 'none';
     }
 
+    // НОВЫЙ МЕТОД: Создание бонуса в случайном месте
+    spawnBonusFromTank(destroyedTank) {
+        if (!destroyedTank.hasBonus || !destroyedTank.bonusType) {
+            return;
+        }
+
+        const position = this.findFreeBonusPosition();
+        if (position) {
+            console.log(`🎁 Создаем бонус ${destroyedTank.bonusType.id} из танка ${destroyedTank.username}`);
+            this.bonuses.push(new Bonus(position.x, position.y, destroyedTank.bonusType));
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Поиск свободной позиции для бонуса
+    findFreeBonusPosition() {
+        const attempts = 50;
+
+        for (let i = 0; i < attempts; i++) {
+            const x = Math.floor(Math.random() * (24 - 4) + 2) * TILE_SIZE + TILE_SIZE/2;
+            const y = Math.floor(Math.random() * (24 - 8) + 4) * TILE_SIZE + TILE_SIZE/2;
+
+            const position = new Vector2(x, y);
+            const bonusBounds = new Rectangle(
+                x - TILE_SIZE/2,
+                y - TILE_SIZE/2,
+                TILE_SIZE,
+                TILE_SIZE
+            );
+
+            if (!this.map.checkCollision(bonusBounds) &&
+                !this.checkTankCollision(bonusBounds) &&
+                !this.checkBonusCollision(position)) {
+                return position;
+                }
+        }
+
+        return null;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка столкновения с танками
+    checkTankCollision(bounds) {
+        if (!this.player.isDestroyed && bounds.intersects(this.player.getBounds())) {
+            return true;
+        }
+
+        for (const enemy of this.enemies) {
+            if (bounds.intersects(enemy.getBounds())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка столкновения с другими бонусами
+    checkBonusCollision(position) {
+        for (const bonus of this.bonuses) {
+            const distance = Math.sqrt(
+                Math.pow(bonus.position.x - position.x, 2) +
+                Math.pow(bonus.position.y - position.y, 2)
+            );
+            if (distance < TILE_SIZE * 2) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Обновление бонусов
+    updateBonuses() {
+        for (let i = this.bonuses.length - 1; i >= 0; i--) {
+            const bonus = this.bonuses[i];
+
+            if (!bonus.update()) {
+                this.bonuses.splice(i, 1);
+                continue;
+            }
+
+            // Проверка подбора игроком
+            if (!this.player.isDestroyed &&
+                bonus.getBounds().intersects(this.player.getBounds())) {
+                bonus.applyBonus(this);
+            this.bonuses.splice(i, 1);
+                }
+        }
+    }
+
+    // Остальные методы...
     getNextSpawnPoint() {
         const point = SPAWN_POINTS[this.currentSpawnIndex];
         this.currentSpawnIndex = (this.currentSpawnIndex + 1) % SPAWN_POINTS.length;
@@ -109,14 +196,13 @@ class Game {
             }
         }
 
-        return 'BASIC'; // fallback
+        return 'BASIC';
     }
 
     generateUniqueEnemyName(enemyType) {
         const names = ENEMY_NAMES[enemyType] || ['Враг'];
         let availableNames = names.filter(name => !this.usedEnemyNames.has(name));
 
-        // Если все имена использованы, добавляем номер
         if (availableNames.length === 0) {
             for (let i = 1; i <= 100; i++) {
                 const numberedName = `${names[0]} ${i}`;
@@ -127,7 +213,6 @@ class Game {
             }
         }
 
-        // Если всё равно нет доступных имен, генерируем уникальное
         if (availableNames.length === 0) {
             const uniqueName = `${names[0]} ${Date.now()}`;
             availableNames.push(uniqueName);
@@ -141,17 +226,13 @@ class Game {
 
     completeSpawnAnimation(spawnPoint) {
         const enemyType = this.getRandomEnemyType();
-
-        // ГЕНЕРИРУЕМ УНИКАЛЬНОЕ ИМЯ
         const uniqueName = this.generateUniqueEnemyName(enemyType);
 
         const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
         enemy.direction = DIRECTIONS.DOWN;
-        enemy.username = uniqueName; // УСТАНАВЛИВАЕМ УНИКАЛЬНОЕ ИМЯ
+        enemy.username = uniqueName;
 
         this.enemies.push(enemy);
-
-        console.log(`Появился враг: ${enemy.username} (${enemyType})`);
     }
 
     showSpawnNotification() {
@@ -198,7 +279,6 @@ class Game {
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
-    // Метод сброса таблицы лидеров
     resetLeaderboard() {
         this.leaderboard = [];
         this.saveLeaderboard();
@@ -223,7 +303,6 @@ class Game {
         const allFragments = this.getAllFragments();
         const currentDirection = this.getCurrentDirection();
 
-        // Проверяем, двигается ли игрок
         const wasMoving = this.isPlayerMoving;
         this.isPlayerMoving = false;
 
@@ -233,14 +312,11 @@ class Game {
             }
         }
 
-        // Обновляем звук двигателя
         if (wasMoving !== this.isPlayerMoving && this.soundManager) {
-            // Останавливаем звук если игра завершена
             if (this.gameOver || this.levelComplete || this.player.isDestroyed) {
                 this.soundManager.stopLoop('engineIdle');
                 this.soundManager.stopLoop('engineMoving');
             } else {
-                // Иначе нормально управляем звуком
                 if (this.isPlayerMoving) {
                     this.soundManager.stopLoop('engineIdle');
                     this.soundManager.playLoop('engineMoving');
@@ -255,20 +331,22 @@ class Game {
             const bullet = this.player.shoot();
             if (bullet) {
                 this.bullets.push(bullet);
-                this.soundManager.play('playerShot'); // Звук выстрела игрока
+                this.soundManager.play('playerShot');
             }
         }
 
+        // ОБНОВЛЯЕМ дебаг информацию
+        const bonusTanksCount = this.enemies.filter(enemy => enemy.hasBonus).length;
         this.debugInfo.textContent =
         `Уровень: ${this.level} | Уничтожено: ${this.enemiesDestroyed}/${TOTAL_ENEMIES_PER_LEVEL} | ` +
-        `Осталось заспавнить: ${this.enemiesToSpawn} | FPS: ${Math.round(1000 / this.deltaTime)}` +
+        `Осталось заспавнить: ${this.enemiesToSpawn} | Бонусы: ${this.bonuses.length} | ` +
+        `Танки с бонусами: ${bonusTanksCount} | FPS: ${Math.round(1000 / this.deltaTime)}` +
         (this.gameOver ? ' | ИГРА ОКОНЧЕНА' : '') +
         (this.levelComplete ? ' | УРОВЕНЬ ПРОЙДЕН' : '') +
         (this.baseDestroyed ? ' | БАЗА УНИЧТОЖЕНА' : '');
     }
 
     updateBullets() {
-        // Проверка столкновений пуль друг с другом
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             for (let j = this.bullets.length - 1; j > i; j--) {
                 if (this.bullets[i].owner !== this.bullets[j].owner &&
@@ -276,13 +354,12 @@ class Game {
                     this.bulletExplosions.push(new BulletExplosion(this.bullets[i].position.x, this.bullets[i].position.y));
                 this.bullets.splice(i, 1);
                 this.bullets.splice(j, 1);
-                this.soundManager.play('bulletCollision'); // Звук столкновения пуль
+                this.soundManager.play('bulletCollision');
                 break;
                     }
             }
         }
 
-        // Обновление пуль и проверка столкновений
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const bullet = this.bullets[i];
             bullet.update();
@@ -292,7 +369,7 @@ class Game {
                 if (destructionResult === 'base') {
                     this.explosions.push(new Explosion(bullet.position.x, bullet.position.y, 'base'));
                     this.screenShake = 30;
-                    this.soundManager.play('baseExplosion'); // Звук взрыва базы
+                    this.soundManager.play('baseExplosion');
                     if (!this.gameOver) {
                         this.gameOver = true;
                         this.baseDestroyed = true;
@@ -304,12 +381,12 @@ class Game {
                 else if (destructionResult === 'concrete') {
                     this.bulletExplosions.push(new BulletExplosion(bullet.position.x, bullet.position.y));
                     this.bullets.splice(i, 1);
-                    this.soundManager.play('bulletHit'); // Звук попадания в бетон/границу
+                    this.soundManager.play('bulletHit');
                 }
                 else if (destructionResult === 'brick') {
                     this.bulletExplosions.push(new BulletExplosion(bullet.position.x, bullet.position.y));
                     this.bullets.splice(i, 1);
-                    this.soundManager.play('brickHit'); // Звук попадания по кирпичу
+                    this.soundManager.play('brickHit');
                 }
                 continue;
             }
@@ -321,31 +398,31 @@ class Game {
                     const enemy = this.enemies[j];
                     if (bulletBounds.intersects(enemy.getBounds())) {
 
-                        // СОХРАНЯЕМ СОСТОЯНИЕ ДО УДАРА
                         const healthBefore = enemy.health;
                         const isHeavyTank = enemy.enemyType === 'HEAVY';
 
-                        if (enemy.takeDamage()) {
-                            // УНИЧТОЖЕНИЕ
+                        // НОВОЕ: Сохраняем информацию о бонусе до уничтожения
+                        const hadBonus = enemy.hasBonus;
+                        const bonusType = enemy.bonusType;
+
+                        const destructionResult = enemy.takeDamage();
+
+                        if (destructionResult === true || destructionResult === 'bonus') {
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
                             this.screenShake = 10;
                             this.soundManager.play('tankExplosion');
+
+                            // НОВОЕ: Если танк имел бонус - создаем его
+                            if (hadBonus && bonusType) {
+                                this.spawnBonusFromTank(enemy);
+                            }
 
                             this.enemies.splice(j, 1);
                             this.enemiesDestroyed++;
                             this.score += 100;
                             this.updateUI();
                         } else {
-                            // ПОПАДАНИЕ БЕЗ УНИЧТОЖЕНИЯ
-                            console.log('Попадание без уничтожения:', {
-                                тип: enemy.enemyType,
-                                здоровьеДо: healthBefore,
-                                здоровьеПосле: enemy.health
-                            });
-
-                            // ЕСЛИ ЭТО ТЯЖЕЛЫЙ ТАНК И ОН ВЫЖИЛ
                             if (isHeavyTank && enemy.health > 0) {
-                                console.log('Воспроизводим звук попадания по тяжелому танку!');
                                 this.soundManager.play('heavyTankHit');
                             }
                         }
@@ -361,12 +438,8 @@ class Game {
                         this.screenShake = 20;
                         this.soundManager.play('tankExplosion');
 
-                        // ИСПОЛЬЗУЕМ НАСТОЯЩЕГО СТРЕЛЯВШЕГО ИЗ ПУЛИ
                         if (bullet.shooter && bullet.owner === 'enemy') {
-                            console.log('Настоящий убийца:', bullet.shooter.username, bullet.shooter.enemyType);
                             this.addToLeaderboard(bullet.shooter);
-                        } else {
-                            console.log('Не удалось определить убийцу, bullet:', bullet);
                         }
 
                         this.lives--;
@@ -386,46 +459,39 @@ class Game {
 
             if (!bullet.active) {
                 this.bullets.splice(i, 1);
-                this.soundManager.play('bulletHit'); // Звук вылета пули за границы
+                this.soundManager.play('bulletHit');
             }
         }
     }
 
-    // Находим врага, который выстрелил пулю
     findEnemyByBullet(bullet) {
         for (const enemy of this.enemies) {
-            // Простая проверка - враг находится рядом с траекторией пули
             const distance = Math.sqrt(
                 Math.pow(enemy.position.x - bullet.position.x, 2) +
                 Math.pow(enemy.position.y - bullet.position.y, 2)
             );
-            if (distance < 100) { // Если враг близко к пуле
+            if (distance < 100) {
                 return enemy;
             }
         }
         return null;
     }
 
-    // Загрузка таблицы лидеров из localStorage
     loadLeaderboard() {
         try {
             const saved = localStorage.getItem('tankGame_leaderboard');
             if (saved) {
                 const parsed = JSON.parse(saved);
-                console.log('Успешно загружено из localStorage:', parsed);
                 return parsed;
             }
         } catch (error) {
             console.error('Ошибка загрузки:', error);
         }
-        console.log('Нет сохраненных данных, возвращаем пустой массив');
         return [];
     }
 
-    // Сохранение таблицы лидеров в localStorage
     saveLeaderboard() {
         try {
-            console.log('Сохранение в localStorage:', this.leaderboard);
             localStorage.setItem('tankGame_leaderboard', JSON.stringify(this.leaderboard));
         } catch (error) {
             console.error('Ошибка сохранения:', error);
@@ -433,27 +499,16 @@ class Game {
     }
 
     addToLeaderboard(enemy) {
-        if (!enemy || !enemy.username) {
-            console.log('Некорректный враг для таблицы лидеров:', enemy);
-            return;
-        }
+        if (!enemy || !enemy.username) return;
 
-        console.log('=== ДОБАВЛЕНИЕ В ТАБЛИЦУ ===');
-        console.log('Враг:', enemy.username, 'Тип:', enemy.enemyType);
-        console.log('Текущая таблица:', this.leaderboard);
-
-        // Ищем существующую запись
         const existingIndex = this.leaderboard.findIndex(entry =>
         entry.name === enemy.username && entry.type === enemy.enemyType
         );
 
         if (existingIndex !== -1) {
-            // Обновляем существующую запись
             this.leaderboard[existingIndex].score += 100;
             this.leaderboard[existingIndex].level = this.level;
-            console.log('Обновили запись:', this.leaderboard[existingIndex]);
         } else {
-            // Добавляем новую запись
             const newEntry = {
                 name: enemy.username,
                 type: enemy.enemyType,
@@ -461,20 +516,13 @@ class Game {
                 level: this.level
             };
             this.leaderboard.push(newEntry);
-            console.log('Добавили новую запись:', newEntry);
         }
 
-        // Сортируем по очкам
         this.leaderboard.sort((a, b) => b.score - a.score);
-
-        console.log('Таблица после обновления:', this.leaderboard);
-
-        // Сохраняем и обновляем UI
         this.saveLeaderboard();
         this.updateLeaderboardUI();
     }
 
-    // Обновленный метод отображения
     updateLeaderboardUI() {
         const container = document.getElementById('leaderboardEntries');
         if (!container) return;
@@ -488,7 +536,6 @@ class Game {
             'SNIPER': '🟢'
         };
 
-        // РЕШАЕМ СКОЛЬКО ЗАПИСЕЙ ПОКАЗЫВАТЬ
         const displayEntries = this.showFullLeaderboard ? this.leaderboard : this.leaderboard.slice(0, 3);
 
         if (displayEntries.length === 0) {
@@ -512,7 +559,6 @@ class Game {
             container.appendChild(entryEl);
         });
 
-        // Обновляем заголовок
         const leaderboard = document.getElementById('leaderboard');
         if (leaderboard) {
             const title = leaderboard.querySelector('h3');
@@ -545,13 +591,11 @@ class Game {
                 const bullet = enemy.shoot();
                 if (bullet) {
                     this.bullets.push(bullet);
-                    // Используем новый метод для разных звуков
                     this.soundManager.playEnemyShot(enemy.enemyType);
                 }
             }
         });
 
-        // Разрешаем столкновения между танками после движения
         for (let i = 0; i < this.enemies.length; i++) {
             for (let j = i + 1; j < this.enemies.length; j++) {
                 if (this.enemies[i].getBounds().intersects(this.enemies[j].getBounds())) {
@@ -589,7 +633,6 @@ class Game {
         });
 
         const totalEnemiesOnScreen = this.enemies.length + this.spawnAnimations.length;
-        // Прекращаем спавн врагов если база уничтожена
         if (totalEnemiesOnScreen < MAX_ENEMIES_ON_SCREEN && this.enemiesToSpawn > 0 && !this.levelComplete && !this.baseDestroyed) {
             const timeSinceLastRespawn = Date.now() - this.lastRespawnTime;
             if (timeSinceLastRespawn >= RESPAWN_DELAY) {
@@ -632,7 +675,6 @@ class Game {
         document.getElementById('finalScore').textContent = this.score;
         document.getElementById('finalLevel').textContent = this.level;
         gameOverScreen.style.display = 'block';
-        // ОСТАНАВЛИВАЕМ ЗВУК ДВИГАТЕЛЯ
         this.soundManager.stopLoop('engineIdle');
         this.soundManager.stopLoop('engineMoving');
     }
@@ -646,7 +688,7 @@ class Game {
         this.level = 1;
         this.score = 0;
         this.lives = 3;
-        this.soundManager.stopAll(); // Останавливаем все звуки
+        this.soundManager.stopAll();
         this.initLevel();
     }
 
@@ -694,10 +736,8 @@ class Game {
 
             this.handleInput();
 
-            // Собираем все танки для проверки коллизий
             const allTanks = [this.player, ...this.enemies];
 
-            // Игра продолжает обновляться даже после завершения
             if (!this.player.isDestroyed) {
                 this.player.update();
             }
@@ -707,7 +747,11 @@ class Game {
             this.updateRespawns();
             this.updateScreenShake();
             this.updateShieldIndicator();
-            this.map.update(allTanks); // Передаем танки для обработки коллизий
+
+            // НОВОЕ: Обновление бонусов
+            this.updateBonuses();
+
+            this.map.update(allTanks);
 
             this.render();
         }
@@ -723,7 +767,9 @@ class Game {
 
         this.spawnAnimations.forEach(animation => animation.draw(this.ctx));
 
-        // Рисуем игрока только если он не уничтожен
+        // НОВОЕ: Рисуем бонусы
+        this.bonuses.forEach(bonus => bonus.draw(this.ctx));
+
         if (!this.player.isDestroyed) {
             this.player.draw(this.ctx);
         }
@@ -733,13 +779,11 @@ class Game {
         this.explosions.forEach(explosion => explosion.draw(this.ctx));
         this.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
 
-        // Затемнение экрана при завершении
         if (this.showGameOverScreen || this.showLevelCompleteScreen) {
             this.ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
-        // Сообщение об уничтожении базы
         if (this.baseDestroyed) {
             this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
