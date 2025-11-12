@@ -28,7 +28,7 @@ class Tank {
         this.size = TILE_SIZE - 8;
         this.canShoot = true;
         this.username = type === 'enemy' ? this.generateEnemyName(enemyType) : '';
-        this.spawnProtection = type === 'enemy' ? 60 : 0;
+        this.spawnProtection = 0;
         this.shield = null;
         this.isDestroyed = false;
         this.stuckTimer = 0;
@@ -36,13 +36,7 @@ class Tank {
 
     // Генерация имени в зависимости от типа врага
     generateEnemyName(enemyType) {
-        const names = {
-            'BASIC': ['Солдат', 'Рядовой', 'Боец'],
-            'FAST': ['Скаут', 'Гонщик', 'Стремительный'],
-            'HEAVY': ['Тяжёлый', 'Броня', 'Танк'],
-            'SNIPER': ['Снайпер', 'Меткий', 'Прицел'] // Добавляем имена для снайперов
-        };
-        const typeNames = names[enemyType] || ['Враг'];
+        const typeNames = ENEMY_NAMES[enemyType] || ['Враг'];
         return typeNames[Math.floor(Math.random() * typeNames.length)];
     }
 
@@ -209,14 +203,23 @@ class Tank {
         if (this.isDestroyed || !this.canShoot) return null;
 
         this.canShoot = false;
-        this.reloadTime = this.type === 'player' ? 20 : 40;
+        this.reloadTime = this.type === 'player' ? 20 :
+        this.enemyType === 'FAST' ? 25 :
+        this.enemyType === 'HEAVY' ? 60 : 40;
 
         const directionVector = new Vector2(this.direction.x, this.direction.y);
         const offset = directionVector.multiply(this.size / 2 + 5);
         const bulletX = this.position.x + offset.x;
         const bulletY = this.position.y + offset.y;
 
-        return new Bullet(bulletX, bulletY, this.direction, this.type);
+        // ВАЖНО: передаем this (текущий танк) как shooter
+        const bullet = new Bullet(bulletX, bulletY, this.direction, this.type, this);
+
+        if (this.type === 'enemy' && typeof game !== 'undefined') {
+            game.soundManager.playEnemyShot(this.enemyType);
+        }
+
+        return bullet;
     }
 
     takeDamage() {

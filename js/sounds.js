@@ -97,9 +97,10 @@ class SoundManager {
 
     // Управление звуком двигателя
     updateEngineSound(isMoving, isPlayerAlive) {
-        if (!isPlayerAlive) {
-            this.stopLoop('engineIdle');
-            this.stopLoop('engineMoving');
+        // Останавливаем звук если игра завершена или уровень пройден
+        if (this.gameOver || this.levelComplete || !isPlayerAlive) {
+            this.soundManager.stopLoop('engineIdle');
+            this.soundManager.stopLoop('engineMoving');
             return;
         }
 

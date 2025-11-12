@@ -1,10 +1,11 @@
 // === КЛАСС ПУЛИ ===
 class Bullet {
-    constructor(x, y, direction, owner) {
+    constructor(x, y, direction, owner, shooter = null) {
         this.position = new Vector2(x, y);
         this.direction = direction;
         this.speed = BULLET_SPEED;
         this.owner = owner;
+        this.shooter = shooter; // Тот кто выстрелил
         this.size = 6;
         this.active = true;
     }

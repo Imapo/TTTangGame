@@ -35,6 +35,10 @@ class Game {
         this.soundManager = new SoundManager();
         this.isPlayerMoving = false;
         this.lastPlayerPosition = new Vector2(0, 0);
+        this.leaderboard = this.loadLeaderboard(); // Загружаем из localStorage
+        console.log('Загружена таблица при старте:', this.leaderboard);
+        this.showFullLeaderboard = false; // Флаг для отображения полной таблицы
+        this.updateLeaderboardUI();
 
         this.initLevel();
         this.setupEventListeners();
@@ -159,6 +163,13 @@ class Game {
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     }
 
+    // Метод сброса таблицы лидеров
+    resetLeaderboard() {
+        this.leaderboard = [];
+        this.saveLeaderboard();
+        this.updateLeaderboardUI();
+    }
+
     getCurrentDirection() {
         if (this.directionPriority) {
             return this.directionPriority;
@@ -257,36 +268,24 @@ class Game {
 
             const bulletBounds = bullet.getBounds();
 
+            // В методе updateBullets() в game.js:
             if (bullet.owner === 'player') {
                 for (let j = this.enemies.length - 1; j >= 0; j--) {
                     const enemy = this.enemies[j];
                     if (bulletBounds.intersects(enemy.getBounds())) {
-
-                        // СОХРАНЯЕМ ИНФОРМАЦИЮ ДО ПОПАДАНИЯ
-                        const healthBefore = enemy.health;
-                        const isHeavyTank = enemy.enemyType === 'HEAVY';
-
-                        // ПРОИЗВОДИМ ПОПАДАНИЕ
-                        const isDestroyed = enemy.takeDamage();
-
-                        // ВОСПРОИЗВОДИМ ЗВУК ПОПАДАНИЯ ДЛЯ ТЯЖЕЛЫХ ТАНКОВ
-                        if (isHeavyTank && !isDestroyed && healthBefore > 1) {
-                            console.log('Звук попадания по тяжелому танку!');
-                            this.soundManager.play('heavyTankHit');
-                        }
-
-                        if (isDestroyed) {
-                            // УНИЧТОЖЕНИЕ ТАНКА
+                        if (enemy.takeDamage()) {
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
                             this.screenShake = 10;
                             this.soundManager.play('tankExplosion');
+
+                            // ЗАПОМИНАЕМ УБИТОГО ВРАГА ПЕРЕД УДАЛЕНИЕМ
+                            const killedEnemy = enemy;
 
                             this.enemies.splice(j, 1);
                             this.enemiesDestroyed++;
                             this.score += 100;
                             this.updateUI();
                         }
-
                         this.bullets.splice(i, 1);
                         break;
                     }
@@ -296,7 +295,15 @@ class Game {
                     if (this.player.takeDamage()) {
                         this.explosions.push(new Explosion(this.player.position.x, this.player.position.y, 'tank'));
                         this.screenShake = 20;
-                        this.soundManager.play('tankExplosion'); // Звук взрыва своего танка
+                        this.soundManager.play('tankExplosion');
+
+                        // ИСПОЛЬЗУЕМ НАСТОЯЩЕГО СТРЕЛЯВШЕГО ИЗ ПУЛИ
+                        if (bullet.shooter && bullet.owner === 'enemy') {
+                            console.log('Настоящий убийца:', bullet.shooter.username, bullet.shooter.enemyType);
+                            this.addToLeaderboard(bullet.shooter);
+                        } else {
+                            console.log('Не удалось определить убийцу, bullet:', bullet);
+                        }
 
                         this.lives--;
                         this.updateUI();
@@ -317,6 +324,140 @@ class Game {
                 this.bullets.splice(i, 1);
                 this.soundManager.play('bulletHit'); // Звук вылета пули за границы
             }
+        }
+    }
+
+    // Находим врага, который выстрелил пулю
+    findEnemyByBullet(bullet) {
+        for (const enemy of this.enemies) {
+            // Простая проверка - враг находится рядом с траекторией пули
+            const distance = Math.sqrt(
+                Math.pow(enemy.position.x - bullet.position.x, 2) +
+                Math.pow(enemy.position.y - bullet.position.y, 2)
+            );
+            if (distance < 100) { // Если враг близко к пуле
+                return enemy;
+            }
+        }
+        return null;
+    }
+
+    // Загрузка таблицы лидеров из localStorage
+    loadLeaderboard() {
+        try {
+            const saved = localStorage.getItem('tankGame_leaderboard');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                console.log('Успешно загружено из localStorage:', parsed);
+                return parsed;
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки:', error);
+        }
+        console.log('Нет сохраненных данных, возвращаем пустой массив');
+        return [];
+    }
+
+    // Сохранение таблицы лидеров в localStorage
+    saveLeaderboard() {
+        try {
+            console.log('Сохранение в localStorage:', this.leaderboard);
+            localStorage.setItem('tankGame_leaderboard', JSON.stringify(this.leaderboard));
+        } catch (error) {
+            console.error('Ошибка сохранения:', error);
+        }
+    }
+
+    addToLeaderboard(enemy) {
+        if (!enemy || !enemy.username) {
+            console.log('Некорректный враг для таблицы лидеров:', enemy);
+            return;
+        }
+
+        console.log('=== ДОБАВЛЕНИЕ В ТАБЛИЦУ ===');
+        console.log('Враг:', enemy.username, 'Тип:', enemy.enemyType);
+        console.log('Текущая таблица:', this.leaderboard);
+
+        // Ищем существующую запись
+        const existingIndex = this.leaderboard.findIndex(entry =>
+        entry.name === enemy.username && entry.type === enemy.enemyType
+        );
+
+        if (existingIndex !== -1) {
+            // Обновляем существующую запись
+            this.leaderboard[existingIndex].score += 100;
+            this.leaderboard[existingIndex].level = this.level;
+            console.log('Обновили запись:', this.leaderboard[existingIndex]);
+        } else {
+            // Добавляем новую запись
+            const newEntry = {
+                name: enemy.username,
+                type: enemy.enemyType,
+                score: 100,
+                level: this.level
+            };
+            this.leaderboard.push(newEntry);
+            console.log('Добавили новую запись:', newEntry);
+        }
+
+        // Сортируем по очкам
+        this.leaderboard.sort((a, b) => b.score - a.score);
+
+        console.log('Таблица после обновления:', this.leaderboard);
+
+        // Сохраняем и обновляем UI
+        this.saveLeaderboard();
+        this.updateLeaderboardUI();
+    }
+
+    // Обновленный метод отображения
+    updateLeaderboardUI() {
+        const container = document.getElementById('leaderboardEntries');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        const icons = {
+            'BASIC': '🔴',
+            'FAST': '🟡',
+            'HEAVY': '🟣',
+            'SNIPER': '🟢'
+        };
+
+        // РЕШАЕМ СКОЛЬКО ЗАПИСЕЙ ПОКАЗЫВАТЬ
+        const displayEntries = this.showFullLeaderboard ? this.leaderboard : this.leaderboard.slice(0, 3);
+
+        if (displayEntries.length === 0) {
+            container.innerHTML = '<div style="text-align: center; color: #888; font-size: 12px;">Победителей пока нет</div>';
+            return;
+        }
+
+        displayEntries.forEach((entry, index) => {
+            const entryEl = document.createElement('div');
+            entryEl.className = 'leaderboard-entry';
+
+            const rank = this.showFullLeaderboard ? index + 1 : (this.leaderboard.findIndex(e => e.name === entry.name && e.type === entry.type) + 1);
+
+            entryEl.innerHTML = `
+            <span class="rank">${rank}</span>
+            <span class="tank-icon">${icons[entry.type] || '⚫'}</span>
+            <span class="name">${entry.name}</span>
+            <span class="score">${entry.score}</span>
+            <span class="level">ур.${entry.level}</span>
+            `;
+            container.appendChild(entryEl);
+        });
+
+        // Обновляем заголовок
+        const leaderboard = document.getElementById('leaderboard');
+        if (leaderboard) {
+            const title = leaderboard.querySelector('h3');
+            if (title) {
+                const total = this.leaderboard.length;
+                const shown = this.showFullLeaderboard ? total : Math.min(3, total);
+                title.textContent = `🏆 Лидеры (${shown}/${total})`;
+            }
+            leaderboard.style.display = 'block';
         }
     }
 
@@ -427,6 +568,9 @@ class Game {
         document.getElementById('finalScore').textContent = this.score;
         document.getElementById('finalLevel').textContent = this.level;
         gameOverScreen.style.display = 'block';
+        // ОСТАНАВЛИВАЕМ ЗВУК ДВИГАТЕЛЯ
+        this.soundManager.stopLoop('engineIdle');
+        this.soundManager.stopLoop('engineMoving');
     }
 
     nextLevel() {
