@@ -233,9 +233,22 @@ class Game {
             }
         }
 
-        // Обновляем звук двигателя если состояние изменилось
-        if (wasMoving !== this.isPlayerMoving) {
-            this.soundManager.updateEngineSound(this.isPlayerMoving, !this.player.isDestroyed);
+        // Обновляем звук двигателя
+        if (wasMoving !== this.isPlayerMoving && this.soundManager) {
+            // Останавливаем звук если игра завершена
+            if (this.gameOver || this.levelComplete || this.player.isDestroyed) {
+                this.soundManager.stopLoop('engineIdle');
+                this.soundManager.stopLoop('engineMoving');
+            } else {
+                // Иначе нормально управляем звуком
+                if (this.isPlayerMoving) {
+                    this.soundManager.stopLoop('engineIdle');
+                    this.soundManager.playLoop('engineMoving');
+                } else {
+                    this.soundManager.stopLoop('engineMoving');
+                    this.soundManager.playLoop('engineIdle');
+                }
+            }
         }
 
         if ((this.keys['Space'] || this.keys['Enter']) && this.player.canShoot && !this.player.isDestroyed && !this.baseDestroyed) {
