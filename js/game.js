@@ -93,33 +93,10 @@ class Game {
     }
 
     completeSpawnAnimation(spawnPoint) {
-        // Выбираем случайный тип танка в зависимости от уровня
-        const tankType = this.getRandomTankType();
-        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', tankType, this.level);
+        // Передаем уровень для определения скорости врагов
+        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level);
         enemy.direction = DIRECTIONS.DOWN;
         this.enemies.push(enemy);
-    }
-
-    getRandomTankType() {
-        const level = this.level;
-        const weights = {
-            'basic': Math.max(0, 70 - level * 5),   // Меньше базовых с уровнем
-            'fast': 15 + level * 2,                 // Больше быстрых
-            'heavy': Math.max(0, 10 + level * 3),   // Больше тяжелых
-            'armored': 5 + level * 2,               // Больше бронированных
-            'sniper': Math.max(0, level - 1) * 5    // Снайперы появляются с 2 уровня
-        };
-
-        // Создаем массив с учетом весов
-        const types = [];
-        Object.entries(weights).forEach(([type, weight]) => {
-            for (let i = 0; i < weight; i++) {
-                types.push(type);
-            }
-        });
-
-        // Выбираем случайный тип
-        return types[Math.floor(Math.random() * types.length)] || 'basic';
     }
 
     showSpawnNotification() {
@@ -271,11 +248,11 @@ class Game {
                         if (enemy.takeDamage()) {
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
                             this.screenShake = 10;
-                            this.soundManager.play('tankExplosion');
+                            this.soundManager.play('tankExplosion'); // Звук взрыва танка противника
 
                             this.enemies.splice(j, 1);
                             this.enemiesDestroyed++;
-                            this.score += enemy.scoreValue; // Используем value из класса танка
+                            this.score += 100;
                             this.updateUI();
                         }
                         this.bullets.splice(i, 1);
@@ -331,16 +308,7 @@ class Game {
                 const bullet = enemy.shoot();
                 if (bullet) {
                     this.bullets.push(bullet);
-                    // Разные звуки для разных типов танков
-                    if (enemy.tankType === 'sniper') {
-                        this.soundManager.play('sniperShot');
-                    } else if (enemy.tankType === 'heavy') {
-                        this.soundManager.play('heavyTankShot');
-                    } else if (enemy.tankType === 'fast') {
-                        this.soundManager.play('fastTankShot');
-                    } else {
-                        this.soundManager.play('enemyShot');
-                    }
+                    this.soundManager.play('enemyShot'); // Звук выстрела противника
                 }
             }
         });
