@@ -92,11 +92,27 @@ class Game {
         return spawnPoint;
     }
 
+    getRandomEnemyType() {
+        const random = Math.random();
+        let cumulativeChance = 0;
+
+        for (const [type, config] of Object.entries(ENEMY_TYPES)) {
+            cumulativeChance += config.chance;
+            if (random <= cumulativeChance) {
+                return type;
+            }
+        }
+
+        return 'BASIC'; // fallback
+    }
+
     completeSpawnAnimation(spawnPoint) {
-        // Передаем уровень для определения скорости врагов
-        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level);
+        const enemyType = this.getRandomEnemyType();
+        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
         enemy.direction = DIRECTIONS.DOWN;
         this.enemies.push(enemy);
+
+        console.log(`Появился враг: ${enemy.username} (${enemyType})`);
     }
 
     showSpawnNotification() {
@@ -245,16 +261,32 @@ class Game {
                 for (let j = this.enemies.length - 1; j >= 0; j--) {
                     const enemy = this.enemies[j];
                     if (bulletBounds.intersects(enemy.getBounds())) {
-                        if (enemy.takeDamage()) {
+
+                        // СОХРАНЯЕМ ИНФОРМАЦИЮ ДО ПОПАДАНИЯ
+                        const healthBefore = enemy.health;
+                        const isHeavyTank = enemy.enemyType === 'HEAVY';
+
+                        // ПРОИЗВОДИМ ПОПАДАНИЕ
+                        const isDestroyed = enemy.takeDamage();
+
+                        // ВОСПРОИЗВОДИМ ЗВУК ПОПАДАНИЯ ДЛЯ ТЯЖЕЛЫХ ТАНКОВ
+                        if (isHeavyTank && !isDestroyed && healthBefore > 1) {
+                            console.log('Звук попадания по тяжелому танку!');
+                            this.soundManager.play('heavyTankHit');
+                        }
+
+                        if (isDestroyed) {
+                            // УНИЧТОЖЕНИЕ ТАНКА
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
                             this.screenShake = 10;
-                            this.soundManager.play('tankExplosion'); // Звук взрыва танка противника
+                            this.soundManager.play('tankExplosion');
 
                             this.enemies.splice(j, 1);
                             this.enemiesDestroyed++;
                             this.score += 100;
                             this.updateUI();
                         }
+
                         this.bullets.splice(i, 1);
                         break;
                     }
@@ -308,7 +340,8 @@ class Game {
                 const bullet = enemy.shoot();
                 if (bullet) {
                     this.bullets.push(bullet);
-                    this.soundManager.play('enemyShot'); // Звук выстрела противника
+                    // Используем новый метод для разных звуков
+                    this.soundManager.playEnemyShot(enemy.enemyType);
                 }
             }
         });

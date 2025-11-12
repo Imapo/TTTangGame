@@ -1,21 +1,61 @@
 // === КЛАСС ТАНКА ===
 class Tank {
-    constructor(x, y, type = 'player', level = 1) {
+    constructor(x, y, type = 'player', level = 1, enemyType = 'BASIC') {
         this.position = new Vector2(x, y);
         this.direction = DIRECTIONS.UP;
-        // На первом уровне враги в 2 раза медленнее
-        this.speed = type === 'player' ? TANK_SPEED : (level === 1 ? TANK_SPEED * 0.35 : TANK_SPEED * 0.7);
+
+        // Определяем характеристики в зависимости от типа
+        if (type === 'player') {
+            this.speed = TANK_SPEED;
+            this.color = '#4CAF50';
+            this.health = 1;
+            this.bulletSpeed = 5;
+            this.reloadTime = 20;
+        } else {
+            // Характеристики врагов в зависимости от типа и уровня
+            const enemyConfig = ENEMY_TYPES[enemyType];
+            const levelMultiplier = level === 1 ? 1 : 1.2;
+
+            this.speed = enemyConfig.speed * TANK_SPEED * levelMultiplier;
+            this.color = enemyConfig.color;
+            this.health = enemyConfig.health;
+            this.bulletSpeed = enemyConfig.bulletSpeed;
+            this.reloadTime = enemyConfig.reloadTime;
+        }
+
         this.type = type;
+        this.enemyType = enemyType; // Сохраняем тип врага
         this.size = TILE_SIZE - 8;
-        this.color = type === 'player' ? '#4CAF50' : '#FF4444';
-        this.health = 1;
-        this.reloadTime = 0;
         this.canShoot = true;
-        this.username = type === 'enemy' ? `Enemy${Math.floor(Math.random() * 1000)}` : '';
+        this.username = type === 'enemy' ? this.generateEnemyName(enemyType) : '';
         this.spawnProtection = type === 'enemy' ? 60 : 0;
         this.shield = null;
-        this.isDestroyed = false; // Новый флаг - уничтожен ли танк
-        this.stuckTimer = 0; // Таймер застревания
+        this.isDestroyed = false;
+        this.stuckTimer = 0;
+    }
+
+    // Генерация имени в зависимости от типа врага
+    generateEnemyName(enemyType) {
+        const names = {
+            'BASIC': ['Солдат', 'Рядовой', 'Боец'],
+            'FAST': ['Скаут', 'Гонщик', 'Стремительный'],
+            'HEAVY': ['Тяжёлый', 'Броня', 'Танк'],
+            'SNIPER': ['Снайпер', 'Меткий', 'Прицел'] // Добавляем имена для снайперов
+        };
+        const typeNames = names[enemyType] || ['Враг'];
+        return typeNames[Math.floor(Math.random() * typeNames.length)];
+    }
+
+    // Остальные методы остаются без изменений...
+    takeDamage() {
+        if (this.hasShield()) return false;
+
+        this.health--;
+        if (this.health <= 0) {
+            this.isDestroyed = true;
+            return true;
+        }
+        return false;
     }
 
     update() {

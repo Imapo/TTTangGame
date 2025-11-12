@@ -20,9 +20,13 @@ class SoundManager {
             playerShot: this.createSound('sounds/player_shot.wav'),
             engineIdle: this.createSound('sounds/engine_idle.wav', true),
             engineMoving: this.createSound('sounds/engine_moving.wav', true),
-            fastTankShot: this.createSound('sounds/fast_shot.wav'),
-            heavyTankShot: this.createSound('sounds/heavy_shot.wav'),
-            sniperShot: this.createSound('sounds/sniper_shot.wav'),
+
+            // ДОБАВЛЯЕМ НОВЫЕ ЗВУКИ ДЛЯ ТИПОВ ТАНКОВ
+            fastTankShot: this.createSound('sounds/fast_tank_shot.wav'), // Можно использовать тот же звук или заменить
+            heavyTankShot: this.createSound('sounds/heavy_tank_shot.wav'), // Можно использовать тот же звук или заменить
+            sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),     // Можно использовать тот же звук или заменить
+            // НОВЫЙ ЗВУК ДЛЯ ПОПАДАНИЯ ПО ТЯЖЕЛОМУ ТАНКУ
+            heavyTankHit: this.createSound('sounds/battle_city_bullet_armor.wav'),
         };
 
         // Настройка громкости
@@ -30,6 +34,12 @@ class SoundManager {
         this.sounds.engineMoving.volume = 0.4;
         this.sounds.tankExplosion.volume = 0.6;
         this.sounds.baseExplosion.volume = 0.7;
+
+        // Настройка громкости для новых звуков (можно настроить по-разному)
+        this.sounds.fastTankShot.volume = 0.5;
+        this.sounds.heavyTankShot.volume = 0.7;
+        this.sounds.sniperShot.volume = 0.4;
+        this.sounds.heavyTankHit.volume = 0.6; // Громкость для звука попадания
     }
 
     createSound(src, loop = false) {
@@ -41,7 +51,7 @@ class SoundManager {
 
     play(soundName) {
         if (this.muted || !this.sounds[soundName]) return;
-        
+
         try {
             // Создаем копию звука для одновременного воспроизведения
             const sound = this.sounds[soundName].cloneNode();
@@ -54,7 +64,7 @@ class SoundManager {
 
     playLoop(soundName) {
         if (this.muted || !this.sounds[soundName]) return;
-        
+
         try {
             this.sounds[soundName].currentTime = 0;
             this.sounds[soundName].play().catch(e => console.log('Audio play error:', e));
@@ -99,6 +109,23 @@ class SoundManager {
         } else {
             this.stopLoop('engineMoving');
             this.playLoop('engineIdle');
+        }
+    }
+
+    // НОВЫЙ МЕТОД ДЛЯ ЗВУКОВ ВЫСТРЕЛОВ РАЗНЫХ ТИПОВ ТАНКОВ
+    playEnemyShot(enemyType) {
+        switch(enemyType) {
+            case 'FAST':
+                this.play('fastTankShot');
+                break;
+            case 'HEAVY':
+                this.play('heavyTankShot');
+                break;
+            case 'SNIPER': // если добавишь снайперов позже
+                this.play('sniperShot');
+                break;
+            default:
+                this.play('enemyShot');
         }
     }
 }

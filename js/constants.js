@@ -35,3 +35,39 @@ const TILE_TYPES = {
     BASE: 4,
     CONCRETE: 5
 };
+
+// === ТИПЫ ТАНКОВ ПРОТИВНИКОВ ===
+const ENEMY_TYPES = {
+    BASIC: {
+        chance: 0.5,    // 50% шанс (было 0.6)
+        speed: 0.35,
+        health: 1,
+        color: '#FF4444',
+        bulletSpeed: 4,
+        reloadTime: 40
+    },
+    FAST: {
+        chance: 0.25,   // 25% шанс (было 0.3)
+        speed: 0.7,
+        health: 1,
+        color: '#FFFF00',
+        bulletSpeed: 5,
+        reloadTime: 30
+    },
+    HEAVY: {
+        chance: 0.1,    // 10% шанс
+        speed: 0.25,
+        health: 3,
+        color: '#800080',
+        bulletSpeed: 3,
+        reloadTime: 60
+    },
+    SNIPER: {
+        chance: 0.15,   // 15% шанс
+        speed: 0.3,
+        health: 1,
+        color: '#00FF00', // Зеленый для снайпера
+        bulletSpeed: 7,   // Очень быстрые пули
+        reloadTime: 80    // Долгая перезарядка
+    }
+};
