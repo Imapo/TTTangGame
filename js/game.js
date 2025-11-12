@@ -36,9 +36,9 @@ class Game {
         this.isPlayerMoving = false;
         this.lastPlayerPosition = new Vector2(0, 0);
         this.leaderboard = this.loadLeaderboard(); // Загружаем из localStorage
-        console.log('Загружена таблица при старте:', this.leaderboard);
         this.showFullLeaderboard = false; // Флаг для отображения полной таблицы
         this.updateLeaderboardUI();
+        this.usedEnemyNames = new Set(); // Для отслеживания использованных имен
 
         this.initLevel();
         this.setupEventListeners();
@@ -67,6 +67,8 @@ class Game {
 
         // Сбрасываем индекс спавна
         this.currentSpawnIndex = 0;
+
+        this.usedEnemyNames.clear(); // Очищаем при новом уровне
 
         this.updateUI();
         this.updateShieldIndicator();
@@ -110,10 +112,43 @@ class Game {
         return 'BASIC'; // fallback
     }
 
+    generateUniqueEnemyName(enemyType) {
+        const names = ENEMY_NAMES[enemyType] || ['Враг'];
+        let availableNames = names.filter(name => !this.usedEnemyNames.has(name));
+
+        // Если все имена использованы, добавляем номер
+        if (availableNames.length === 0) {
+            for (let i = 1; i <= 100; i++) {
+                const numberedName = `${names[0]} ${i}`;
+                if (!this.usedEnemyNames.has(numberedName)) {
+                    availableNames.push(numberedName);
+                    break;
+                }
+            }
+        }
+
+        // Если всё равно нет доступных имен, генерируем уникальное
+        if (availableNames.length === 0) {
+            const uniqueName = `${names[0]} ${Date.now()}`;
+            availableNames.push(uniqueName);
+        }
+
+        const selectedName = availableNames[Math.floor(Math.random() * availableNames.length)];
+        this.usedEnemyNames.add(selectedName);
+
+        return selectedName;
+    }
+
     completeSpawnAnimation(spawnPoint) {
         const enemyType = this.getRandomEnemyType();
+
+        // ГЕНЕРИРУЕМ УНИКАЛЬНОЕ ИМЯ
+        const uniqueName = this.generateUniqueEnemyName(enemyType);
+
         const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
         enemy.direction = DIRECTIONS.DOWN;
+        enemy.username = uniqueName; // УСТАНАВЛИВАЕМ УНИКАЛЬНОЕ ИМЯ
+
         this.enemies.push(enemy);
 
         console.log(`Появился враг: ${enemy.username} (${enemyType})`);
