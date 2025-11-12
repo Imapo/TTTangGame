@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle City - Ultimate Version</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas" width="832" height="832"></canvas>
+        <button class="mute-btn" onclick="game.soundManager.toggleMute()">🔊</button>
+        <div class="ui">
+            <div class="score">Очки: <span id="score">0</span></div>
+            <div class="lives">Жизни: <span id="lives">3</span></div>
+            <div class="level">Уровень: <span id="level">1</span></div>
+            <div class="tank-counter">Танки: <span id="tanksLeft">20</span>/20</div>
+        </div>
+        <div class="controls">
+            <p>Управление: WASD/Стрелки - движение, Space/Enter - стрельба</p>
+        </div>
+        <div class="debug" id="debugInfo"></div>
+
+        <div class="shield-indicator" id="shieldIndicator">Щит: <span id="shieldTime">5.0</span>с</div>
+        <div class="spawn-notification" id="spawnNotification">Появление танка!</div>
+
+        <div class="level-complete" id="levelComplete">
+            <h2>Уровень пройден!</h2>
+            <p>Танки уничтожены: <span id="destroyedTanks">0</span>/20</p>
+            <p>Очки: <span id="levelScore">0</span></p>
+            <button class="next-level-btn" onclick="game.nextLevel()">Следующий уровень</button>
+        </div>
+
+        <div class="game-over" id="gameOver">
+            <h2>Игра окончена!</h2>
+            <p>Ваш счет: <span id="finalScore">0</span></p>
+            <p>Уровень: <span id="finalLevel">1</span></p>
+            <button class="restart-btn" onclick="game.restartGame()">Начать заново</button>
+        </div>
+    </div>
+
+    <!-- Подключаем модули -->
+    <script src="js/vector2.js"></script>
+    <script src="js/rectangle.js"></script>
+    <script src="js/constants.js"></script>
+    <script src="js/sounds.js"></script>
+    <script src="js/effects.js"></script>
+    <script src="js/brick-effect.js"></script>
+    <script src="js/bullet.js"></script>
+    <script src="js/tank.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
