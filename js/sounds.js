@@ -27,6 +27,9 @@ class SoundManager {
             sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),     // Можно использовать тот же звук или заменить
             // НОВЫЙ ЗВУК ДЛЯ ПОПАДАНИЯ ПО ТЯЖЕЛОМУ ТАНКУ
             heavyTankHit: this.createSound('sounds/battle_city_bullet_armor.wav'),
+
+            starPickup: this.createSound('sounds/star_bonus.wav'),
+            freezePickup: this.createSound('sounds/time_bonus.wav')
         };
 
         // Настройка громкости

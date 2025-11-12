@@ -87,3 +87,43 @@ let leaderboard = [];
 const STORAGE_KEYS = {
     LEADERBOARD: 'tankGame_leaderboard'
 };
+
+// В constants.js
+const BONUS_TYPES = {
+    STAR: {
+        symbol: '★',
+        color: '#FFD700',
+        duration: 0,
+        chance: 0.25
+    },
+    GRENADE: {
+        symbol: '💣',
+        color: '#FF4444',
+        duration: 0,
+        chance: 0.15
+    },
+    HELMET: {
+        symbol: '⛑️',
+        color: '#4CAF50',
+        duration: 10000,
+        chance: 0.15
+    },
+    SHOVEL: {
+        symbol: '🛡️',
+        color: '#2196F3',
+        duration: 20000,
+        chance: 0.15
+    },
+    CLOCK: {
+        symbol: '⏰',
+        color: '#9C27B0',
+        duration: 10000,
+        chance: 0.15
+    },
+    LIFE: {
+        symbol: '🎁',
+        color: '#FF4081',
+        duration: 0,
+        chance: 0.15
+    }
+};
