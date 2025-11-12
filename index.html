@@ -37,6 +37,19 @@
             <p>Уровень: <span id="finalLevel">1</span></p>
             <button class="restart-btn" onclick="game.restartGame()">Начать заново</button>
         </div>
+
+        <div id="leaderboard" class="ui-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3>🏆 Таблица лидеров</h3>
+                <div>
+                    <button id="toggleLeaderboard" style="background: #444; border: none; color: white; padding: 2px 6px; border-radius: 3px; cursor: pointer; margin-right: 5px;" title="Показать всех">📊</button>
+                    <button id="resetLeaderboard" style="background: #ff4444; border: none; color: white; padding: 2px 6px; border-radius: 3px; cursor: pointer;" title="Сбросить таблицу">🗑️</button>
+                </div>
+            </div>
+            <div id="leaderboardEntries">
+                <!-- записи будут здесь -->
+            </div>
+        </div>
     </div>
 
     <!-- Подключаем модули -->
@@ -49,6 +62,7 @@
     <script src="js/bullet.js"></script>
     <script src="js/tank.js"></script>
     <script src="js/map.js"></script>
+    <script src="js/bonus.js"></script>
     <script src="js/game.js"></script>
     <script src="js/main.js"></script>
 </body>
