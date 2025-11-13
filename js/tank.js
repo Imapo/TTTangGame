@@ -40,6 +40,12 @@ class Tank {
         this.blinkAlpha = 1.0;
         this.blinkDirection = -1;
 
+        // НОВОЕ: Свойства для неуязвимости
+        this.isInvincible = false;
+        this.invincibilityTimer = 0;
+        this.invincibilityDuration = 0;
+        this.invincibilityBlink = 0;
+
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
@@ -82,14 +88,38 @@ class Tank {
         return typeNames[Math.floor(Math.random() * typeNames.length)];
     }
 
+    // НОВЫЙ МЕТОД: Активация неуязвимости
+    activateInvincibility(duration) {
+        this.isInvincible = true;
+        this.invincibilityDuration = duration;
+        this.invincibilityTimer = 0;
+        this.invincibilityBlink = 0;
+        console.log(`🛡️ Активирована неуязвимость на ${duration/1000}сек`);
+    }
+
+    // НОВЫЙ МЕТОД: Обновление неуязвимости
+    updateInvincibility() {
+        if (this.isInvincible) {
+            this.invincibilityTimer += 16; // примерно 60 FPS
+            this.invincibilityBlink++;
+
+            if (this.invincibilityTimer >= this.invincibilityDuration) {
+                this.isInvincible = false;
+                console.log('🛡️ Неуязвимость закончилась');
+            }
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод takeDamage для учета неуязвимости
     takeDamage() {
-        if (this.hasShield()) return false;
+        if (this.hasShield() || this.isInvincible) {
+            console.log('🛡️ Урон заблокирован щитом/неуязвимостью');
+            return false;
+        }
 
         this.health--;
         if (this.health <= 0) {
             this.isDestroyed = true;
-
-            // НОВОЕ: Если танк имел бонус - возвращаем специальный флаг
             if (this.hasBonus) {
                 return 'bonus';
             }
@@ -98,8 +128,12 @@ class Tank {
         return false;
     }
 
+    // ОБНОВЛЯЕМ метод update
     update() {
         if (this.isDestroyed) return;
+
+        // Обновляем неуязвимость
+        this.updateInvincibility();
 
         if (this.spawnProtection > 0) {
             this.spawnProtection--;
@@ -122,7 +156,6 @@ class Tank {
             this.stuckTimer++;
         }
 
-        // НОВОЕ: Обновление плавного мигания
         if (this.hasBonus && this.type === 'enemy') {
             this.updateBlink();
         }
@@ -273,7 +306,14 @@ class Tank {
 
         ctx.rotate(angle);
 
-        if (this.spawnProtection > 0 && this.spawnProtection % 10 < 5) {
+        // Эффект неуязвимости (мигание)
+        if (this.isInvincible) {
+            const blinkVisible = Math.floor(this.invincibilityBlink / 5) % 2 === 0;
+            if (!blinkVisible) {
+                ctx.globalAlpha = 0.3;
+            }
+        }
+        else if (this.spawnProtection > 0 && this.spawnProtection % 10 < 5) {
             ctx.globalAlpha = 0.5;
         }
 
@@ -314,6 +354,11 @@ class Tank {
             this.shield.draw(ctx);
         }
 
+        // НОВОЕ: Визуальный эффект неуязвимости
+        if (this.isInvincible) {
+            this.drawInvincibilityEffect(ctx);
+        }
+
         // НОВОЕ: Отображаем иконку бонуса над танком
         if (this.hasBonus) {
             const iconAlpha = 0.3 + (this.blinkAlpha * 0.7);
@@ -350,6 +395,46 @@ class Tank {
             ctx.textAlign = 'center';
             ctx.fillText(this.username, this.position.x, this.position.y - this.size - (this.hasBonus ? 35 : 10));
         }
+    }
+
+    // НОВЫЙ МЕТОД: Эффект неуязвимости
+    drawInvincibilityEffect(ctx) {
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        const time = Date.now() * 0.01;
+        const pulse = Math.sin(time) * 0.3 + 0.7;
+
+        // Синее сияние
+        const gradient = ctx.createRadialGradient(0, 0, this.size * 0.5, 0, 0, this.size * 1.5);
+        gradient.addColorStop(0, 'rgba(100, 200, 255, 0.8)');
+        gradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size * 1.5 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Вращающиеся частицы
+        ctx.strokeStyle = `rgba(255, 255, 255, ${pulse})`;
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2 + time * 0.5;
+            const innerRadius = this.size * 0.8;
+            const outerRadius = this.size * 1.8;
+
+            const x1 = Math.cos(angle) * innerRadius;
+            const y1 = Math.sin(angle) * innerRadius;
+            const x2 = Math.cos(angle) * outerRadius;
+            const y2 = Math.sin(angle) * outerRadius;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+
+        ctx.restore();
     }
 
     getBounds() {

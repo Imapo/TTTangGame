@@ -1,4 +1,4 @@
-// === КЛАССЫ ЭФФЕКТОВ И АНИМАЦИЙ ===
+// === УЛУЧШЕННЫЕ КЛАССЫ ЭФФЕКТОВ И АНИМАЦИЙ ===
 
 class ShieldEffect {
     constructor(tank) {
@@ -7,6 +7,20 @@ class ShieldEffect {
         this.startTime = Date.now();
         this.duration = PLAYER_SHIELD_DURATION;
         this.radius = tank.size * 1.3;
+        this.particles = [];
+        this.createParticles();
+    }
+
+    createParticles() {
+        for (let i = 0; i < 16; i++) {
+            this.particles.push({
+                angle: (i / 16) * Math.PI * 2,
+                                distance: this.radius * (0.7 + Math.random() * 0.3),
+                                speed: 0.02 + Math.random() * 0.03,
+                                size: 1 + Math.random() * 2,
+                                phase: Math.random() * Math.PI * 2
+            });
+        }
     }
 
     update() {
@@ -14,6 +28,13 @@ class ShieldEffect {
         if (elapsed >= this.duration) {
             this.active = false;
         }
+
+        // Обновляем частицы
+        this.particles.forEach(particle => {
+            particle.angle += particle.speed;
+            particle.phase += 0.1;
+        });
+
         return this.active;
     }
 
@@ -42,31 +63,24 @@ class ShieldEffect {
         ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
         ctx.fill();
 
+        // Энергетические частицы
+        this.particles.forEach(particle => {
+            const x = Math.cos(particle.angle) * particle.distance;
+            const y = Math.sin(particle.angle) * particle.distance;
+            const alpha = 0.3 + Math.sin(particle.phase) * 0.3;
+
+            ctx.fillStyle = `rgba(100, 200, 255, ${alpha * remaining})`;
+            ctx.beginPath();
+            ctx.arc(x, y, particle.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
         // Внешнее кольцо
         ctx.strokeStyle = `rgba(100, 200, 255, ${remaining * 0.8})`;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(0, 0, currentRadius, 0, Math.PI * 2);
         ctx.stroke();
-
-        // Энергетические частицы
-        ctx.strokeStyle = `rgba(255, 255, 255, ${remaining * 0.6})`;
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 12; i++) {
-            const angle = (i / 12) * Math.PI * 2 + progress * Math.PI;
-            const innerRadius = currentRadius * 0.7;
-            const outerRadius = currentRadius * 1.1;
-
-            const x1 = Math.cos(angle) * innerRadius;
-            const y1 = Math.sin(angle) * innerRadius;
-            const x2 = Math.cos(angle) * outerRadius;
-            const y2 = Math.sin(angle) * outerRadius;
-
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-        }
 
         ctx.restore();
     }
@@ -77,147 +91,306 @@ class ShieldEffect {
     }
 }
 
-class BulletExplosion {
-    constructor(x, y) {
+// === УЛУЧШЕННЫЙ КЛАСС ВЗРЫВА ===
+class Explosion {
+    constructor(x, y, type = 'tank') {
         this.position = new Vector2(x, y);
+        this.type = type;
         this.particles = [];
+        this.shockwaves = [];
         this.active = true;
-        this.lifetime = 20;
+        this.lifetime = 0;
+        this.maxLifetime = this.getMaxLifetime();
+        this.intensity = this.getIntensity();
 
-        // Создаем частицы
-        for (let i = 0; i < 8; i++) {
+        this.createParticles();
+        this.createShockwave();
+
+        // АКТИВИРУЕМ ТРЯСКУ КАМЕРЫ ПРЯМО ЗДЕСЬ
+        if (typeof game !== 'undefined') {
+            const shakeIntensity = this.getShakeIntensity();
+            game.screenShake = shakeIntensity;
+
+            // Разные звуки для разных типов взрывов
+            if (game.soundManager) {
+                if (type === 'base') {
+                    game.soundManager.play('baseExplosion');
+                } else if (type === 'tank') {
+                    game.soundManager.play('tankExplosion');
+                }
+            }
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Определяем интенсивность тряски
+    getShakeIntensity() {
+        const shakes = {
+            'tank': 10,
+            'base': 40,
+            'bullet': 5,
+            'bonus': 8
+        };
+        return shakes[this.type] || 10;
+    }
+
+    getMaxLifetime() {
+        const types = {
+            'tank': 60,
+            'base': 90,
+            'bullet': 30,
+            'bonus': 40
+        };
+        return types[this.type] || 60;
+    }
+
+    getIntensity() {
+        const intensities = {
+            'tank': 1.0,
+            'base': 2.0,
+            'bullet': 0.5,
+            'bonus': 0.7
+        };
+        return intensities[this.type] || 1.0;
+    }
+
+    createParticles() {
+        const particleCount = Math.floor(15 * this.intensity);
+        const colors = this.getParticleColors();
+
+        for (let i = 0; i < particleCount; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 3 * this.intensity;
+            const size = 2 + Math.random() * 4 * this.intensity;
+
             this.particles.push({
-                position: new Vector2(x, y),
-                velocity: new Vector2(
-                    (Math.random() - 0.5) * 6,
-                    (Math.random() - 0.5) * 6
-                ),
-                life: 20 + Math.random() * 10
+                position: new Vector2(this.position.x, this.position.y),
+                                velocity: new Vector2(
+                                    Math.cos(angle) * speed,
+                                                      Math.sin(angle) * speed
+                                ),
+                                size: size,
+                                startSize: size,
+                                color: colors[Math.floor(Math.random() * colors.length)],
+                                life: 1.0,
+                                decay: 0.02 + Math.random() * 0.03,
+                                rotation: Math.random() * Math.PI * 2,
+                                rotationSpeed: (Math.random() - 0.5) * 0.2
+            });
+        }
+    }
+
+    getParticleColors() {
+        const colorSchemes = {
+            'tank': ['#FF4444', '#FFAA00', '#FFFF00', '#FF6B00'],
+            'base': ['#FF0000', '#FF6B00', '#FFFF00', '#FFFFFF'],
+            'bullet': ['#FFFF00', '#FFA500', '#FF4500'],
+            'bonus': ['#FF4081', '#FF80AB', '#FFFFFF']
+        };
+        return colorSchemes[this.type] || colorSchemes.tank;
+    }
+
+    createShockwave() {
+        if (this.type === 'base' || this.type === 'tank') {
+            this.shockwaves.push({
+                radius: 5,
+                maxRadius: 80 * this.intensity,
+                thickness: 8,
+                life: 1.0,
+                decay: 0.03
             });
         }
     }
 
     update() {
-        this.lifetime--;
-        if (this.lifetime <= 0) {
-            this.active = false;
-        }
+        this.lifetime++;
 
+        // Обновляем частицы
         this.particles.forEach(particle => {
             particle.position = particle.position.add(particle.velocity);
-            particle.life--;
-            particle.velocity = particle.velocity.multiply(0.95);
+            particle.velocity = particle.velocity.multiply(0.95); // Сопротивление воздуха
+            particle.life -= particle.decay;
+            particle.size = particle.startSize * particle.life;
+            particle.rotation += particle.rotationSpeed;
         });
 
+        // Обновляем ударные волны
+        this.shockwaves.forEach(wave => {
+            wave.radius += 2;
+            wave.life -= wave.decay;
+            wave.thickness *= 0.95;
+        });
+
+        // Удаляем мертвые частицы и волны
         this.particles = this.particles.filter(p => p.life > 0);
-    }
+        this.shockwaves = this.shockwaves.filter(w => w.life > 0);
 
-    draw(ctx) {
-        if (!this.active) return;
-
-        this.particles.forEach(particle => {
-            const alpha = particle.life / 30;
-            ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
-            ctx.beginPath();
-            ctx.arc(
-                particle.position.x,
-                particle.position.y,
-                2,
-                0,
-                Math.PI * 2
-            );
-            ctx.fill();
-        });
-    }
-}
-
-class Explosion {
-    constructor(x, y, type = 'tank') {
-        this.position = new Vector2(x, y);
-        this.frame = 0;
-        this.totalFrames = type === 'tank' ? 8 : 12;
-        this.frameTime = 0;
-        this.frameDelay = type === 'tank' ? 50 : 40;
-        this.active = true;
-        this.size = type === 'tank' ? TILE_SIZE * 1.5 : TILE_SIZE * 2;
-        this.type = type;
-    }
-
-    update(deltaTime) {
-        this.frameTime += deltaTime;
-        if (this.frameTime >= this.frameDelay) {
-            this.frameTime = 0;
-            this.frame++;
-            if (this.frame >= this.totalFrames) {
-                this.active = false;
-            }
+        // Проверяем окончание взрыва
+        if (this.lifetime >= this.maxLifetime && this.particles.length === 0) {
+            this.active = false;
         }
     }
 
     draw(ctx) {
         if (!this.active) return;
 
+        const progress = this.lifetime / this.maxLifetime;
+
         ctx.save();
-        ctx.translate(this.position.x, this.position.y);
 
-        const progress = this.frame / this.totalFrames;
-        const scale = this.type === 'tank' ?
-            (0.5 + progress * 1.5) :
-            (0.3 + progress * 2.0);
-        const alpha = 1 - progress * 0.8;
-
-        ctx.globalAlpha = alpha;
-
-        if (this.type === 'tank') {
-            if (this.frame % 2 === 0) {
-                ctx.fillStyle = '#FF4444';
-            } else {
-                ctx.fillStyle = '#FFAA00';
-            }
-
-            const radius = (this.size / 2) * scale;
-
-            ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#FFFF00';
-            for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2 + progress * Math.PI;
-                const flashRadius = radius * 0.7;
-                const flashSize = radius * 0.4;
-                const x = Math.cos(angle) * flashRadius;
-                const y = Math.sin(angle) * flashRadius;
-
+        // Рисуем ударные волны
+        this.shockwaves.forEach(wave => {
+            if (wave.life > 0) {
+                const alpha = wave.life * 0.6;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.lineWidth = wave.thickness;
                 ctx.beginPath();
-                ctx.arc(x, y, flashSize * (0.5 + Math.sin(progress * 10) * 0.5), 0, Math.PI * 2);
-                ctx.fill();
+                ctx.arc(this.position.x, this.position.y, wave.radius, 0, Math.PI * 2);
+                ctx.stroke();
             }
-        } else {
-            ctx.fillStyle = '#FF4444';
-            const radius = (this.size / 2) * scale;
+        });
 
+        // Рисуем основное ядро взрыва (только в начале)
+        if (progress < 0.3) {
+            const coreSize = (1 - progress * 3) * 30 * this.intensity;
+            const gradient = ctx.createRadialGradient(
+                this.position.x, this.position.y, 0,
+                this.position.x, this.position.y, coreSize
+            );
+
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(0.3, 'rgba(255, 200, 0, 0.6)');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+
+            ctx.fillStyle = gradient;
             ctx.beginPath();
-            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.arc(this.position.x, this.position.y, coreSize, 0, Math.PI * 2);
             ctx.fill();
+        }
 
-            for (let i = 0; i < 3; i++) {
-                const circleProgress = progress - i * 0.2;
-                if (circleProgress > 0 && circleProgress < 0.8) {
-                    ctx.fillStyle = i === 0 ? '#FFFF00' : i === 1 ? '#FFAA00' : '#FF4444';
-                    const circleRadius = radius * (0.3 + circleProgress * 0.7);
-                    ctx.globalAlpha = alpha * (1 - circleProgress);
+        // Рисуем частицы
+        this.particles.forEach(particle => {
+            if (particle.life > 0) {
+                ctx.save();
+                ctx.translate(particle.position.x, particle.position.y);
+                ctx.rotate(particle.rotation);
+
+                ctx.fillStyle = particle.color;
+                ctx.globalAlpha = particle.life;
+
+                // Разные формы частиц для разнообразия
+                if (Math.random() > 0.5) {
+                    // Квадратная частица
+                    ctx.fillRect(-particle.size/2, -particle.size/2, particle.size, particle.size);
+                } else {
+                    // Круглая частица
                     ctx.beginPath();
-                    ctx.arc(0, 0, circleRadius, 0, Math.PI * 2);
+                    ctx.arc(0, 0, particle.size/2, 0, Math.PI * 2);
                     ctx.fill();
                 }
+
+                ctx.restore();
             }
+        });
+
+        // Эффект свечения для больших взрывов
+        if (this.intensity > 1.0 && progress < 0.5) {
+            const glowSize = 100 * this.intensity * (1 - progress * 2);
+            const gradient = ctx.createRadialGradient(
+                this.position.x, this.position.y, 0,
+                this.position.x, this.position.y, glowSize
+            );
+
+            gradient.addColorStop(0, 'rgba(255, 100, 0, 0.3)');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(this.position.x, this.position.y, glowSize, 0, Math.PI * 2);
+            ctx.fill();
         }
 
         ctx.restore();
     }
 }
 
+// === УЛУЧШЕННЫЙ ВЗРЫВ ПУЛЬ ===
+class BulletExplosion {
+    constructor(x, y, intensity = 1.0) {
+        this.position = new Vector2(x, y);
+        this.particles = [];
+        this.active = true;
+        this.lifetime = 0;
+        this.maxLifetime = 25;
+
+        // Создаем искры
+        for (let i = 0; i < 8; i++) {
+            this.particles.push({
+                position: new Vector2(x, y),
+                                velocity: new Vector2(
+                                    (Math.random() - 0.5) * 8,
+                                                      (Math.random() - 0.5) * 8
+                                ),
+                                size: 1 + Math.random() * 2,
+                                color: Math.random() > 0.5 ? '#FFFF00' : '#FFA500',
+                                life: 15 + Math.random() * 10,
+                                trail: []
+            });
+        }
+    }
+
+    update() {
+        this.lifetime++;
+
+        this.particles.forEach(particle => {
+            // Сохраняем след
+            particle.trail.push({
+                x: particle.position.x,
+                y: particle.position.y,
+                alpha: particle.life / 25
+            });
+
+            // Ограничиваем длину следа
+            if (particle.trail.length > 5) {
+                particle.trail.shift();
+            }
+
+            particle.position = particle.position.add(particle.velocity);
+            particle.life--;
+            particle.velocity = particle.velocity.multiply(0.92);
+        });
+
+        this.particles = this.particles.filter(p => p.life > 0);
+
+        if (this.lifetime >= this.maxLifetime && this.particles.length === 0) {
+            this.active = false;
+        }
+    }
+
+    draw(ctx) {
+        if (!this.active) return;
+
+        this.particles.forEach(particle => {
+            const alpha = particle.life / 25;
+
+            // Рисуем след
+            particle.trail.forEach((point, index) => {
+                const trailAlpha = alpha * (index / particle.trail.length) * 0.5;
+                ctx.fillStyle = `rgba(255, 200, 0, ${trailAlpha})`;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, particle.size * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Рисуем основную частицу
+            ctx.fillStyle = `rgba(255, 255, 0, ${alpha})`;
+            ctx.beginPath();
+            ctx.arc(particle.position.x, particle.position.y, particle.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+}
+
+// Анимация спавна (оставляем без изменений)
 class SpawnAnimation {
     constructor(x, y) {
         this.position = new Vector2(x, y);

@@ -87,7 +87,23 @@ const BONUS_TYPES = {
         symbol: '❤️',
         color: '#FF4081',
         duration: 0,
-        chance: 1.0, // Пока только один бонус
+        chance: 0.4,
+        sound: 'lifeBonus'
+    },
+    SHIELD: {
+        id: 'SHIELD',
+        symbol: '🛡️',
+        color: '#2196F3',
+        duration: 10000, // 10 секунд
+        chance: 0.3,
+        sound: 'bonusPickup'
+    },
+    FORTIFY: {
+        id: 'FORTIFY',
+        symbol: '🏰',
+        color: '#4CAF50',
+        duration: 60000, // 1 минута
+        chance: 0.3,
         sound: 'bonusPickup'
     }
     // Место для будущих бонусов:

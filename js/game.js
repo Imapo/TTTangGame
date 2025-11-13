@@ -41,6 +41,12 @@ class Game {
         this.updateLeaderboardUI();
         this.usedEnemyNames = new Set();
 
+        // НОВОЕ: Свойства для укрепления базы
+        this.baseFortified = false;
+        this.baseFortifyTime = 0;
+        this.baseFortifyDuration = 0;
+        this.originalBaseWalls = []; // Сохраняем оригинальные стены
+
         this.initLevel();
         this.setupEventListeners();
         this.gameLoop(0);
@@ -56,6 +62,12 @@ class Game {
         this.spawnAnimations = [];
         this.bonuses = []; // НОВОЕ: очищаем бонусы
         this.screenShake = 0;
+
+        // НОВОЕ: Сбрасываем укрепление базы
+        this.baseFortified = false;
+        this.baseFortifyTime = 0;
+        this.baseFortifyDuration = 0;
+        this.originalBaseWalls = [];
 
         this.enemiesDestroyed = 0;
         this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL;
@@ -368,7 +380,7 @@ class Game {
             if (destructionResult) {
                 if (destructionResult === 'base') {
                     this.explosions.push(new Explosion(bullet.position.x, bullet.position.y, 'base'));
-                    this.screenShake = 30;
+                    this.screenShake = 50;
                     this.soundManager.play('baseExplosion');
                     if (!this.gameOver) {
                         this.gameOver = true;
@@ -409,7 +421,11 @@ class Game {
 
                         if (destructionResult === true || destructionResult === 'bonus') {
                             this.explosions.push(new Explosion(enemy.position.x, enemy.position.y, 'tank'));
-                            this.screenShake = 10;
+                            if (enemy.enemyType === 'HEAVY') {
+                                this.screenShake = 25; // Сильная тряска для тяжелого танка
+                            } else {
+                                this.screenShake = 20; // Обычная тряска для танка
+                            }
                             this.soundManager.play('tankExplosion');
 
                             // НОВОЕ: Если танк имел бонус - создаем его
@@ -435,7 +451,7 @@ class Game {
                 if (!this.player.isDestroyed && bulletBounds.intersects(this.player.getBounds())) {
                     if (this.player.takeDamage()) {
                         this.explosions.push(new Explosion(this.player.position.x, this.player.position.y, 'tank'));
-                        this.screenShake = 20;
+                        this.screenShake = 35;
                         this.soundManager.play('tankExplosion');
 
                         if (bullet.shooter && bullet.owner === 'enemy') {
@@ -659,6 +675,40 @@ class Game {
         } else {
             this.shieldIndicator.style.display = 'none';
         }
+
+        // НОВОЕ: Обновление индикатора неуязвимости
+        this.updateInvincibilityIndicator();
+
+        // НОВОЕ: Обновление индикатора укрепления базы
+        this.updateFortifyIndicator();
+    }
+
+    // НОВЫЙ МЕТОД: Индикатор неуязвимости
+    updateInvincibilityIndicator() {
+        const indicator = document.getElementById('invincibilityIndicator');
+        const timeElement = document.getElementById('invincibilityTime');
+
+        if (!this.player.isDestroyed && this.player.isInvincible && !this.baseDestroyed) {
+            const remainingTime = (this.player.invincibilityDuration - this.player.invincibilityTimer) / 1000;
+            timeElement.textContent = remainingTime.toFixed(1);
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Индикатор укрепления базы
+    updateFortifyIndicator() {
+        const indicator = document.getElementById('fortifyIndicator');
+        const timeElement = document.getElementById('fortifyTime');
+
+        if (this.baseFortified && !this.baseDestroyed) {
+            const remainingTime = (this.baseFortifyDuration - this.baseFortifyTime) / 1000;
+            timeElement.textContent = remainingTime.toFixed(1);
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
     }
 
     showLevelComplete() {
@@ -718,14 +768,237 @@ class Game {
 
     updateScreenShake() {
         if (this.screenShake > 0) {
+            const intensity = this.screenShake;
+
+            let offsetX, offsetY, rotation = 0;
+
+            if (intensity > 30) { // Большие взрывы (игрок, база)
+                offsetX = (Math.random() - 0.5) * intensity * 2.5;
+                offsetY = (Math.random() - 0.5) * intensity * 2.5;
+                rotation = (Math.random() - 0.5) * intensity * 0.08;
+            } else { // Малые/средние взрывы
+                offsetX = (Math.random() - 0.5) * intensity * 2.0;
+                offsetY = (Math.random() - 0.5) * intensity * 2.0;
+            }
+
+            this.canvas.style.transform = `translate(${offsetX}px, ${offsetY}px) rotate(${rotation}deg)`;
             this.screenShake--;
-            const shakeIntensity = this.screenShake * 0.5;
-            const offsetX = (Math.random() - 0.5) * shakeIntensity;
-            const offsetY = (Math.random() - 0.5) * shakeIntensity;
-            this.canvas.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
         } else {
-            this.canvas.style.transform = 'translate(0, 0)';
+            this.canvas.style.transform = 'translate(0, 0) rotate(0deg)';
         }
+    }
+
+    // НОВЫЙ МЕТОД: Укрепление базы
+    fortifyBase(duration) {
+        if (this.baseFortified) {
+            console.log('🏰 База уже укреплена, продлеваем время');
+            this.baseFortifyDuration = Math.max(this.baseFortifyDuration, duration);
+            return;
+        }
+
+        console.log(`🏰 Укрепляем базу на ${duration/1000}сек`);
+        this.baseFortified = true;
+        this.baseFortifyTime = 0;
+        this.baseFortifyDuration = duration;
+
+        // Сохраняем оригинальные стены базы
+        this.saveOriginalBaseWalls();
+
+        // Заменяем кирпичные стены на бетонные
+        this.upgradeBaseWalls();
+    }
+
+    // НОВЫЙ МЕТОД: Укрепление базы
+    fortifyBase(duration) {
+        if (this.baseFortified) {
+            console.log('🏰 База уже укреплена, продлеваем время');
+            this.baseFortifyDuration = Math.max(this.baseFortifyDuration, duration);
+            return;
+        }
+
+        console.log(`🏰 Укрепляем базу на ${duration/1000}сек`);
+        this.baseFortified = true;
+        this.baseFortifyTime = 0;
+        this.baseFortifyDuration = duration;
+
+        // Сохраняем оригинальные стены базы
+        this.saveOriginalBaseWalls();
+    }
+
+    // НОВЫЙ МЕТОД: Сохраняем оригинальные стены с их состоянием
+    saveOriginalBaseWalls() {
+        this.originalBaseWalls = [];
+        const baseX = Math.floor(this.map.width / 2);
+        const baseY = this.map.height - 2;
+
+        const wallPositions = [
+            [baseX - 1, baseY - 1], [baseX - 1, baseY], [baseX - 1, baseY + 1],
+            [baseX + 1, baseY - 1], [baseX + 1, baseY], [baseX + 1, baseY + 1],
+            [baseX, baseY - 1], [baseX, baseY + 1]
+        ];
+
+        wallPositions.forEach(([x, y]) => {
+            if (x >= 0 && x < this.map.width && y >= 0 && y < this.map.height) {
+                const key = `${x},${y}`;
+                const originalTile = this.map.grid[y][x];
+
+                // СОХРАНЯЕМ ССЫЛКУ НА ОРИГИНАЛЬНЫЙ КИРПИЧНЫЙ ТАЙЛ
+                if (originalTile === TILE_TYPES.BRICK && this.map.brickTiles.has(key)) {
+                    this.originalBaseWalls.push({
+                        x: x,
+                        y: y,
+                        type: originalTile,
+                        brickTile: this.map.brickTiles.get(key) // Сохраняем сам объект!
+                    });
+                } else {
+                    this.originalBaseWalls.push({
+                        x: x,
+                        y: y,
+                        type: originalTile,
+                        brickTile: null
+                    });
+                }
+            }
+        });
+    }
+
+    // НОВЫЙ МЕТОД: Восстанавливаем стены с их оригинальным состоянием
+    permanentlyRestoreWalls() {
+        console.log('🔧 Восстанавливаем стены базы с оригинальным состоянием...');
+
+        this.originalBaseWalls.forEach(wall => {
+            if (wall.x >= 0 && wall.x < this.map.width && wall.y >= 0 && wall.y < this.map.height) {
+                this.map.grid[wall.y][wall.x] = wall.type;
+
+                const key = `${wall.x},${wall.y}`;
+
+                // Удаляем старый тайл (если есть)
+                if (this.map.brickTiles.has(key)) {
+                    this.map.brickTiles.delete(key);
+                }
+
+                if (wall.type === TILE_TYPES.BRICK) {
+                    // Создаем новый кирпичный тайл
+                    const newBrick = new BrickTile(wall.x, wall.y);
+
+                    if (wall.isDestroyed) {
+                        // Восстанавливаем разрушенное состояние
+                        newBrick.health = 0;
+                        newBrick.isDestroyed = true;
+
+                        // Воссоздаем осколки
+                        newBrick.fragments = [];
+                        wall.fragments.forEach(fragmentData => {
+                            const fragment = new BrickFragment(
+                                fragmentData.position.x,
+                                fragmentData.position.y,
+                                fragmentData.size
+                            );
+                            fragment.color = fragmentData.color;
+                            fragment.active = fragmentData.active;
+                            newBrick.fragments.push(fragment);
+                        });
+
+                        console.log(`🔧 Восстановлена разрушенная стена [${wall.x},${wall.y}] с ${newBrick.fragments.length} осколками`);
+                    } else {
+                        // Восстанавливаем целое состояние с оригинальным здоровьем
+                        newBrick.health = wall.health;
+                        console.log(`🔧 Восстановлена целая стена [${wall.x},${wall.y}] с здоровьем ${newBrick.health}`);
+                    }
+
+                    this.map.brickTiles.set(key, newBrick);
+                }
+            }
+        });
+
+        this.originalBaseWalls = [];
+        console.log('🔧 Восстановление стен завершено');
+    }
+
+    // НОВЫЙ МЕТОД: Обновление укрепления базы
+    updateBaseFortification() {
+        if (this.baseFortified) {
+            this.baseFortifyTime += this.deltaTime;
+
+            // Мигание перед окончанием (последние 5 секунд)
+            if (this.baseFortifyDuration - this.baseFortifyTime < 5000) {
+                const blink = Math.floor(this.baseFortifyTime / 200) % 2 === 0;
+                if (blink) {
+                    // Временно показываем оригинальные стены
+                    this.temporarilyRestoreWalls();
+                } else {
+                    // Возвращаем укрепленные стены
+                    this.temporarilyUpgradeWalls();
+                }
+            } else {
+                // Всегда укрепленные стены, кроме момента мигания
+                this.temporarilyUpgradeWalls();
+            }
+
+            if (this.baseFortifyTime >= this.baseFortifyDuration) {
+                this.baseFortified = false;
+                // ВОССТАНАВЛИВАЕМ ОРИГИНАЛЬНЫЕ СТЕНЫ НАВСЕГДА
+                this.permanentlyRestoreWalls();
+                console.log('🏰 Укрепление базы закончилось');
+            }
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Временное восстановление стен (для мигания)
+    temporarilyRestoreWalls() {
+        this.originalBaseWalls.forEach(wall => {
+            if (wall.x >= 0 && wall.x < this.map.width && wall.y >= 0 && wall.y < this.map.height) {
+                this.map.grid[wall.y][wall.x] = wall.type;
+
+                // ВОССТАНАВЛИВАЕМ ОРИГИНАЛЬНЫЙ КИРПИЧНЫЙ ТАЙЛ
+                if (wall.type === TILE_TYPES.BRICK && wall.brickTile) {
+                    const key = `${wall.x},${wall.y}`;
+                    this.map.brickTiles.set(key, wall.brickTile);
+                }
+            }
+        });
+    }
+
+    // НОВЫЙ МЕТОД: Временное укрепление стен
+    temporarilyUpgradeWalls() {
+        this.originalBaseWalls.forEach(wall => {
+            if (wall.x >= 0 && wall.x < this.map.width && wall.y >= 0 && wall.y < this.map.height) {
+                // Временно заменяем на бетон
+                this.map.grid[wall.y][wall.x] = TILE_TYPES.CONCRETE;
+
+                // УДАЛЯЕМ КИРПИЧНЫЙ ТАЙЛ ИЗ КАРТЫ (но сохраняем в originalBaseWalls)
+                if (wall.type === TILE_TYPES.BRICK) {
+                    const key = `${wall.x},${wall.y}`;
+                    this.map.brickTiles.delete(key);
+                }
+            }
+        });
+    }
+
+    // НОВЫЙ МЕТОД: Постоянное восстановление оригинальных стен
+    permanentlyRestoreWalls() {
+        console.log('🔧 Восстанавливаем оригинальные стены базы...');
+
+        this.originalBaseWalls.forEach(wall => {
+            if (wall.x >= 0 && wall.x < this.map.width && wall.y >= 0 && wall.y < this.map.height) {
+                this.map.grid[wall.y][wall.x] = wall.type;
+
+                // ВОССТАНАВЛИВАЕМ ОРИГИНАЛЬНЫЙ КИРПИЧНЫЙ ТАЙЛ
+                if (wall.type === TILE_TYPES.BRICK && wall.brickTile) {
+                    const key = `${wall.x},${wall.y}`;
+                    this.map.brickTiles.set(key, wall.brickTile);
+                    console.log(`🔧 Восстановлен оригинальный кирпичный тайл для [${wall.x},${wall.y}] (разрушен: ${wall.brickTile.isDestroyed})`);
+                } else if (wall.type === TILE_TYPES.BRICK && !wall.brickTile) {
+                    // Если кирпичного тайла не было (на всякий случай)
+                    const key = `${wall.x},${wall.y}`;
+                    this.map.brickTiles.set(key, new BrickTile(wall.x, wall.y));
+                    console.log(`🔧 Создан новый кирпичный тайл для [${wall.x},${wall.y}]`);
+                }
+            }
+        });
+
+        this.originalBaseWalls = [];
+        console.log('🔧 Восстановление стен завершено');
     }
 
     gameLoop(currentTime) {
@@ -748,6 +1021,9 @@ class Game {
             this.updateScreenShake();
             this.updateShieldIndicator();
 
+            // НОВОЕ: Обновление укрепления базы
+            this.updateBaseFortification();
+
             // НОВОЕ: Обновление бонусов
             this.updateBonuses();
 
@@ -760,8 +1036,14 @@ class Game {
     }
 
     render() {
-        this.ctx.fillStyle = '#000';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        if (this.screenShake > 0) {
+            const intensity = this.screenShake / 50; // 0.0 - 1.0
+            this.ctx.fillStyle = `rgba(255, 100, 0, ${intensity * 0.3})`;
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
 
         this.map.draw(this.ctx);
 

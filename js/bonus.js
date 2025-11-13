@@ -108,13 +108,12 @@ class Bonus {
             case 'LIFE':
                 this.applyLifeBonus(game);
                 break;
-                // Место для будущих бонусов:
-                // case 'STAR':
-                //     this.applyStarBonus(game);
-                //     break;
-                // case 'GRENADE':
-                //     this.applyGrenadeBonus(game);
-                //     break;
+            case 'SHIELD':
+                this.applyShieldBonus(game);
+                break;
+            case 'FORTIFY':
+                this.applyFortifyBonus(game);
+                break;
             default:
                 console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
         }
@@ -129,7 +128,6 @@ class Bonus {
         game.lives++;
         game.updateUI();
 
-        // Визуальный эффект
         game.explosions.push(new Explosion(
             this.position.x,
             this.position.y,
@@ -137,26 +135,32 @@ class Bonus {
         ));
     }
 
-    // Методы для будущих бонусов:
-    /*
-     *   applyStarBonus(game) {
-     *       game.player.upgradeTank();
-}
+    applyShieldBonus(game) {
+        if (!game.player.isDestroyed) {
+            game.player.activateInvincibility(this.type.duration);
 
-applyGrenadeBonus(game) {
-game.destroyAllEnemies();
-}
+            // Визуальный эффект
+            game.explosions.push(new Explosion(
+                this.position.x,
+                this.position.y,
+                'bonus'
+            ));
 
-applyHelmetBonus(game) {
-game.player.activateInvincibility(this.type.duration);
-}
+            // Тряска экрана
+            game.screenShake = 15;
+        }
+    }
 
-applyShovelBonus(game) {
-game.fortifyBase(this.type.duration);
-}
+    applyFortifyBonus(game) {
+        game.fortifyBase(this.type.duration);
 
-applyClockBonus(game) {
-game.freezeEnemies(this.type.duration);
-}
-*/
+        // Визуальный эффект вокруг базы
+        const baseX = Math.floor(game.map.width / 2) * TILE_SIZE + TILE_SIZE/2;
+        const baseY = (game.map.height - 2) * TILE_SIZE + TILE_SIZE/2;
+
+        game.explosions.push(new Explosion(baseX, baseY, 'bonus'));
+
+        // Сильная тряска для важного бонуса
+        game.screenShake = 20;
+    }
 }
