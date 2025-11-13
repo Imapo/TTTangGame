@@ -105,6 +105,14 @@ const BONUS_TYPES = {
         duration: 60000, // 1 минута
         chance: 0.3,
         sound: 'bonusPickup'
+    },
+    AUTO_AIM: {
+        id: 'AUTO_AIM',
+        symbol: '🎯',
+        color: '#9C27B0',
+        duration: 15000, // 15 секунд
+        chance: 0.2,
+        sound: 'bonusPickup'
     }
     // Место для будущих бонусов:
     // STAR: { id: 'STAR', symbol: '★', color: '#FFD700', duration: 0, chance: 0.25 },

@@ -46,9 +46,39 @@ class Tank {
         this.invincibilityDuration = 0;
         this.invincibilityBlink = 0;
 
+        // НОВОЕ: Свойства для автонаведения
+        this.hasAutoAim = false;
+        this.autoAimTimer = 0;
+        this.autoAimDuration = 0;
+        this.autoAimBlink = 0;
+
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Активация автонаведения
+    activateAutoAim(duration) {
+        if (this.type !== 'player') return; // Только для игрока
+
+        this.hasAutoAim = true;
+        this.autoAimDuration = duration;
+        this.autoAimTimer = 0;
+        this.autoAimBlink = 0;
+        console.log(`🎯 Активировано автонаведение на ${duration/1000}сек`);
+    }
+
+    // НОВЫЙ МЕТОД: Обновление автонаведения
+    updateAutoAim() {
+        if (this.hasAutoAim) {
+            this.autoAimTimer += 16; // примерно 60 FPS
+            this.autoAimBlink++;
+
+            if (this.autoAimTimer >= this.autoAimDuration) {
+                this.hasAutoAim = false;
+                console.log('🎯 Автонаведение закончилось');
+            }
         }
     }
 
@@ -135,6 +165,9 @@ class Tank {
         // Обновляем неуязвимость
         this.updateInvincibility();
 
+        // НОВОЕ: Обновляем автонаведение
+        this.updateAutoAim();
+
         if (this.spawnProtection > 0) {
             this.spawnProtection--;
         }
@@ -161,6 +194,43 @@ class Tank {
         }
     }
 
+    // НОВЫЙ МЕТОД: Поиск ближайшего врага для автонаведения
+    findNearestTarget(enemies, map) {
+        if (!this.hasAutoAim || enemies.length === 0) return null;
+
+        let nearestEnemy = null;
+        let nearestDistance = Infinity;
+
+        enemies.forEach(enemy => {
+            if (enemy.isDestroyed) return;
+
+            const distance = Math.sqrt(
+                Math.pow(this.position.x - enemy.position.x, 2) +
+                Math.pow(this.position.y - enemy.position.y, 2)
+            );
+
+            // Проверяем прямую видимость (упрощенно)
+            if (this.hasLineOfSight(enemy, map) && distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestEnemy = enemy;
+            }
+        });
+
+        return nearestEnemy;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка прямой видимости (упрощенная)
+    hasLineOfSight(target, map) {
+        // Упрощенная проверка - только расстояние
+        // Можно улучшить проверкой коллизий с картой
+        const distance = Math.sqrt(
+            Math.pow(this.position.x - target.position.x, 2) +
+            Math.pow(this.position.y - target.position.y, 2)
+        );
+
+        return distance < 400; // Максимальная дальность автонаведения
+    }
+
     // Новый метод для разрешения столкновений между танками
     resolveTankCollision(otherTank) {
         const dx = this.position.x - otherTank.position.x;
@@ -184,8 +254,23 @@ class Tank {
         }
     }
 
+    // НОВЫЕ МЕТОДЫ ДЛЯ АКТИВАЦИИ БОНУСОВ
     activateShield() {
         this.shield = new ShieldEffect(this);
+    }
+
+    activateInvincibility() {
+        this.isInvincible = true;
+        this.invincibilityTimer = 0;
+        this.invincibilityDuration = 10000; // 10 секунд
+        console.log('⭐ Активирована неуязвимость!');
+    }
+
+    activateAutoAim() {
+        this.hasAutoAim = true;
+        this.autoAimTimer = 0;
+        this.autoAimDuration = 20000; // 20 секунд
+        console.log('🎯 Активировано автонаведение!');
     }
 
     hasShield() {
@@ -271,7 +356,7 @@ class Tank {
             }
     }
 
-    shoot() {
+    shoot(nearestEnemy = null) {
         if (this.isDestroyed || !this.canShoot) return null;
 
         this.canShoot = false;
@@ -279,12 +364,28 @@ class Tank {
         this.enemyType === 'FAST' ? 25 :
         this.enemyType === 'HEAVY' ? 60 : 40;
 
+        let direction = this.direction;
+
+        // НОВОЕ: Автонаведение для игрока
+        if (this.type === 'player' && this.hasAutoAim && nearestEnemy) {
+            const dx = nearestEnemy.position.x - this.position.x;
+            const dy = nearestEnemy.position.y - this.position.y;
+
+            // Определяем направление к цели
+            if (Math.abs(dx) > Math.abs(dy)) {
+                direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+            } else {
+                direction = dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+            }
+        }
+
         const directionVector = new Vector2(this.direction.x, this.direction.y);
         const offset = directionVector.multiply(this.size / 2 + 5);
         const bulletX = this.position.x + offset.x;
         const bulletY = this.position.y + offset.y;
 
-        const bullet = new Bullet(bulletX, bulletY, this.direction, this.type, this);
+        // НОВОЕ: Передаем информацию об автонаведении в пулю
+        const bullet = new Bullet(bulletX, bulletY, direction, this.type, this, this.hasAutoAim, nearestEnemy);
 
         if (this.type === 'enemy' && typeof game !== 'undefined') {
             game.soundManager.playEnemyShot(this.enemyType);
@@ -346,6 +447,11 @@ class Tank {
         // Сброс тени
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
+
+        // НОВОЕ: Рисуем электронный блок автонаведения
+        if (this.hasAutoAim && this.type === 'player') {
+            this.drawAutoAimDevice(ctx);
+        }
 
         ctx.restore();
 
@@ -433,6 +539,55 @@ class Tank {
             ctx.lineTo(x2, y2);
             ctx.stroke();
         }
+
+        ctx.restore();
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка электронного блока автонаведения
+    drawAutoAimDevice(ctx) {
+        ctx.save();
+
+        // Позиция на задней части танка
+        const blockWidth = this.size * 0.4;
+        const blockHeight = this.size * 0.3;
+        const blockX = -this.size/2 + 2;
+        const blockY = -blockHeight/2;
+
+        // Основа блока
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Обводка
+        ctx.strokeStyle = '#34495E';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Мигающие индикаторы
+        const time = Date.now() * 0.001;
+        const ledSize = blockWidth * 0.15;
+
+        // Синий индикатор (мигает быстро)
+        const blueAlpha = 0.3 + Math.sin(time * 8) * 0.3;
+        ctx.fillStyle = `rgba(0, 150, 255, ${blueAlpha})`;
+        ctx.fillRect(blockX + blockWidth * 0.2, blockY + blockHeight * 0.3, ledSize, ledSize);
+
+        // Зеленый индикатор (мигает средне)
+        const greenAlpha = 0.3 + Math.sin(time * 5 + 1) * 0.3;
+        ctx.fillStyle = `rgba(0, 255, 100, ${greenAlpha})`;
+        ctx.fillRect(blockX + blockWidth * 0.5, blockY + blockHeight * 0.3, ledSize, ledSize);
+
+        // Красный индикатор (мигает медленно)
+        const redAlpha = 0.3 + Math.sin(time * 3 + 2) * 0.3;
+        ctx.fillStyle = `rgba(255, 50, 50, ${redAlpha})`;
+        ctx.fillRect(blockX + blockWidth * 0.8, blockY + blockHeight * 0.3, ledSize, ledSize);
+
+        // Свечение
+        ctx.shadowColor = '#9C27B0';
+        ctx.shadowBlur = 5;
+        ctx.strokeStyle = `rgba(156, 39, 176, 0.3)`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX - 1, blockY - 1, blockWidth + 2, blockHeight + 2);
+        ctx.shadowBlur = 0;
 
         ctx.restore();
     }

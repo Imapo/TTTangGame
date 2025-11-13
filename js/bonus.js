@@ -114,6 +114,9 @@ class Bonus {
             case 'FORTIFY':
                 this.applyFortifyBonus(game);
                 break;
+            case 'AUTO_AIM':
+                this.applyAutoAimBonus(game);
+                break;
             default:
                 console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
         }
@@ -162,5 +165,21 @@ class Bonus {
 
         // Сильная тряска для важного бонуса
         game.screenShake = 20;
+    }
+
+    applyAutoAimBonus(game) {
+        if (!game.player.isDestroyed) {
+            game.player.activateAutoAim(this.type.duration);
+
+            // Визуальный эффект
+            game.explosions.push(new Explosion(
+                this.position.x,
+                this.position.y,
+                'bonus'
+            ));
+
+            // Тряска экрана
+            game.screenShake = 10;
+        }
     }
 }

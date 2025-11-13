@@ -52,6 +52,68 @@ class Game {
         this.gameLoop(0);
     }
 
+    // НОВЫЕ МЕТОДЫ ДЛЯ ТЕСТИРОВАНИЯ
+    debugTogglePanel() {
+        const panel = document.getElementById('debugPanel');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    debugAddBonus(bonusType) {
+        if (this.player.isDestroyed) return;
+
+        console.log(`🎁 Выдаем бонус: ${bonusType}`);
+
+        switch(bonusType) {
+            case 'SHIELD':
+                this.player.activateShield();
+                break;
+            case 'INVINCIBILITY':
+                this.player.activateInvincibility();
+                break;
+            case 'AUTO_AIM':
+                this.player.activateAutoAim();
+                break;
+            case 'FORTIFY':
+                this.fortifyBase(30000); // 30 секунд
+                break;
+        }
+
+        this.updateShieldIndicator();
+    }
+
+    debugAddLife() {
+        this.lives++;
+        this.updateUI();
+        console.log(`❤️ Добавлена жизнь. Всего: ${this.lives}`);
+    }
+
+    debugSpawnEnemyWithBonus(enemyType) {
+        const spawnPoint = this.getNextSpawnPoint();
+
+        this.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
+
+        // Создаем врага с бонусом после анимации
+        setTimeout(() => {
+            const uniqueName = this.generateUniqueEnemyName(enemyType);
+            const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
+            enemy.direction = DIRECTIONS.DOWN;
+            enemy.username = uniqueName;
+
+            // Даем врагу случайный бонус
+            const bonusTypes = ['SHIELD', 'INVINCIBILITY', 'AUTO_AIM', 'FORTIFY'];
+            const randomBonus = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
+            enemy.hasBonus = true;
+            enemy.bonusType = BONUS_TYPES[randomBonus];
+
+            this.enemies.push(enemy);
+            console.log(`🎁 Создан ${enemyType} танк с бонусом: ${randomBonus}`);
+        }, 1000);
+    }
+
     initLevel() {
         this.map = new GameMap(this.level);
         this.player = new Tank(224, 750);
@@ -340,7 +402,13 @@ class Game {
         }
 
         if ((this.keys['Space'] || this.keys['Enter']) && this.player.canShoot && !this.player.isDestroyed && !this.baseDestroyed) {
-            const bullet = this.player.shoot();
+            // НОВОЕ: Поиск цели для автонаведения
+            let nearestEnemy = null;
+            if (this.player.hasAutoAim) {
+                nearestEnemy = this.player.findNearestTarget(this.enemies, this.map);
+            }
+
+            const bullet = this.player.shoot(nearestEnemy); // Передаем nearestEnemy в метод shoot
             if (bullet) {
                 this.bullets.push(bullet);
                 this.soundManager.play('playerShot');
@@ -374,6 +442,7 @@ class Game {
 
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const bullet = this.bullets[i];
+            bullet.deltaTime = this.deltaTime; // Передаем deltaTime для таймера
             bullet.update();
 
             const destructionResult = this.map.checkBulletCollision(bullet);
@@ -678,9 +747,24 @@ class Game {
 
         // НОВОЕ: Обновление индикатора неуязвимости
         this.updateInvincibilityIndicator();
-
         // НОВОЕ: Обновление индикатора укрепления базы
         this.updateFortifyIndicator();
+        // НОВОЕ: Обновление индикатора автонаведения
+        this.updateAutoAimIndicator();
+    }
+
+    // НОВЫЙ МЕТОД: Индикатор автонаведения
+    updateAutoAimIndicator() {
+        const indicator = document.getElementById('autoaimIndicator');
+        const timeElement = document.getElementById('autoaimTime');
+
+        if (!this.player.isDestroyed && this.player.hasAutoAim && !this.baseDestroyed) {
+            const remainingTime = (this.player.autoAimDuration - this.player.autoAimTimer) / 1000;
+            timeElement.textContent = remainingTime.toFixed(1);
+            indicator.style.display = 'block';
+        } else {
+            indicator.style.display = 'none';
+        }
     }
 
     // НОВЫЙ МЕТОД: Индикатор неуязвимости
