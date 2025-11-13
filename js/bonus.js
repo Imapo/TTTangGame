@@ -1,7 +1,7 @@
 // === СИСТЕМА БОНУСОВ ===
 
 class Bonus {
-    constructor(x, y, type) {
+    constructor(x, y, type, game) {
         this.position = new Vector2(x, y);
         this.type = type;
         this.active = true;
@@ -11,6 +11,7 @@ class Bonus {
         this.blinkTimer = 0;
         this.animationPhase = 0;
         this.pulsePhase = 0;
+        this.game = game; // Сохраняем ссылку на game
 
         console.log(`🎁 Создан бонус ${type.id} в (${Math.round(x)}, ${Math.round(y)})`);
     }
@@ -101,85 +102,86 @@ class Bonus {
         );
     }
 
-    applyBonus(game) {
+    applyBonus() {
         console.log(`Подобран бонус: ${this.type.id}`);
 
         switch(this.type.id) {
             case 'LIFE':
-                this.applyLifeBonus(game);
+                this.applyLifeBonus();
                 break;
             case 'SHIELD':
-                this.applyShieldBonus(game);
+                this.applyShieldBonus();
                 break;
             case 'FORTIFY':
-                this.applyFortifyBonus(game);
+                this.applyFortifyBonus();
                 break;
             case 'AUTO_AIM':
-                this.applyAutoAimBonus(game);
+                this.applyAutoAimBonus();
                 break;
             default:
                 console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
         }
 
         // Воспроизводим звук бонуса
-        if (game.soundManager) {
-            game.soundManager.play(this.type.sound || 'bonusPickup');
+        if (this.game.soundManager) {
+            this.game.soundManager.play(this.type.sound || 'bonusPickup');
         }
     }
 
-    applyLifeBonus(game) {
-        game.lives++;
-        game.updateUI();
+    applyLifeBonus() {
+        this.game.lives++;
+        if (this.game.updateUI) {
+            this.game.updateUI();
+        }
 
-        game.explosions.push(new Explosion(
-            this.position.x,
-            this.position.y,
-            'bonus'
-        ));
+        this.createExplosionEffect();
     }
 
-    applyShieldBonus(game) {
-        if (!game.player.isDestroyed) {
-            game.player.activateInvincibility(this.type.duration);
+    applyShieldBonus() {
+        if (!this.game.player.isDestroyed) {
+            this.game.player.activateInvincibility(this.type.duration);
 
             // Визуальный эффект
-            game.explosions.push(new Explosion(
-                this.position.x,
-                this.position.y,
-                'bonus'
-            ));
+            this.createExplosionEffect();
 
             // Тряска экрана
-            game.screenShake = 15;
+            this.game.screenShake = 15;
         }
     }
 
-    applyFortifyBonus(game) {
-        game.fortifyBase(this.type.duration);
+    applyFortifyBonus() {
+        if (this.game.fortifyBase) {
+            this.game.fortifyBase(this.type.duration);
+        }
 
         // Визуальный эффект вокруг базы
-        const baseX = Math.floor(game.map.width / 2) * TILE_SIZE + TILE_SIZE/2;
-        const baseY = (game.map.height - 2) * TILE_SIZE + TILE_SIZE/2;
+        const baseX = Math.floor(this.game.map.width / 2) * TILE_SIZE + TILE_SIZE/2;
+        const baseY = (this.game.map.height - 2) * TILE_SIZE + TILE_SIZE/2;
 
-        game.explosions.push(new Explosion(baseX, baseY, 'bonus'));
+        this.createExplosionEffect(baseX, baseY);
 
         // Сильная тряска для важного бонуса
-        game.screenShake = 20;
+        this.game.screenShake = 20;
     }
 
-    applyAutoAimBonus(game) {
-        if (!game.player.isDestroyed) {
-            game.player.activateAutoAim(this.type.duration);
+    applyAutoAimBonus() {
+        if (!this.game.player.isDestroyed) {
+            this.game.player.activateAutoAim(this.type.duration);
 
             // Визуальный эффект
-            game.explosions.push(new Explosion(
-                this.position.x,
-                this.position.y,
-                'bonus'
-            ));
+            this.createExplosionEffect();
 
             // Тряска экрана
-            game.screenShake = 10;
+            this.game.screenShake = 10;
+        }
+    }
+
+    createExplosionEffect(x = this.position.x, y = this.position.y) {
+        // Проверяем, существует ли массив explosions и функция Explosion
+        if (this.game.explosions && typeof Explosion !== 'undefined') {
+            this.game.explosions.push(new Explosion(x, y, 'bonus'));
+        } else {
+            console.warn('Не удалось создать эффект взрыва: explosions массив или Explosion класс недоступны');
         }
     }
 }
