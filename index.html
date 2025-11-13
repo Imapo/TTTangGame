@@ -60,6 +60,55 @@
                 <!-- записи будут здесь -->
             </div>
         </div>
+
+        <div class="status-indicators">
+            <div class="invincibility-indicator" id="invincibilityIndicator">
+                🛡️ Неуязвимость: <span id="invincibilityTime">0.0</span>с
+            </div>
+            <div class="fortify-indicator" id="fortifyIndicator">
+                🏰 Укрепление базы: <span id="fortifyTime">0.0</span>с
+            </div>
+            <!-- НОВЫЙ ИНДИКАТОР -->
+            <div class="autoaim-indicator" id="autoaimIndicator">
+                🎯 Автонаведение: <span id="autoaimTime">0.0</span>с
+            </div>
+        </div>
+
+        <!-- Добавь этот код перед закрывающим тегом </body> -->
+        <div id="debugPanel" style="position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; color: white; font-family: Arial; z-index: 1000; display: none;">
+            <h3 style="margin: 0 0 10px 0; color: #ffcc00;">🎮 Тест бонусов</h3>
+
+            <div style="margin-bottom: 10px;">
+                <strong>Игрок:</strong>
+                <button onclick="game.debugAddBonus('SHIELD')">🛡️ Щит</button>
+                <button onclick="game.debugAddBonus('INVINCIBILITY')">⭐ Неуязвимость</button>
+                <button onclick="game.debugAddBonus('AUTO_AIM')">🎯 Автонаведение</button>
+                <button onclick="game.debugAddBonus('FORTIFY')">🏰 Укрепить базу</button>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <strong>Враги:</strong>
+                <button onclick="game.debugSpawnEnemyWithBonus('BASIC')">🔴 Базовый + бонус</button>
+                <button onclick="game.debugSpawnEnemyWithBonus('FAST')">🟡 Быстрый + бонус</button>
+                <button onclick="game.debugSpawnEnemyWithBonus('HEAVY')">🟣 Тяжелый + бонус</button>
+            </div>
+
+            <div>
+                <strong>Другое:</strong>
+                <button onclick="game.debugAddLife()">❤️ +1 жизнь</button>
+                <button onclick="game.debugTogglePanel()">❌ Закрыть</button>
+            </div>
+        </div>
+
+        <!-- Клавиша для открытия/закрытия панели (например, F2) -->
+        <script>
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'F2' && typeof game !== 'undefined') {
+                game.debugTogglePanel();
+                e.preventDefault();
+            }
+        });
+        </script>
     </div>
 
     <!-- Подключаем модули -->
