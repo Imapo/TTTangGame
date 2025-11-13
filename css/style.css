@@ -182,3 +182,26 @@ border: 2px solid #FFD700;
     color: #aaa;
     margin-left: 5px;
 }
+
+.status-indicators {
+    position: absolute;
+    top: 50px;
+    left: 10px;
+    z-index: 100;
+}
+
+.invincibility-indicator,
+.fortify-indicator {
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 5px;
+    margin-bottom: 5px;
+    font-size: 12px;
+    display: none;
+    border-left: 3px solid #2196F3;
+}
+
+.fortify-indicator {
+    border-left-color: #4CAF50;
+}
