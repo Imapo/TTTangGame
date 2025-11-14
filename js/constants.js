@@ -113,6 +113,13 @@ const BONUS_TYPES = {
         duration: 15000, // 15 секунд
         chance: 0.2,
         sound: 'bonusPickup'
+    },
+    TIME_STOP: {
+        id: 'TIME_STOP',
+        symbol: '⏰',
+        color: '#00FFFF',
+        sound: 'timeStop',
+        duration: 8000 // 8 секунд остановки времени
     }
     // Место для будущих бонусов:
     // STAR: { id: 'STAR', symbol: '★', color: '#FFD700', duration: 0, chance: 0.25 },

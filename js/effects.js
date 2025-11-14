@@ -434,3 +434,142 @@ class SpawnAnimation {
         ctx.restore();
     }
 }
+
+class TimeWave {
+    constructor(x, y, duration) {
+        this.position = new Vector2(x, y);
+        this.radius = 5;
+        this.maxRadius = 1000; // Увеличиваем радиус
+        this.speed = 8; // Увеличиваем скорость
+        this.active = true;
+        this.duration = duration;
+        this.particles = [];
+        this.distortionPoints = [];
+        this.startTime = Date.now();
+
+        this.createDistortionPoints();
+        console.log(`🌀 Создана волна времени в (${x}, ${y})`);
+    }
+
+    createDistortionPoints() {
+        // Создаем точки для искажения по всей карте
+        for (let i = 0; i < 200; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * this.maxRadius;
+
+            this.distortionPoints.push({
+                x: this.position.x + Math.cos(angle) * distance,
+                                       y: this.position.y + Math.sin(angle) * distance,
+                                       originalX: 0,
+                                       originalY: 0,
+                                       distortion: 0,
+                                       size: 2 + Math.random() * 4
+            });
+        }
+    }
+
+    update() {
+        // Расширяем волну
+        this.radius += this.speed;
+
+        // Обновляем искажения
+        this.distortionPoints.forEach(point => {
+            const distance = Math.sqrt(
+                Math.pow(point.x - this.position.x, 2) +
+                Math.pow(point.y - this.position.y, 2)
+            );
+
+            // Искажение максимально когда волна проходит через точку
+            const wavePosition = Math.abs(distance - this.radius);
+            point.distortion = Math.max(0, 1 - wavePosition / 100);
+
+            // Случайное смещение для эффекта ряби
+            point.originalX = Math.sin(Date.now() * 0.001 + point.x * 0.01) * point.distortion * 10;
+            point.originalY = Math.cos(Date.now() * 0.001 + point.y * 0.01) * point.distortion * 10;
+        });
+
+        if (this.radius >= this.maxRadius) {
+            this.active = false;
+            console.log('🌀 Волна времени завершена');
+        }
+
+        return this.active;
+    }
+
+    draw(ctx) {
+        if (!this.active) return;
+
+        ctx.save();
+
+        // ОСНОВНАЯ ВОЛНА - рисуем поверх всего
+        const gradient = ctx.createRadialGradient(
+            this.position.x, this.position.y, this.radius - 50,
+            this.position.x, this.position.y, this.radius + 50
+        );
+        gradient.addColorStop(0, 'rgba(0, 255, 255, 0.9)');
+        gradient.addColorStop(0.3, 'rgba(0, 200, 255, 0.6)');
+        gradient.addColorStop(0.6, 'rgba(0, 150, 255, 0.3)');
+        gradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
+
+        // Толстая яркая волна
+        ctx.strokeStyle = gradient;
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.arc(this.position.x, this.position.y, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Дополнительные внутренние волны для объема
+        const innerGradient = ctx.createRadialGradient(
+            this.position.x, this.position.y, this.radius - 30,
+            this.position.x, this.position.y, this.radius
+        );
+        innerGradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+        innerGradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
+
+        ctx.strokeStyle = innerGradient;
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.arc(this.position.x, this.position.y, this.radius - 10, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // ТОЧКИ ИСКАЖЕНИЯ - рисуем поверх всего
+        this.distortionPoints.forEach(point => {
+            if (point.distortion > 0.1) {
+                const alpha = point.distortion * 0.7;
+                const size = point.size * point.distortion;
+
+                // Яркие точки искажения
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(point.x + point.originalX, point.y + point.originalY, size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Свечение вокруг точек
+                ctx.shadowColor = '#00FFFF';
+                ctx.shadowBlur = 10 * point.distortion;
+                ctx.fillStyle = `rgba(0, 255, 255, ${alpha * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(point.x + point.originalX, point.y + point.originalY, size * 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        });
+
+        // ЦЕНТРАЛЬНАЯ ВСПЫШКА
+        const pulse = (Math.sin(Date.now() * 0.01) + 1) * 0.5;
+        const centerGradient = ctx.createRadialGradient(
+            this.position.x, this.position.y, 0,
+            this.position.x, this.position.y, 80
+        );
+        centerGradient.addColorStop(0, `rgba(255, 255, 255, ${0.8 + pulse * 0.2})`);
+        centerGradient.addColorStop(0.5, 'rgba(0, 255, 255, 0.5)');
+        centerGradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
+
+        ctx.fillStyle = centerGradient;
+        ctx.beginPath();
+        ctx.arc(this.position.x, this.position.y, 60 + pulse * 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+}

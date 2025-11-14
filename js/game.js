@@ -79,12 +79,56 @@ class Game {
         this.showLevelCompleteScreen = false;
         this.baseDestroyed = false;
 
+        // Добавляем свойства для эффекта времени
+        this.timeStopActive = false;
+        this.timeStopStartTime = 0;
+        this.timeStopDuration = 12000; // 12 секунд
+        this.timeResumePlayed = false; // Флаг чтобы звук не повторялся
+
         this.updateUI();
         this.updateStatusIndicators();
         this.soundManager.updateEngineSound(false, true);
 
         document.getElementById('levelComplete').style.display = 'none';
         document.getElementById('gameOver').style.display = 'none';
+    }
+
+    // Добавляем метод активации остановки времени
+    activateTimeStop() {
+        if (this.timeStopActive) {
+            console.log('⏰ Остановка времени уже активна, продлеваем эффект');
+
+            // Сбрасываем флаг звука разморозки при продлении
+            this.timeResumePlayed = false;
+
+            // Продлеваем время заморозки для всех врагов
+            const newEndTime = Date.now() + this.timeStopDuration;
+            this.enemyManager.enemies.forEach(enemy => {
+                if (enemy.isFrozen) {
+                    enemy.freezeDuration = this.timeStopDuration;
+                    enemy.freezeStartTime = Date.now();
+                }
+            });
+
+            this.timeStopStartTime = Date.now();
+            return;
+        }
+
+        this.timeStopActive = true;
+        this.timeStopStartTime = Date.now();
+        this.timeResumePlayed = false; // Сбрасываем флаг
+
+        // Замораживаем всех текущих врагов
+        this.enemyManager.enemies.forEach(enemy => {
+            enemy.freeze(this.timeStopDuration);
+        });
+
+        // Запускаем звук
+        if (this.soundManager) {
+            this.soundManager.playTimeStop();
+        }
+
+        console.log(`⏰ Активирована остановка времени на 12 секунд`);
     }
 
     // ОПТИМИЗИРОВАННЫЙ метод обновления
@@ -112,6 +156,41 @@ class Game {
 
         // Проверка завершения уровня
         this.checkLevelCompletion();
+
+        // Проверяем остановку времени
+        if (this.timeStopActive) {
+            const elapsed = Date.now() - this.timeStopStartTime;
+            const remaining = this.timeStopDuration - elapsed;
+
+            // Проигрываем звук разморозки за 1 секунду до конца
+            if (remaining <= 1000 && !this.timeResumePlayed && this.soundManager) {
+                this.soundManager.play('timeResume');
+                this.timeResumePlayed = true;
+                console.log('⏰ Звук разморозки воспроизведен');
+            }
+
+            // Завершаем эффект
+            if (remaining <= 0) {
+                this.timeStopActive = false;
+                if (this.soundManager) {
+                    this.soundManager.stopTimeStop();
+                }
+                console.log('⏰ Остановка времени завершена');
+            }
+        }
+    }
+
+    updateTimeStopEffect() {
+        if (this.timeStopActive) {
+            const elapsed = Date.now() - this.timeStopStartTime;
+            const progress = elapsed / this.timeStopDuration;
+
+            if (progress >= 1) {
+                // Эффект закончился
+                this.timeStopActive = false;
+            }
+            // УДАЛЯЕМ логику изменения цвета
+        }
     }
 
     // ОПТИМИЗИРОВАННЫЙ метод обновления пуль
@@ -289,6 +368,10 @@ class Game {
                 break;
             case 'FORTIFY':
                 this.fortifyBase(30000);
+                break;
+            case 'TIME_STOP':
+                // Используем глобальную активацию
+                this.activateTimeStop(8000);
                 break;
         }
 
@@ -798,6 +881,36 @@ class Game {
         this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
 
         this.renderUIOverlays();
+
+        // Сохраняем оригинальный контекст
+        this.ctx.save();
+
+        if (this.screenShake > 0) {
+            const intensity = this.screenShake / 50;
+            this.ctx.fillStyle = `rgba(255, 100, 0, ${intensity * 0.3})`;
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        } else {
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+
+        this.map.draw(this.ctx);
+        this.bonusManager.bonuses.forEach(bonus => bonus.draw(this.ctx));
+        this.enemyManager.spawnAnimations.forEach(animation => animation.draw(this.ctx));
+
+        if (!this.player.isDestroyed) {
+            this.player.draw(this.ctx);
+        }
+
+        this.enemyManager.enemies.forEach(enemy => enemy.draw(this.ctx));
+        this.bullets.forEach(bullet => bullet.draw(this.ctx));
+        this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
+        this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
+
+        this.renderUIOverlays();
+
+        // Восстанавливаем контекст
+        this.ctx.restore();
     }
 
     renderUIOverlays() {

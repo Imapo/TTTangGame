@@ -52,6 +52,13 @@ class Tank {
         this.autoAimDuration = 0;
         this.autoAimBlink = 0;
 
+        // Добавляем свойство заморозки
+        this.isFrozen = false;
+        this.freezeProgress = 0; // 0-1: замерзание, 1-0: таяние
+        this.freezeStartTime = 0;
+        this.freezeDuration = 0;
+        this.iceCrystals = [];
+
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
@@ -86,7 +93,11 @@ class Tank {
     determineBonus() {
         if (Math.random() < (typeof BONUS_TANK_CHANCE !== 'undefined' ? BONUS_TANK_CHANCE : 0.2)) {
             this.hasBonus = true;
-            const bonusTypes = Object.values(BONUS_TYPES || { LIFE: { id: 'LIFE', symbol: '❤️', color: '#FF4081' } });
+            const bonusTypes = Object.values(BONUS_TYPES || {
+                LIFE: { id: 'LIFE', symbol: '❤️', color: '#FF4081' },
+                SHIELD: { id: 'SHIELD', symbol: '🛡️', color: '#00BFFF' },
+                TIME_STOP: { id: 'TIME_STOP', symbol: '⏰', color: '#00FFFF' }
+            });
             this.bonusType = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
             console.log(`🎯 Танк ${this.username} несет бонус: ${this.bonusType.id}`);
         }
@@ -162,10 +173,41 @@ class Tank {
     update() {
         if (this.isDestroyed) return;
 
+        // Обновляем эффект заморозки
+        if (this.isFrozen) {
+            const elapsed = Date.now() - this.freezeStartTime;
+            const progress = elapsed / this.freezeDuration;
+
+            if (progress >= 1) {
+                // Размораживаем
+                this.isFrozen = false;
+                this.speed = this.originalSpeed;
+                this.canShoot = this.originalCanShoot;
+                this.iceCrystals = [];
+                console.log('❄️ Танк разморожен');
+            } else {
+                // Обновляем прогресс заморозки/таяния
+                if (progress < 0.1) {
+                    // Быстрое замерзание (1.2 секунды)
+                    this.freezeProgress = progress * 10;
+                } else if (progress > 0.92) {
+                    // Медленное таяние (1 секунда) - синхронизируем со звуком
+                    this.freezeProgress = 1 - ((progress - 0.92) * 12.5);
+                } else {
+                    // Полная заморозка
+                    this.freezeProgress = 1;
+                }
+
+                // Обновляем кристаллы
+                this.updateIceCrystals();
+            }
+            return;
+        }
+
         // Обновляем неуязвимость
         this.updateInvincibility();
 
-        // НОВОЕ: Обновляем автонаведение
+        // Обновляем автонаведение
         this.updateAutoAim();
 
         if (this.spawnProtection > 0) {
@@ -193,6 +235,15 @@ class Tank {
         if (this.hasBonus && this.type === 'enemy') {
             this.updateBlink();
         }
+    }
+
+    updateIceCrystals() {
+        this.iceCrystals.forEach(crystal => {
+            crystal.rotation += 0.02;
+            crystal.pulse += 0.1;
+            crystal.growth = Math.min(1, crystal.growth + 0.1);
+            crystal.alpha = this.freezeProgress;
+        });
     }
 
     // НОВЫЙ МЕТОД: Поиск ближайшего врага для автонаведения
@@ -274,6 +325,41 @@ class Tank {
         this.autoAimTimer = 0;
         this.autoAimDuration = 20000; // 20 секунд
         console.log('🎯 Активировано автонаведение!');
+    }
+
+    // Добавляем метод заморозки
+    freeze(duration) {
+        if (this.type !== 'enemy') return;
+
+        this.isFrozen = true;
+        this.freezeStartTime = Date.now();
+        this.freezeDuration = duration;
+        this.originalSpeed = this.speed;
+        this.originalCanShoot = this.canShoot;
+        this.speed = 0;
+        this.canShoot = false;
+
+        // Создаем кристаллы льда
+        this.createIceCrystals();
+
+        console.log(`❄️ Танк ${this.username} заморожен на ${duration/1000}сек`);
+    }
+
+    createIceCrystals() {
+        this.iceCrystals = [];
+        const crystalCount = 8 + Math.floor(Math.random() * 8);
+
+        for (let i = 0; i < crystalCount; i++) {
+            this.iceCrystals.push({
+                x: (Math.random() - 0.5) * this.size * 1.5,
+                                  y: (Math.random() - 0.5) * this.size * 1.5,
+                                  size: 3 + Math.random() * 6,
+                                  rotation: Math.random() * Math.PI * 2,
+                                  growth: 0,
+                                  alpha: 1,
+                                  pulse: Math.random() * Math.PI * 2
+            });
+        }
     }
 
     hasShield() {
@@ -504,6 +590,11 @@ class Tank {
             ctx.textAlign = 'center';
             ctx.fillText(this.username, this.position.x, this.position.y - this.size - (this.hasBonus ? 35 : 10));
         }
+
+        // Рисуем эффект заморозки поверх танка
+        if (this.isFrozen && this.freezeProgress > 0) {
+            this.drawFreezeEffect(ctx);
+        }
     }
 
     // НОВЫЙ МЕТОД: Эффект неуязвимости
@@ -550,47 +641,115 @@ class Tank {
     drawAutoAimDevice(ctx) {
         ctx.save();
 
-        // Позиция на задней части танка
-        const blockWidth = this.size * 0.4;
-        const blockHeight = this.size * 0.3;
-        const blockX = -this.size/2 + 2;
-        const blockY = -blockHeight/2;
+        // Позиция на ЛЕВОЙ стороне кормы танка
+        const blockWidth = this.size * 0.3;  // Высота блока (теперь по вертикали)
+        const blockHeight = this.size * 0.3; // Ширина блока (теперь по горизонтали)
+        const blockX = -this.size/2 - blockHeight + 10; // Слева от танка
+        const blockY = -blockWidth/2 - 6; // По центру по вертикали
+
+        // Поворачиваем блок на 90 градусов
+        ctx.rotate(-Math.PI / 2);
 
         // Основа блока
         ctx.fillStyle = '#2C3E50';
-        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+        ctx.fillRect(blockX, blockY, blockHeight, blockWidth);
 
         // Обводка
         ctx.strokeStyle = '#34495E';
         ctx.lineWidth = 1;
-        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+        ctx.strokeRect(blockX, blockY, blockHeight, blockWidth);
 
-        // Мигающие индикаторы
+        // Мигающие индикаторы (теперь вертикальное расположение)
         const time = Date.now() * 0.001;
         const ledSize = blockWidth * 0.15;
 
-        // Синий индикатор (мигает быстро)
+        // Синий индикатор (мигает быстро) - ВЕРХНИЙ
         const blueAlpha = 0.3 + Math.sin(time * 8) * 0.3;
         ctx.fillStyle = `rgba(0, 150, 255, ${blueAlpha})`;
-        ctx.fillRect(blockX + blockWidth * 0.2, blockY + blockHeight * 0.3, ledSize, ledSize);
+        ctx.fillRect(blockX + blockHeight * 0.3, blockY + blockWidth * 0.2, ledSize, ledSize);
 
-        // Зеленый индикатор (мигает средне)
+        // Зеленый индикатор (мигает средне) - СРЕДНИЙ
         const greenAlpha = 0.3 + Math.sin(time * 5 + 1) * 0.3;
         ctx.fillStyle = `rgba(0, 255, 100, ${greenAlpha})`;
-        ctx.fillRect(blockX + blockWidth * 0.5, blockY + blockHeight * 0.3, ledSize, ledSize);
+        ctx.fillRect(blockX + blockHeight * 0.3, blockY + blockWidth * 0.5, ledSize, ledSize);
 
-        // Красный индикатор (мигает медленно)
+        // Красный индикатор (мигает медленно) - НИЖНИЙ
         const redAlpha = 0.3 + Math.sin(time * 3 + 2) * 0.3;
         ctx.fillStyle = `rgba(255, 50, 50, ${redAlpha})`;
-        ctx.fillRect(blockX + blockWidth * 0.8, blockY + blockHeight * 0.3, ledSize, ledSize);
+        ctx.fillRect(blockX + blockHeight * 0.3, blockY + blockWidth * 0.8, ledSize, ledSize);
 
         // Свечение
         ctx.shadowColor = '#9C27B0';
         ctx.shadowBlur = 5;
         ctx.strokeStyle = `rgba(156, 39, 176, 0.3)`;
         ctx.lineWidth = 2;
-        ctx.strokeRect(blockX - 1, blockY - 1, blockWidth + 2, blockHeight + 2);
+        ctx.strokeRect(blockX - 1, blockY - 1, blockHeight + 2, blockWidth + 2);
         ctx.shadowBlur = 0;
+
+        ctx.restore();
+    }
+
+    drawFreezeEffect(ctx) {
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        // Голубое свечение вокруг замороженного танка
+        const glowIntensity = this.freezeProgress * 0.3;
+        const gradient = ctx.createRadialGradient(0, 0, this.size * 0.5, 0, 0, this.size * 1.2);
+        gradient.addColorStop(0, `rgba(100, 200, 255, ${glowIntensity})`);
+        gradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size * 1.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Ледяная корка на танке
+        ctx.fillStyle = `rgba(200, 230, 255, ${this.freezeProgress * 0.3})`;
+        ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+
+        // Кристаллы льда
+        this.iceCrystals.forEach(crystal => {
+            if (crystal.growth > 0) {
+                ctx.save();
+                ctx.translate(crystal.x, crystal.y);
+                ctx.rotate(crystal.rotation);
+
+                const pulse = Math.sin(crystal.pulse) * 0.2 + 0.8;
+                const alpha = crystal.alpha * crystal.growth * pulse;
+
+                // Блестящие кристаллы
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                ctx.strokeStyle = `rgba(200, 230, 255, ${alpha})`;
+                ctx.lineWidth = 1;
+
+                // Рисуем кристалл (шестиугольник)
+                ctx.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i / 6) * Math.PI * 2;
+                    const x = Math.cos(angle) * crystal.size;
+                    const y = Math.sin(angle) * crystal.size;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Блики на кристаллах
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.8})`;
+                ctx.beginPath();
+                ctx.arc(crystal.size * 0.3, -crystal.size * 0.3, crystal.size * 0.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        });
+
+        // Иней по краям танка
+        ctx.strokeStyle = `rgba(255, 255, 255, ${this.freezeProgress * 0.6})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-this.size/2, -this.size/2, this.size, this.size);
 
         ctx.restore();
     }

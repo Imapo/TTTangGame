@@ -46,6 +46,14 @@ class EnemyManager {
         enemy.direction = DIRECTIONS.DOWN;
         enemy.username = uniqueName;
 
+        // Замораживаем новый танк если активно остановка времени
+        if (this.game.timeStopActive) {
+            const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
+            if (remainingTime > 0) {
+                enemy.freeze(remainingTime);
+            }
+        }
+
         this.enemies.push(enemy);
     }
 
@@ -165,6 +173,25 @@ class EnemyManager {
         this.usedEnemyNames.clear();
         this.currentSpawnIndex = 0;
     }
+
+    completeSpawnAnimation(spawnPoint) {
+        const enemyType = this.getRandomEnemyType();
+        const uniqueName = this.generateUniqueEnemyName(enemyType);
+
+        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.game.level, enemyType);
+        enemy.direction = DIRECTIONS.DOWN;
+        enemy.username = uniqueName;
+
+        // ЕСЛИ АКТИВНА ОСТАНОВКА ВРЕМЕНИ - ЗАМОРАЖИВАЕМ НОВЫЙ ТАНК
+        if (this.game.timeStopActive) {
+            const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
+            if (remainingTime > 0) {
+                enemy.freeze(remainingTime);
+            }
+        }
+
+        this.enemies.push(enemy);
+    }
 }
 
 // === МЕНЕДЖЕР БОНУСОВ ===
@@ -183,6 +210,17 @@ class BonusManager {
             // ИСПРАВЛЕНИЕ: Добавляем this.game как четвертый параметр
             this.bonuses.push(new Bonus(position.x, position.y, destroyedTank.bonusType, this.game));
         }
+    }
+
+    applyTimeStopBonus() {
+        // Используем глобальную активацию остановки времени
+        this.game.activateTimeStop(this.type.duration);
+
+        // Визуальный эффект
+        this.createExplosionEffect();
+
+        // Тряска экрана
+        this.game.screenShake = 25;
     }
 
     findFreeBonusPosition() {
@@ -265,6 +303,7 @@ class EffectManager {
         this.game = game;
         this.explosions = [];
         this.bulletExplosions = [];
+        this.timeWaves = []; // Добавляем массив для волн времени
     }
 
     addExplosion(x, y, type = 'tank') {
@@ -273,6 +312,11 @@ class EffectManager {
 
     addBulletExplosion(x, y) {
         this.bulletExplosions.push(new BulletExplosion(x, y));
+    }
+
+    addTimeWave(x, y, duration) {
+        console.log(`🌀 Создаем волну времени в (${x}, ${y})`);
+        this.timeWaves.push(new TimeWave(x, y, duration));
     }
 
     update() {
@@ -291,10 +335,32 @@ class EffectManager {
                 this.bulletExplosions.splice(i, 1);
             }
         }
+
+        // Обновляем волны времени
+        for (let i = this.timeWaves.length - 1; i >= 0; i--) {
+            this.timeWaves[i].update();
+            if (!this.timeWaves[i].active) {
+                this.timeWaves.splice(i, 1);
+            }
+        }
+    }
+
+    draw(ctx) {
+        // Затем взрывы пуль
+        this.bulletExplosions.forEach(explosion => explosion.draw(ctx));
+
+        // Затем основные взрывы
+        this.explosions.forEach(explosion => explosion.draw(ctx));
+
+        // ВОЛНЫ ВРЕМЕНИ РИСУЕМ ПОСЛЕДНИМИ - ПОВЕРХ ВСЕГО
+        this.timeWaves.forEach(wave => {
+            wave.draw(ctx);
+        });
     }
 
     clear() {
         this.explosions = [];
         this.bulletExplosions = [];
+        this.timeWaves = []; // Очищаем и волны времени
     }
 }

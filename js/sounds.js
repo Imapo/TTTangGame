@@ -1,4 +1,3 @@
-// === КЛАСС ДЛЯ УПРАВЛЕНИЯ ЗВУКАМИ ===
 class SoundManager {
     constructor() {
         this.sounds = {};
@@ -8,7 +7,7 @@ class SoundManager {
     }
 
     init() {
-        // Загружаем все звуки
+        // Загружаем все звуки БЕЗ timeStop
         this.sounds = {
             tankExplosion: this.createSound('sounds/tank_explosion.wav'),
             baseExplosion: this.createSound('sounds/base_explosion.wav'),
@@ -21,15 +20,20 @@ class SoundManager {
             engineIdle: this.createSound('sounds/engine_idle.wav', true),
             engineMoving: this.createSound('sounds/engine_moving.wav', true),
 
-            // ДОБАВЛЯЕМ НОВЫЕ ЗВУКИ ДЛЯ ТИПОВ ТАНКОВ
+            // Звуки для типов танков
             fastTankShot: this.createSound('sounds/fast_tank_shot.wav'),
             heavyTankShot: this.createSound('sounds/heavy_tank_shot.wav'),
             sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),
             heavyTankHit: this.createSound('sounds/battle_city_bullet_armor.wav'),
 
             // ЗВУКИ БОНУСОВ
-            bonusPickup: this.createSound('sounds/star_bonus.wav'), // Временно используем star_bonus
-            lifeBonus: this.createSound('sounds/star_bonus.wav')    // Можно заменить позже
+            bonusPickup: this.createSound('sounds/star_bonus.wav'),
+            lifeBonus: this.createSound('sounds/star_bonus.wav'),
+
+            // ТОЛЬКО необходимые звуки для остановки времени
+            clockTick: this.createSound('sounds/clock_tick.wav', true),
+            freezeEffect: this.createSound('sounds/freeze_effect.wav'),
+            timeResume: this.createSound('sounds/time_resume.wav')
         };
 
         // Настройка громкости
@@ -38,15 +42,10 @@ class SoundManager {
         this.sounds.tankExplosion.volume = 0.6;
         this.sounds.baseExplosion.volume = 0.7;
 
-        // Настройка громкости для новых звуков
-        this.sounds.fastTankShot.volume = 0.5;
-        this.sounds.heavyTankShot.volume = 0.7;
-        this.sounds.sniperShot.volume = 0.4;
-        this.sounds.heavyTankHit.volume = 0.6;
-
-        // Громкость для бонусов
-        this.sounds.bonusPickup.volume = 0.8;
-        this.sounds.lifeBonus.volume = 0.8;
+        // Громкость для звуков остановки времени
+        this.sounds.clockTick.volume = 0.4;
+        this.sounds.freezeEffect.volume = 0.9;
+        this.sounds.timeResume.volume = 0.9;
     }
 
     createSound(src, loop = false) {
@@ -60,7 +59,6 @@ class SoundManager {
         if (this.muted || !this.sounds[soundName]) return;
 
         try {
-            // Создаем копию звука для одновременного воспроизведения
             const sound = this.sounds[soundName].cloneNode();
             sound.volume = this.sounds[soundName].volume;
             sound.play().catch(e => console.log('Audio play error:', e));
@@ -87,6 +85,22 @@ class SoundManager {
         }
     }
 
+    // ПРОСТЫЕ методы для остановки времени
+    playTimeStop() {
+        if (this.muted) return;
+
+        // Звук заморозки
+        this.play('freezeEffect');
+
+        // Только тикание часов
+        this.playLoop('clockTick');
+    }
+
+    stopTimeStop() {
+        // Останавливаем тикание
+        this.stopLoop('clockTick');
+    }
+
     toggleMute() {
         this.muted = !this.muted;
         if (this.muted) {
@@ -102,7 +116,6 @@ class SoundManager {
         });
     }
 
-    // Управление звуком двигателя
     updateEngineSound(isMoving, isPlayerAlive, gameState = {}) {
         if (gameState.gameOver || gameState.levelComplete || !isPlayerAlive) {
             this.stopLoop('engineIdle');
@@ -119,7 +132,6 @@ class SoundManager {
         }
     }
 
-    // Метод для звуков выстрелов разных типов танков
     playEnemyShot(enemyType) {
         switch(enemyType) {
             case 'FAST':

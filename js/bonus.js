@@ -118,6 +118,9 @@ class Bonus {
             case 'AUTO_AIM':
                 this.applyAutoAimBonus();
                 break;
+            case 'TIME_STOP':
+                this.applyTimeStopBonus();
+                break;
             default:
                 console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
         }
@@ -173,6 +176,19 @@ class Bonus {
 
             // Тряска экрана
             this.game.screenShake = 10;
+        }
+    }
+
+    applyTimeStopBonus() {
+        this.game.activateTimeStop(); // Без параметров, используем дефолтную длительность
+        this.createExplosionEffect();
+        this.game.screenShake = 20;
+        console.log('⏰ Подобран бонус остановки времени');
+    }
+
+    createTimeWave() {
+        if (this.game.effectManager) {
+            this.game.effectManager.addTimeWave(this.position.x, this.position.y, this.type.duration);
         }
     }
 
