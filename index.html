@@ -14,6 +14,19 @@
             <div class="lives">Жизни: <span id="lives">3</span></div>
             <div class="level">Уровень: <span id="level">1</span></div>
             <div class="tank-counter">Танки: <span id="tanksLeft">20</span>/20</div>
+
+            <!-- Статистика прокачки игрока -->
+            <div class="player-stats">
+                <div class="player-level">Ур.<span id="playerLevel">1</span></div>
+                <div class="player-exp">Опыт: <span id="playerExp">0/50</span></div>
+                <button class="reset-progress-btn" onclick="game.resetPlayerProgress()" title="Сбросить прогресс">🔄</button>
+            </div>
+
+            <!-- ОТЛАДОЧНАЯ ИНФОРМАЦИЯ (можно убрать потом) -->
+            <div class="debug-stats" style="font-size: 10px; color: #888;">
+                Игрок: ур.<span id="debugPlayerLevel">1</span> оп.<span id="debugPlayerExp">0</span> |
+                Игра: ур.<span id="debugGameLevel">1</span> оп.<span id="debugGameExp">0</span>
+            </div>
         </div>
 
         <!-- ДОБАВЛЯЕМ НОВЫЕ ИНДИКАТОРЫ -->
