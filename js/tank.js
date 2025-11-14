@@ -4,13 +4,19 @@ class Tank {
         this.position = new Vector2(x, y);
         this.direction = DIRECTIONS.UP;
 
-        // Определяем характеристики в зависимости от типа
+        // НОВОЕ: Система прокачки для игрока
         if (type === 'player') {
-            this.speed = TANK_SPEED;
-            this.color = '#4CAF50';
-            this.health = 1;
-            this.bulletSpeed = 5;
-            this.reloadTime = 20;
+            this.playerLevel = 1;
+            this.experience = 0;
+            this.upgrade = PLAYER_UPGRADES.LEVEL_1;
+
+            this.speed = this.upgrade.speed;
+            this.color = this.upgrade.color;
+            this.health = this.upgrade.health;
+            this.bulletSpeed = this.upgrade.bulletSpeed;
+            this.reloadTime = this.upgrade.reloadTime;
+            this.bulletPower = this.upgrade.bulletPower;
+            this.canDestroyConcrete = this.upgrade.canDestroyConcrete;
         } else {
             // Характеристики врагов в зависимости от типа и уровня
             const enemyConfig = ENEMY_TYPES[enemyType];
@@ -21,6 +27,8 @@ class Tank {
             this.health = enemyConfig.health;
             this.bulletSpeed = enemyConfig.bulletSpeed;
             this.reloadTime = enemyConfig.reloadTime;
+            this.bulletPower = 1;
+            this.canDestroyConcrete = false;
         }
 
         this.type = type;
@@ -33,20 +41,20 @@ class Tank {
         this.isDestroyed = false;
         this.stuckTimer = 0;
 
-        // НОВОЕ: Свойства для танков с бонусами
+        // Свойства для танков с бонусами
         this.hasBonus = false;
         this.bonusType = null;
         this.blinkTimer = 0;
         this.blinkAlpha = 1.0;
         this.blinkDirection = -1;
 
-        // НОВОЕ: Свойства для неуязвимости
+        // Свойства для неуязвимости
         this.isInvincible = false;
         this.invincibilityTimer = 0;
         this.invincibilityDuration = 0;
         this.invincibilityBlink = 0;
 
-        // НОВОЕ: Свойства для автонаведения
+        // Свойства для автонаведения
         this.hasAutoAim = false;
         this.autoAimTimer = 0;
         this.autoAimDuration = 0;
@@ -54,7 +62,7 @@ class Tank {
 
         // Добавляем свойство заморозки
         this.isFrozen = false;
-        this.freezeProgress = 0; // 0-1: замерзание, 1-0: таяние
+        this.freezeProgress = 0;
         this.freezeStartTime = 0;
         this.freezeDuration = 0;
         this.iceCrystals = [];
@@ -62,6 +70,83 @@ class Tank {
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод addExperience
+    addExperience(enemyType) {
+        if (this.type !== 'player') return;
+
+        const expGained = EXP_PER_KILL[enemyType] || 10;
+        this.experience += expGained;
+
+        console.log(`🎯 +${expGained} опыта за уничтожение ${enemyType} танка. Всего: ${this.experience}`);
+
+        // Проверяем возможность апгрейда
+        this.checkLevelUp();
+    }
+
+    // ОБНОВЛЯЕМ метод checkLevelUp
+    checkLevelUp() {
+        const nextLevel = this.playerLevel + 1;
+        const expRequired = EXP_REQUIREMENTS[nextLevel];
+
+        if (expRequired && this.experience >= expRequired) {
+            this.upgradeToLevel(nextLevel);
+            // После апгрейда снова проверяем, не можем ли мы подняться еще
+            this.checkLevelUp();
+        }
+    }
+
+    // УПРОЩАЕМ метод upgradeToLevel
+    upgradeToLevel(newLevel) {
+        const upgradeKey = `LEVEL_${newLevel}`;
+        const newUpgrade = PLAYER_UPGRADES[upgradeKey];
+
+        if (!newUpgrade) return;
+
+        this.playerLevel = newLevel;
+        this.upgrade = newUpgrade;
+
+        // Обновляем характеристики
+        this.speed = newUpgrade.speed;
+        this.color = newUpgrade.color;
+        this.bulletSpeed = newUpgrade.bulletSpeed;
+        this.reloadTime = newUpgrade.reloadTime;
+        this.bulletPower = newUpgrade.bulletPower;
+        this.canDestroyConcrete = newUpgrade.canDestroyConcrete;
+
+        // Добавляем здоровье если есть бонус
+        if (newUpgrade.health > this.health) {
+            this.health = newUpgrade.health;
+        }
+
+        console.log(`🚀 Апгрейд до ${newUpgrade.name}! Уровень ${newLevel}`);
+
+        // Визуальный эффект апгрейда
+        this.showUpgradeEffect();
+    }
+
+    // НОВЫЙ МЕТОД: Визуальный эффект при апгрейде
+    showUpgradeEffect() {
+        if (typeof game !== 'undefined') {
+            // Создаем взрыв для эффекта
+            game.effectManager.addExplosion(this.position.x, this.position.y, 'bonus');
+            game.screenShake = 15;
+
+            // Показываем сообщение
+            this.showUpgradeMessage();
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Показ сообщения об апгрейде
+    showUpgradeMessage() {
+        const message = `🚀 ${this.upgrade.name}! Уровень ${this.playerLevel}`;
+        console.log(message);
+
+        // Можно добавить всплывающее сообщение в UI
+        if (typeof game !== 'undefined' && game.showUpgradeNotification) {
+            game.showUpgradeNotification(message);
         }
     }
 
@@ -151,7 +236,7 @@ class Tank {
         }
     }
 
-    // ОБНОВЛЯЕМ метод takeDamage для учета неуязвимости
+    // ОБНОВЛЯЕМ метод takeDamage для учета дополнительного здоровья
     takeDamage() {
         if (this.hasShield() || this.isInvincible) {
             console.log('🛡️ Урон заблокирован щитом/неуязвимостью');
@@ -165,8 +250,10 @@ class Tank {
                 return 'bonus';
             }
             return true;
+        } else {
+            console.log(`❤️ Осталось здоровья: ${this.health}`);
+            return false;
         }
-        return false;
     }
 
     // ОБНОВЛЯЕМ метод update
@@ -203,6 +290,7 @@ class Tank {
             }
             return;
         }
+
 
         // Обновляем неуязвимость
         this.updateInvincibility();
@@ -445,22 +533,22 @@ class Tank {
             }
     }
 
+    // ОБНОВЛЯЕМ метод shoot для учета улучшенных пуль
     shoot(nearestEnemy = null) {
         if (this.isDestroyed || !this.canShoot) return null;
 
         this.canShoot = false;
-        this.reloadTime = this.type === 'player' ? 20 :
+        this.reloadTime = this.type === 'player' ? this.upgrade.reloadTime :
         this.enemyType === 'FAST' ? 25 :
         this.enemyType === 'HEAVY' ? 60 : 40;
 
         let direction = this.direction;
 
-        // НОВОЕ: Автонаведение для игрока
+        // Автонаведение для игрока
         if (this.type === 'player' && this.hasAutoAim && nearestEnemy) {
             const dx = nearestEnemy.position.x - this.position.x;
             const dy = nearestEnemy.position.y - this.position.y;
 
-            // Определяем направление к цели
             if (Math.abs(dx) > Math.abs(dy)) {
                 direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
             } else {
@@ -473,8 +561,9 @@ class Tank {
         const bulletX = this.position.x + offset.x;
         const bulletY = this.position.y + offset.y;
 
-        // НОВОЕ: Передаем информацию об автонаведении в пулю
-        const bullet = new Bullet(bulletX, bulletY, direction, this.type, this, this.hasAutoAim, nearestEnemy);
+        // НОВОЕ: Передаем мощность пули
+        const bullet = new Bullet(bulletX, bulletY, direction, this.type, this,
+                                  this.hasAutoAim, nearestEnemy, this.bulletPower);
 
         if (this.type === 'enemy' && typeof game !== 'undefined') {
             game.soundManager.playEnemyShot(this.enemyType);
@@ -483,6 +572,7 @@ class Tank {
         return bullet;
     }
 
+    // ОБНОВЛЯЕМ метод draw для добавления башни
     draw(ctx) {
         if (this.isDestroyed) return;
 
@@ -507,37 +597,49 @@ class Tank {
             ctx.globalAlpha = 0.5;
         }
 
-        // Корпус танка
+        // Корпус танка (цвет теперь зависит от уровня)
         ctx.fillStyle = this.color;
         ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
 
-        // НОВОЕ: Особое оформление для танков с бонусами
+        // НОВОЕ: Башня танка (круглая)
+        this.drawTurret(ctx);
+
+        // Индикатор уровня на корпусе
+        if (this.type === 'player' && this.playerLevel > 1) {
+            this.drawLevelIndicator(ctx);
+        }
+
+        // Особое оформление для танков с бонусами
         if (this.hasBonus) {
-            // Мигающая белая рамка
             ctx.strokeStyle = `rgba(255, 255, 255, ${this.blinkAlpha})`;
             ctx.lineWidth = 3;
             ctx.strokeRect(-this.size/2, -this.size/2, this.size, this.size);
-
-            // Мигающее свечение
             ctx.shadowColor = '#FFFFFF';
             ctx.shadowBlur = 10 * this.blinkAlpha;
         }
 
-        // Детали корпуса
-        ctx.fillStyle = this.type === 'player' ? '#388E3C' : '#CC3333';
-        ctx.fillRect(-this.size/4, -this.size/4, this.size/2, this.size/2);
+        // Детали корпуса (убираем старый квадрат, теперь есть башня)
+        ctx.fillStyle = this.type === 'player' ? this.getDarkColor(this.color) : '#CC3333';
 
-        // Дуло
-        ctx.fillStyle = '#333';
+        // Рисуем люк на башне вместо квадрата на корпусе
+        ctx.fillStyle = '#2C3E50'; // Темно-серый для люка
+        ctx.beginPath();
+        ctx.arc(0, 0, this.size/6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Дуло (толще для высоких уровней)
+        const barrelWidth = this.size * (this.type === 'player' ?
+        0.15 + (this.playerLevel * 0.015) : 0.2);
         const barrelLength = this.size * 0.8;
-        const barrelWidth = this.size * 0.25;
+
+        ctx.fillStyle = '#333';
         ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
 
         // Сброс тени
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 1.0;
 
-        // НОВОЕ: Рисуем электронный блок автонаведения
+        // Рисуем электронный блок автонаведения
         if (this.hasAutoAim && this.type === 'player') {
             this.drawAutoAimDevice(ctx);
         }
@@ -549,15 +651,14 @@ class Tank {
             this.shield.draw(ctx);
         }
 
-        // НОВОЕ: Визуальный эффект неуязвимости
+        // Визуальный эффект неуязвимости
         if (this.isInvincible) {
             this.drawInvincibilityEffect(ctx);
         }
 
-        // НОВОЕ: Отображаем иконку бонуса над танком
+        // Отображаем иконку бонуса над танком
         if (this.hasBonus) {
             const iconAlpha = 0.3 + (this.blinkAlpha * 0.7);
-
             ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * iconAlpha})`;
             const textWidth = ctx.measureText(this.bonusType.symbol).width + 8;
             ctx.fillRect(
@@ -566,13 +667,17 @@ class Tank {
                 textWidth,
                 20
             );
-
             ctx.fillStyle = this.bonusType.color;
             ctx.globalAlpha = iconAlpha;
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(this.bonusType.symbol, this.position.x, this.position.y - this.size - 12);
             ctx.globalAlpha = 1.0;
+        }
+
+        // Отображаем уровень игрока над танком
+        if (this.type === 'player') {
+            this.drawPlayerLevel(ctx);
         }
 
         if (this.type === 'enemy' && this.username) {
@@ -584,7 +689,6 @@ class Tank {
                          textWidth + 4,
                          16
             );
-
             ctx.fillStyle = '#FFF';
             ctx.font = '10px Arial';
             ctx.textAlign = 'center';
@@ -595,6 +699,67 @@ class Tank {
         if (this.isFrozen && this.freezeProgress > 0) {
             this.drawFreezeEffect(ctx);
         }
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка башни танка
+    drawTurret(ctx) {
+        const turretRadius = this.size / 3;
+
+        // Основная башня
+        ctx.fillStyle = this.type === 'player' ? this.getDarkColor(this.color) : '#AA3333';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Обводка башни
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Детали на башне (люк)
+        ctx.fillStyle = '#2C3E50';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Блики на башне для объема
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(-turretRadius/3, -turretRadius/3, turretRadius/4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка индикатора уровня на башне (вместо корпуса)
+    drawLevelIndicator(ctx) {
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 9px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.playerLevel.toString(), 0, 0);
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка уровня над танком
+    drawPlayerLevel(ctx) {
+        const levelText = `Ур.${this.playerLevel}`;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const textWidth = ctx.measureText(levelText).width;
+        ctx.fillRect(
+            this.position.x - textWidth/2 - 3,
+            this.position.y - this.size - 42,
+            textWidth + 6,
+            14
+        );
+
+        ctx.fillStyle = this.color;
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(levelText, this.position.x, this.position.y - this.size - 32);
+    }
+
+    // НОВЫЙ МЕТОД: Получение темного цвета для деталей
+    getDarkColor(baseColor) {
+        // Простое затемнение цвета
+        return baseColor.replace(')', ', 0.7)').replace('rgb', 'rgba');
     }
 
     // НОВЫЙ МЕТОД: Эффект неуязвимости

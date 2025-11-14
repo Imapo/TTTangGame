@@ -1,6 +1,6 @@
 // === КЛАСС ПУЛИ ===
 class Bullet {
-    constructor(x, y, direction, ownerType, shooter, hasAutoAim = false, target = null) {
+    constructor(x, y, direction, ownerType, shooter, hasAutoAim = false, target = null, power = 1) {
         this.position = new Vector2(x, y);
         this.direction = direction;
         this.currentDirection = new Vector2(direction.x, direction.y);
@@ -13,18 +13,16 @@ class Bullet {
         this.target = target;
         this.turnRate = 0.1;
 
-        // НОВОЕ: Таймер задержки автонаведения
-        this.autoAimDelay = 100; // 500ms задержка
+        // НОВОЕ: Мощность пули (для игрока)
+        this.power = power;
+
+        // Таймер задержки автонаведения
+        this.autoAimDelay = 100;
         this.autoAimTimer = 0;
-        this.autoAimActive = false; // Автонаведение пока не активно
+        this.autoAimActive = false;
 
         this.trail = [];
         this.maxTrailLength = 5;
-
-        // УБИРАЕМ немедленное автонаведение в конструкторе
-        // if (this.hasAutoAim && this.target) {
-        //     this.adjustDirectionToTarget();
-        // }
     }
 
     update() {
@@ -105,29 +103,40 @@ class Bullet {
         }
     }
 
+    // ОБНОВЛЯЕМ метод draw для отображения мощности пули
     draw(ctx) {
+        // Размер пули зависит от мощности
+        const bulletSize = this.size + (this.power - 1) * 2;
+
         ctx.fillStyle = this.owner === 'player' ? '#FFFF00' : '#FF4444';
         ctx.beginPath();
-        ctx.arc(this.position.x, this.position.y, this.size / 2, 0, Math.PI * 2);
+        ctx.arc(this.position.x, this.position.y, bulletSize / 2, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // НОВОЕ: Разный цвет индикатора в зависимости от статуса автонаведения
+        // Индикатор автонаведения
         if (this.hasAutoAim) {
             if (this.autoAimActive) {
-                // Активное автонаведение - фиолетовый
                 ctx.strokeStyle = 'rgba(156, 39, 176, 0.7)';
             } else {
-                // Ожидание автонаведения - синий (прогресс)
                 const progress = this.autoAimTimer / this.autoAimDelay;
                 ctx.strokeStyle = `rgba(33, 150, 243, ${0.3 + progress * 0.4})`;
             }
             ctx.lineWidth = 2;
             ctx.beginPath();
-            ctx.arc(this.position.x, this.position.y, this.size / 2 + 2, 0, Math.PI * 2);
+            ctx.arc(this.position.x, this.position.y, bulletSize / 2 + 2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // НОВОЕ: Индикатор мощности для сильных пуль
+        if (this.power > 1) {
+            ctx.strokeStyle = '#FFA500';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(this.position.x, this.position.y, bulletSize / 2 + 4, 0, Math.PI * 2);
             ctx.stroke();
         }
     }

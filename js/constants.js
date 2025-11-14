@@ -33,13 +33,78 @@ const TILE_TYPES = {
     BRICK: 1,
     WATER: 3,
     BASE: 4,
-    CONCRETE: 5
+    CONCRETE: 5,
+    GRASS: 6
+};
+
+// === СИСТЕМА ПРОКАЧКИ ИГРОКА ===
+const PLAYER_UPGRADES = {
+    LEVEL_1: {
+        level: 1,
+        color: '#4CAF50', // Зеленый
+        speed: 3.0,
+        bulletSpeed: 5,
+        reloadTime: 20,
+        health: 1,
+        bulletPower: 1,
+        canDestroyConcrete: false,
+        name: 'Базовый танк'
+    },
+    LEVEL_2: {
+        level: 2,
+        color: '#2196F3', // Синий
+        speed: 3.2,
+        bulletSpeed: 6,
+        reloadTime: 18,
+        health: 1,
+        bulletPower: 1,
+        canDestroyConcrete: false,
+        name: 'Улучшенный танк'
+    },
+    LEVEL_3: {
+        level: 3,
+        color: '#FF9800', // Оранжевый
+        speed: 3.5,
+        bulletSpeed: 7,
+        reloadTime: 15,
+        health: 1,
+        bulletPower: 2, // Пробивает кирпичи за 1 выстрел
+        canDestroyConcrete: false,
+        name: 'Продвинутый танк'
+    },
+    LEVEL_4: {
+        level: 4,
+        color: '#F44336', // Красный
+        speed: 3.8,
+        bulletSpeed: 8,
+        reloadTime: 12,
+        health: 2, // +1 жизнь
+        bulletPower: 2,
+        canDestroyConcrete: true, // Может разрушать бетон!
+        name: 'Элитный танк'
+    }
+};
+
+// Опыт за уничтожение врагов
+const EXP_PER_KILL = {
+    'BASIC': 10,
+    'FAST': 15,
+    'HEAVY': 25,
+    'SNIPER': 20
+};
+
+// Опыт для перехода на следующий уровень
+const EXP_REQUIREMENTS = {
+    1: 0,   // Начальный уровень
+    2: 50,  // 5 базовых танков
+    3: 120, // Еще 7 танков
+    4: 220  // Еще 10 танков
 };
 
 // === ТИПЫ ТАНКОВ ПРОТИВНИКОВ ===
 const ENEMY_TYPES = {
     BASIC: {
-        chance: 0.5,    // 50% шанс (было 0.6)
+        chance: 0.5,
         speed: 0.35,
         health: 1,
         color: '#FF4444',
@@ -47,7 +112,7 @@ const ENEMY_TYPES = {
         reloadTime: 40
     },
     FAST: {
-        chance: 0.25,   // 25% шанс (было 0.3)
+        chance: 0.25,
         speed: 0.7,
         health: 1,
         color: '#FFFF00',
@@ -55,7 +120,7 @@ const ENEMY_TYPES = {
         reloadTime: 30
     },
     HEAVY: {
-        chance: 0.1,    // 10% шанс
+        chance: 0.1,
         speed: 0.25,
         health: 3,
         color: '#800080',
@@ -63,12 +128,12 @@ const ENEMY_TYPES = {
         reloadTime: 60
     },
     SNIPER: {
-        chance: 0.15,   // 15% шанс
+        chance: 0.15,
         speed: 0.3,
         health: 1,
-        color: '#00FF00', // Зеленый для снайпера
-        bulletSpeed: 7,   // Очень быстрые пули
-        reloadTime: 80    // Долгая перезарядка
+        color: '#00FF00',
+        bulletSpeed: 7,
+        reloadTime: 80
     }
 };
 
@@ -94,7 +159,7 @@ const BONUS_TYPES = {
         id: 'SHIELD',
         symbol: '🛡️',
         color: '#2196F3',
-        duration: 10000, // 10 секунд
+        duration: 10000,
         chance: 0.3,
         sound: 'bonusPickup'
     },
@@ -102,7 +167,7 @@ const BONUS_TYPES = {
         id: 'FORTIFY',
         symbol: '🏰',
         color: '#4CAF50',
-        duration: 60000, // 1 минута
+        duration: 60000,
         chance: 0.3,
         sound: 'bonusPickup'
     },
@@ -110,7 +175,7 @@ const BONUS_TYPES = {
         id: 'AUTO_AIM',
         symbol: '🎯',
         color: '#9C27B0',
-        duration: 15000, // 15 секунд
+        duration: 15000,
         chance: 0.2,
         sound: 'bonusPickup'
     },
@@ -119,19 +184,13 @@ const BONUS_TYPES = {
         symbol: '⏰',
         color: '#00FFFF',
         sound: 'timeStop',
-        duration: 8000 // 8 секунд остановки времени
+        duration: 8000
     }
-    // Место для будущих бонусов:
-    // STAR: { id: 'STAR', symbol: '★', color: '#FFD700', duration: 0, chance: 0.25 },
-    // GRENADE: { id: 'GRENADE', symbol: '💣', color: '#FF4444', duration: 0, chance: 0.15 },
-    // HELMET: { id: 'HELMET', symbol: '⛑️', color: '#4CAF50', duration: 10000, chance: 0.15 },
-    // SHOVEL: { id: 'SHOVEL', symbol: '🛡️', color: '#2196F3', duration: 20000, chance: 0.15 },
-    // CLOCK: { id: 'CLOCK', symbol: '⏰', color: '#9C27B0', duration: 10000, chance: 0.15 }
 };
-const BONUS_TANK_CHANCE = 0.2; // 20% шанс что танк будет с бонусом
-const BONUS_TANK_BLINK_INTERVAL = 100; // Интервал мигания в ms
-const BONUS_SPAWN_CHANCE = 0.01; // 1% шанс каждый кадр (было 0.001)
-const BONUS_LIFETIME = 10000; // 10 секунд
+const BONUS_TANK_CHANCE = 0.2;
+const BONUS_TANK_BLINK_INTERVAL = 100;
+const BONUS_SPAWN_CHANCE = 0.01;
+const BONUS_LIFETIME = 10000;
 
 // === ТАБЛИЦА ЛИДЕРОВ ===
 let leaderboard = [];

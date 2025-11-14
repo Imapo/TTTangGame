@@ -21,7 +21,132 @@ class GameMap {
         this.basePosition = new Vector2(Math.floor(this.width / 2), this.height - 2);
         this.baseDestroyed = false;
 
+        // Создаем естественную текстуру травы со случайными пикселями
+        this.grassImage = this.createNaturalGrassTexture();
+        this.grassImageLoaded = true;
+
         this.initializeBrickTiles();
+    }
+
+    // АЛЬТЕРНАТИВНЫЙ ВАРИАНТ: Супер-простая естественная текстура
+    createNaturalGrassTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = TILE_SIZE;
+        canvas.height = TILE_SIZE;
+        const ctx = canvas.getContext('2d');
+
+        // Полностью прозрачный фон
+        ctx.clearRect(0, 0, TILE_SIZE, TILE_SIZE);
+
+        // Используем пиксели среднего размера - делим тайл на 8x8
+        const pixelSize = TILE_SIZE / 8;
+
+        // Цвета травы
+        const grassColors = ['#00A000', '#008800', '#006600', '#00CC00'];
+
+        // Заполняем 70% пикселей случайным образом
+        const totalPixels = 8 * 8;
+        const targetPixels = Math.floor(totalPixels * 0.7);
+
+        for (let i = 0; i < targetPixels; i++) {
+            const x = Math.floor(Math.random() * 8);
+            const y = Math.floor(Math.random() * 8);
+
+            const color = grassColors[Math.floor(Math.random() * grassColors.length)];
+            ctx.fillStyle = color;
+            ctx.fillRect(
+                x * pixelSize,
+                y * pixelSize,
+                pixelSize,
+                pixelSize
+            );
+        }
+
+        console.log('✅ Простая естественная текстура травы создана');
+        return canvas;
+    }
+
+    // НОВЫЙ МЕТОД: Создание кластеров травы
+    createGrassClusters(ctx, pixelSize, colors, fillPercentage) {
+        const totalPixels = 8 * 8;
+        const targetPixels = Math.floor(totalPixels * fillPercentage);
+        let placedPixels = 0;
+
+        // Создаем несколько центров кластеров
+        const clusterCenters = [
+            [2, 2], [5, 2], [1, 5], [6, 5], [3, 6], [4, 1]
+        ];
+
+        // Для каждого центра создаем кластер
+        clusterCenters.forEach(([centerX, centerY]) => {
+            const clusterSize = 2 + Math.floor(Math.random() * 3); // 2-4 пикселя от центра
+
+            for (let dx = -clusterSize; dx <= clusterSize; dx++) {
+                for (let dy = -clusterSize; dy <= clusterSize; dy++) {
+                    const x = centerX + dx;
+                    const y = centerY + dy;
+
+                    // Проверяем границы и случайность
+                    if (x >= 0 && x < 8 && y >= 0 && y < 8 &&
+                        Math.random() < 0.7 && placedPixels < targetPixels) {
+
+                        const color = colors[Math.floor(Math.random() * colors.length)];
+                    ctx.fillStyle = color;
+                    ctx.fillRect(
+                        x * pixelSize,
+                        y * pixelSize,
+                        pixelSize,
+                        pixelSize
+                    );
+                    placedPixels++;
+                        }
+                }
+            }
+        });
+
+        // Добавляем случайные пиксели чтобы достичь нужной плотности
+        while (placedPixels < targetPixels) {
+            const x = Math.floor(Math.random() * 8);
+            const y = Math.floor(Math.random() * 8);
+
+            // Проверяем не занят ли уже этот пиксель
+            const imageData = ctx.getImageData(x * pixelSize, y * pixelSize, 1, 1);
+            if (imageData.data[3] === 0) { // Если пиксель прозрачный
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                ctx.fillStyle = color;
+                ctx.fillRect(
+                    x * pixelSize,
+                    y * pixelSize,
+                    pixelSize,
+                    pixelSize
+                );
+                placedPixels++;
+            }
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Добавление случайных отдельных пикселей
+    addRandomPixels(ctx, pixelSize, colors, percentage) {
+        const totalPixels = 8 * 8;
+        const targetPixels = Math.floor(totalPixels * percentage);
+
+        for (let i = 0; i < targetPixels; i++) {
+            const x = Math.floor(Math.random() * 8);
+            const y = Math.floor(Math.random() * 8);
+
+            // Проверяем не занят ли уже этот пиксель
+            const imageData = ctx.getImageData(x * pixelSize, y * pixelSize, 1, 1);
+            if (imageData.data[3] === 0) { // Если пиксель прозрачный
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                ctx.fillStyle = color;
+                ctx.fillRect(
+                    x * pixelSize,
+                    y * pixelSize,
+                    pixelSize,
+                    pixelSize
+                );
+            }
+        }
     }
 
     initializeBrickTiles() {
@@ -84,7 +209,7 @@ class GameMap {
             }
         });
 
-        // Препятствия
+        // Препятствия - УВЕЛИЧИВАЕМ шанс появления травы
         const obstacleCount = 12 + level * 3;
         for (let i = 0; i < obstacleCount; i++) {
             const x = Math.floor(Math.random() * (this.width - 8)) + 4;
@@ -101,13 +226,15 @@ class GameMap {
 
             if (!inSpawnArea && grid[y][x] === TILE_TYPES.EMPTY) {
                 // Разные типы препятствий в зависимости от уровня
+                // УВЕЛИЧИВАЕМ шанс травы до 40%
                 const rand = Math.random();
-                if (rand < 0.6) grid[y][x] = TILE_TYPES.BRICK;
-                else if (rand < 0.8) grid[y][x] = TILE_TYPES.WATER;
+                if (rand < 0.3) grid[y][x] = TILE_TYPES.BRICK;
+                else if (rand < 0.5) grid[y][x] = TILE_TYPES.WATER;
+                else if (rand < 0.9) grid[y][x] = TILE_TYPES.GRASS; // 40% шанс травы!
                 else grid[y][x] = TILE_TYPES.CONCRETE;
 
-                // Создаем небольшие группы из 4 сегментов
-                if (Math.random() > 0.4) {
+                // Создаем небольшие группы из 4 сегментов (особенно для травы)
+                if (Math.random() > 0.3) { // Чаще создаем группы
                     const segments = [
                         [x, y], [x+1, y],
                         [x, y+1], [x+1, y+1]
@@ -180,7 +307,7 @@ class GameMap {
             for (let x = startX; x <= endX; x++) {
                 const tile = this.grid[y][x];
 
-                // Проверяем столкновение с обычными тайлами
+                // ПРОВЕРКА СТОЛКНОВЕНИЙ: трава не блокирует движение
                 if (tile === TILE_TYPES.WATER || tile === TILE_TYPES.BASE || tile === TILE_TYPES.CONCRETE) {
                     const tileRect = new Rectangle(
                         x * this.tileSize,
@@ -211,7 +338,7 @@ class GameMap {
                         } else {
                             // Проверяем столкновение с осколками (только с активными)
                             for (const fragment of brickTile.fragments) {
-                                if (fragment.active && rect.intersects(fragment.getBounds())) {
+                                if (fragment.active && fragment.collisionEnabled && rect.intersects(fragment.getBounds())) {
                                     return true;
                                 }
                             }
@@ -263,6 +390,7 @@ class GameMap {
                         }
                     }
                 }
+                // НОВОЕ: трава не блокирует пули - просто пропускаем
             }
         }
 
@@ -303,6 +431,7 @@ class GameMap {
             ctx.fillRect((this.width-1) * TILE_SIZE, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
         }
 
+        // Рисуем все обычные тайлы (трава пока не рисуется)
         for (let y = 1; y < this.height - 1; y++) {
             for (let x = 1; x < this.width - 1; x++) {
                 const tile = this.grid[y][x];
@@ -364,6 +493,23 @@ class GameMap {
                             }
                         }
                         break;
+                        // ТРАВУ рисуем отдельно в конце
+                }
+            }
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка травы поверх всего
+    drawGrassOverlay(ctx) {
+        if (!this.grassImageLoaded) return;
+
+        // Рисуем траву поверх всех тайлов
+        for (let y = 1; y < this.height - 1; y++) {
+            for (let x = 1; x < this.width - 1; x++) {
+                if (this.grid[y][x] === TILE_TYPES.GRASS) {
+                    const tileX = x * this.tileSize;
+                    const tileY = y * this.tileSize;
+                    ctx.drawImage(this.grassImage, tileX, tileY, TILE_SIZE, TILE_SIZE);
                 }
             }
         }

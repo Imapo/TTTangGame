@@ -50,12 +50,99 @@ class Game {
         this.baseFortifyDuration = 0;
         this.originalBaseWalls = [];
 
+        // НОВОЕ: Загружаем прогресс ДО создания игрока
+        this.playerProgress = this.loadPlayerProgress();
+        this.playerLevel = this.playerProgress.level;
+        this.playerExperience = this.playerProgress.experience;
+        this.nextLevelExp = EXP_REQUIREMENTS[this.playerLevel + 1] || 999;
+
+        console.log(`🎮 Загружен прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
+
         this.initLevel();
     }
 
+    // НОВЫЙ МЕТОД: Загрузка прогресса игрока (возвращает объект)
+    loadPlayerProgress() {
+        try {
+            const savedProgress = localStorage.getItem('tankGame_playerProgress');
+            if (savedProgress) {
+                const progress = JSON.parse(savedProgress);
+                console.log('✅ Прогресс игрока загружен:', progress);
+                return {
+                    level: progress.level || 1,
+                    experience: progress.experience || 0
+                };
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки прогресса:', error);
+        }
+
+        // Возвращаем значения по умолчанию
+        return {
+            level: 1,
+            experience: 0
+        };
+    }
+
+    // НОВЫЙ МЕТОД: Сохранение прогресса игрока
+    savePlayerProgress() {
+        try {
+            const progress = {
+                level: this.playerLevel,
+                experience: this.playerExperience,
+                timestamp: Date.now()
+            };
+            localStorage.setItem('tankGame_playerProgress', JSON.stringify(progress));
+            console.log('💾 Прогресс сохранен:', progress);
+        } catch (error) {
+            console.error('Ошибка сохранения прогресса:', error);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Сброс прогресса игрока
+    resetPlayerProgress() {
+        this.playerLevel = 1;
+        this.playerExperience = 0;
+        this.nextLevelExp = EXP_REQUIREMENTS[2];
+
+        // Обновляем игрока если он существует
+        if (this.player) {
+            this.player.playerLevel = 1;
+            this.player.experience = 0;
+            this.player.upgradeToLevel(1);
+        }
+
+        localStorage.removeItem('tankGame_playerProgress');
+        this.updatePlayerStats();
+        console.log('🔄 Прогресс игрока сброшен');
+    }
+
+    // ОБНОВЛЯЕМ метод initLevel для правильного применения прогресса
     initLevel() {
         this.map = new GameMap(this.level);
+
+        // СОЗДАЕМ игрока сначала без прогресса
         this.player = new Tank(224, 750);
+
+        // ПРИМЕНЯЕМ сохраненный уровень К ИГРОКУ
+        if (this.playerLevel > 1) {
+            console.log(`🚀 Применяем сохраненный уровень ${this.playerLevel} к игроку`);
+            // Сразу устанавливаем максимальный уровень
+            this.player.playerLevel = this.playerLevel;
+            this.player.experience = this.playerExperience;
+            this.player.upgrade = PLAYER_UPGRADES[`LEVEL_${this.playerLevel}`];
+
+            // Применяем характеристики
+            this.player.speed = this.player.upgrade.speed;
+            this.player.color = this.player.upgrade.color;
+            this.player.bulletSpeed = this.player.upgrade.bulletSpeed;
+            this.player.reloadTime = this.player.upgrade.reloadTime;
+            this.player.bulletPower = this.player.upgrade.bulletPower;
+            this.player.canDestroyConcrete = this.player.upgrade.canDestroyConcrete;
+
+            // Устанавливаем здоровье
+            this.player.health = this.player.upgrade.health;
+        }
 
         // Очищаем менеджеры
         this.enemyManager.clear();
@@ -82,15 +169,20 @@ class Game {
         // Добавляем свойства для эффекта времени
         this.timeStopActive = false;
         this.timeStopStartTime = 0;
-        this.timeStopDuration = 12000; // 12 секунд
-        this.timeResumePlayed = false; // Флаг чтобы звук не повторялся
+        this.timeStopDuration = 12000;
+        this.timeResumePlayed = false;
 
         this.updateUI();
         this.updateStatusIndicators();
         this.soundManager.updateEngineSound(false, true);
 
+        // Обновляем статистику игрока
+        this.updatePlayerStats();
+
         document.getElementById('levelComplete').style.display = 'none';
         document.getElementById('gameOver').style.display = 'none';
+
+        console.log(`🎮 Игрок создан: уровень ${this.player.playerLevel}, опыт ${this.player.experience}`);
     }
 
     // Добавляем метод активации остановки времени
@@ -268,6 +360,7 @@ class Game {
         return true;
     }
 
+    // ОБНОВЛЯЕМ метод добавления опыта
     handlePlayerBulletCollision(bullet, index, bulletBounds) {
         for (let j = this.enemyManager.enemies.length - 1; j >= 0; j--) {
             const enemy = this.enemyManager.enemies[j];
@@ -276,7 +369,6 @@ class Game {
                 const healthBefore = enemy.health;
                 const isHeavyTank = enemy.enemyType === 'HEAVY';
 
-                // Сохраняем информацию о бонусе до уничтожения
                 const hadBonus = enemy.hasBonus;
                 const bonusType = enemy.bonusType;
 
@@ -291,7 +383,14 @@ class Game {
                     }
                     this.soundManager.play('tankExplosion');
 
-                    // Если танк имел бонус - создаем его
+                    // ДОБАВЛЯЕМ опыт игроку
+                    this.player.addExperience(enemy.enemyType);
+
+                    // СИНХРОНИЗИРУЕМ опыт с game и сохраняем
+                    this.playerExperience = this.player.experience;
+                    this.playerLevel = this.player.playerLevel;
+                    this.savePlayerProgress();
+
                     if (hadBonus && bonusType) {
                         this.bonusManager.spawnBonusFromTank(enemy);
                     }
@@ -311,6 +410,67 @@ class Game {
             }
         }
         return true;
+    }
+
+    // ОБНОВЛЯЕМ метод обновления статистики
+    updatePlayerStats() {
+        const expElement = document.getElementById('playerExp');
+        const levelElement = document.getElementById('playerLevel');
+
+        if (expElement) {
+            const nextLevel = this.playerLevel + 1;
+            const nextExp = EXP_REQUIREMENTS[nextLevel] || 999;
+            expElement.textContent = `${this.playerExperience}/${nextExp}`;
+        }
+        if (levelElement) {
+            levelElement.textContent = this.playerLevel;
+        }
+
+        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ
+        const debugPlayerLevel = document.getElementById('debugPlayerLevel');
+        const debugPlayerExp = document.getElementById('debugPlayerExp');
+        const debugGameLevel = document.getElementById('debugGameLevel');
+        const debugGameExp = document.getElementById('debugGameExp');
+
+        if (debugPlayerLevel && this.player) {
+            debugPlayerLevel.textContent = this.player.playerLevel;
+            debugPlayerExp.textContent = this.player.experience;
+        }
+        if (debugGameLevel) {
+            debugGameLevel.textContent = this.playerLevel;
+            debugGameExp.textContent = this.playerExperience;
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Показ уведомления об апгрейде
+    showUpgradeNotification(message) {
+        // Создаем временное уведомление
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #4CAF50;
+        padding: 10px 20px;
+        border: 2px solid #4CAF50;
+        border-radius: 5px;
+        font-family: 'Courier New', monospace;
+        font-size: 18px;
+        font-weight: bold;
+        z-index: 1000;
+        `;
+        notification.textContent = message;
+
+        document.body.appendChild(notification);
+
+        // Удаляем через 3 секунды
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
     }
 
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
@@ -686,17 +846,29 @@ class Game {
         this.soundManager.stopLoop('engineMoving');
     }
 
+    // ОБНОВЛЯЕМ метод nextLevel
     nextLevel() {
+        // СОХРАНЯЕМ прогресс из объекта игрока в game
+        this.playerLevel = this.player.playerLevel;
+        this.playerExperience = this.player.experience;
+        this.savePlayerProgress();
+
+        console.log(`➡️ Переход на уровень ${this.level + 1}. Прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
+
         this.level++;
         this.initLevel();
     }
 
+    // ОБНОВЛЯЕМ метод restartGame
     restartGame() {
-        this.level = 1;
-        this.score = 0;
-        this.lives = 3;
-        this.soundManager.stopAll();
-        this.initLevel();
+        if (confirm('Начать новую игру? Весь прогресс будет сброшен.')) {
+            this.resetPlayerProgress();
+            this.level = 1;
+            this.score = 0;
+            this.lives = 3;
+            this.soundManager.stopAll();
+            this.initLevel();
+        }
     }
 
     updateUI() {
@@ -880,6 +1052,9 @@ class Game {
         this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
         this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
 
+        // НОВОЕ: Рисуем траву ПОСЛЕ всего (поверх танков, пуль и эффектов)
+        this.map.drawGrassOverlay(this.ctx);
+
         this.renderUIOverlays();
 
         // Сохраняем оригинальный контекст
@@ -906,6 +1081,9 @@ class Game {
         this.bullets.forEach(bullet => bullet.draw(this.ctx));
         this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
         this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
+
+        // НОВОЕ: Рисуем траву ПОСЛЕ всего (повторяем для второй части рендера)
+        this.map.drawGrassOverlay(this.ctx);
 
         this.renderUIOverlays();
 
