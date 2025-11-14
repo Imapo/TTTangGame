@@ -139,7 +139,7 @@ class Bonus {
 
     applyShieldBonus() {
         if (!this.game.player.isDestroyed) {
-            this.game.player.activateInvincibility(this.type.duration);
+            this.game.player.activateShield(10000); // 10 секунд
 
             // Визуальный эффект
             this.createExplosionEffect();

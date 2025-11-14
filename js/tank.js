@@ -172,6 +172,7 @@ class Tank {
             this.spawnProtection--;
         }
 
+        // Обновляем щит
         if (this.shield) {
             if (!this.shield.update()) {
                 this.shield = null;
@@ -255,8 +256,10 @@ class Tank {
     }
 
     // НОВЫЕ МЕТОДЫ ДЛЯ АКТИВАЦИИ БОНУСОВ
-    activateShield() {
+    activateShield(duration = 5000) { // duration в миллисекундах
         this.shield = new ShieldEffect(this);
+        this.shield.duration = duration; // Устанавливаем нужную длительность
+        console.log(`🛡️ Активирован щит на ${duration/1000}сек`);
     }
 
     activateInvincibility() {
@@ -274,7 +277,7 @@ class Tank {
     }
 
     hasShield() {
-        return this.shield !== null && this.shield.active;
+        return this.shield && this.shield.active;
     }
 
     move(newDirection, map, otherTanks = [], brickFragments = []) {

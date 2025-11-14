@@ -253,7 +253,7 @@ class Game {
                     this.showGameOver();
                 } else {
                     this.player = new Tank(224, 750);
-                    this.player.activateShield();
+                    this.player.activateShield(5000);
                 }
             }
             this.bullets.splice(index, 1);
@@ -282,7 +282,7 @@ class Game {
                 this.player.activateShield();
                 break;
             case 'INVINCIBILITY':
-                this.player.activateInvincibility();
+                this.player.activateShield(10000);
                 break;
             case 'AUTO_AIM':
                 this.player.activateAutoAim();
