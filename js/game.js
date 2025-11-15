@@ -9,6 +9,17 @@ class Game {
         this.bonusManager = new BonusManager(this);
         this.effectManager = new EffectManager(this);
 
+        // Инициализируем дебаг-флаги ДО создания меню
+        this.debugShowVision = false;
+        this.debugAILog = false;
+        this.debugGodMode = false;
+
+        // Инициализируем level ДО создания меню
+        this.level = 1;
+
+        // НОВОЕ: Создаем дебаг-меню ДО инициализации игры
+        this.createDebugMenu();
+
         this.initGameState();
         this.setupEventListeners();
         this.gameLoop(0);
@@ -59,6 +70,319 @@ class Game {
         console.log(`🎮 Загружен прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
 
         this.initLevel();
+    }
+
+    // НОВЫЙ МЕТОД: Создание дебаг-меню
+    createDebugMenu() {
+        // Удаляем существующее меню если есть
+        const existingMenu = document.getElementById('debugMenu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+
+        // Создаем контейнер для дебаг-меню
+        const debugMenu = document.createElement('div');
+        debugMenu.id = 'debugMenu';
+        debugMenu.style.cssText = `
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        border: 2px solid #4CAF50;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        z-index: 1000;
+        min-width: 250px;
+        max-height: 80vh;
+        overflow-y: auto;
+        `;
+
+        debugMenu.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <h3 style="margin: 0; color: #4CAF50;">🎮 Дебаг Меню</h3>
+        <button id="debugToggleMenu" style="background: #ff4444; color: white; border: none; border-radius: 3px; padding: 2px 6px; cursor: pointer;">✕</button>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+        <label style="display: block; margin-bottom: 5px; font-weight: bold;">Уровень игры:</label>
+        <select id="debugLevelSelect" style="width: 100%; padding: 5px; background: #333; color: white; border: 1px solid #4CAF50;">
+        <option value="1">1 - Базовый ИИ</option>
+        <option value="2">2 - Базовый ИИ</option>
+        <option value="3">3 - Базовый ИИ</option>
+        <option value="4">4 - Базовый ИИ</option>
+        <option value="5">5 - Продвинутый ИИ</option>
+        <option value="6">6 - Продвинутый ИИ</option>
+        <option value="7">7 - Продвинутый ИИ</option>
+        <option value="8">8 - Продвинутый ИИ</option>
+        <option value="9">9 - Продвинутый ИИ</option>
+        <option value="10">10 - Продвинутый ИИ</option>
+        </select>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+        <button id="debugApplyLevel" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 5px;">
+        Применить уровень
+        </button>
+        <button id="debugSpawnEnemy" style="width: 100%; padding: 8px; background: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer;">
+        Заспавнить врага
+        </button>
+        </div>
+
+        <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
+        <h4 style="margin: 0 0 8px 0; color: #FF9800;">Бонусы:</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+        <button class="debugBonusBtn" data-bonus="SHIELD" style="padding: 5px; background: #2196F3; color: white; border: none; border-radius: 3px; cursor: pointer;">🛡️ Щит</button>
+        <button class="debugBonusBtn" data-bonus="INVINCIBILITY" style="padding: 5px; background: #9C27B0; color: white; border: none; border-radius: 3px; cursor: pointer;">✨ Неуязвимость</button>
+        <button class="debugBonusBtn" data-bonus="AUTO_AIM" style="padding: 5px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">🎯 Автоприцел</button>
+        <button class="debugBonusBtn" data-bonus="FORTIFY" style="padding: 5px; background: #FF9800; color: white; border: none; border-radius: 3px; cursor: pointer;">🏰 Укрепить базу</button>
+        <button class="debugBonusBtn" data-bonus="TIME_STOP" style="padding: 5px; background: #607D8B; color: white; border: none; border-radius: 3px; cursor: pointer;">⏰ Стоп-время</button>
+        <button id="debugAddLife" style="padding: 5px; background: #F44336; color: white; border: none; border-radius: 3px; cursor: pointer;">❤️ +1 жизнь</button>
+        </div>
+        </div>
+
+        <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
+        <h4 style="margin: 0 0 8px 0; color: #FF9800;">Настройки отладки:</h4>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowVision" style="margin-right: 5px;">
+        Показывать зону видимости
+        </label>
+        </div>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowAILog" style="margin-right: 5px;">
+        Лог ИИ в консоль
+        </label>
+        </div>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugGodMode" style="margin-right: 5px;">
+        Режим бога
+        </label>
+        </div>
+        </div>
+
+        <div style="border-top: 1px solid #444; padding-top: 10px;">
+        <div style="font-size: 10px; color: #888;">
+        <div>Текущий ИИ: <span id="debugCurrentAI">Базовый</span></div>
+        <div>Уровень игрока: <span id="debugPlayerLevel">1</span></div>
+        <div>Опыт: <span id="debugPlayerExp">0</span></div>
+        <div>Уровень игры: <span id="debugGameLevel">1</span></div>
+        </div>
+        </div>
+        `;
+
+        document.body.appendChild(debugMenu);
+
+        // Настраиваем обработчики событий
+        this.setupDebugEventListeners();
+    }
+
+    // НОВЫЙ МЕТОД: Настройка обработчиков дебаг-меню
+    setupDebugEventListeners() {
+        const levelSelect = document.getElementById('debugLevelSelect');
+        const applyButton = document.getElementById('debugApplyLevel');
+        const spawnButton = document.getElementById('debugSpawnEnemy');
+        const showVision = document.getElementById('debugShowVision');
+        const showAILog = document.getElementById('debugShowAILog');
+        const godMode = document.getElementById('debugGodMode');
+        const addLifeButton = document.getElementById('debugAddLife');
+        const toggleMenuButton = document.getElementById('debugToggleMenu');
+
+        // Применение уровня
+        applyButton.addEventListener('click', () => {
+            const selectedLevel = parseInt(levelSelect.value);
+            this.setGameLevel(selectedLevel);
+        });
+
+        // Спавн врага
+        spawnButton.addEventListener('click', () => {
+            this.debugSpawnTestEnemy();
+        });
+
+        // Показ зоны видимости
+        showVision.addEventListener('change', (e) => {
+            this.debugShowVision = e.target.checked;
+        });
+
+        // Лог ИИ
+        showAILog.addEventListener('change', (e) => {
+            this.debugAILog = e.target.checked;
+        });
+
+        // Режим бога
+        godMode.addEventListener('change', (e) => {
+            this.debugGodMode = e.target.checked;
+            if (this.debugGodMode && this.player) {
+                this.player.activateShield(999999);
+                console.log('🦸 Режим бога активирован');
+            }
+        });
+
+        // Добавление жизни
+        addLifeButton.addEventListener('click', () => {
+            this.debugAddLife();
+        });
+
+        // Кнопки бонусов
+        document.querySelectorAll('.debugBonusBtn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const bonusType = e.target.dataset.bonus;
+                this.debugAddBonus(bonusType);
+            });
+        });
+
+        // Сворачивание/разворачивание меню
+        toggleMenuButton.addEventListener('click', () => {
+            const menu = document.getElementById('debugMenu');
+            if (menu.style.display === 'none') {
+                menu.style.display = 'block';
+            } else {
+                menu.style.display = 'none';
+            }
+        });
+
+        // Обновляем информацию при загрузке
+        this.updateDebugInfo();
+    }
+
+    // НОВЫЙ МЕТОД: Установка уровня игры
+    setGameLevel(targetLevel) {
+        console.log(`🎮 Устанавливаем уровень игры: ${targetLevel}`);
+
+        this.level = targetLevel;
+
+        // Перезапускаем уровень с новыми настройками
+        this.initLevel();
+
+        // Обновляем информацию о текущем ИИ
+        this.updateDebugInfo();
+    }
+
+    // НОВЫЙ МЕТОД: Спавн тестового врага
+    debugSpawnTestEnemy() {
+        const spawnPoint = this.enemyManager.getNextSpawnPoint();
+        this.enemyManager.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
+
+        setTimeout(() => {
+            const enemyTypes = ['BASIC', 'FAST', 'HEAVY', 'SNIPER'];
+            const enemyType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)];
+            const uniqueName = this.enemyManager.generateUniqueEnemyName(enemyType);
+
+            const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
+            enemy.direction = DIRECTIONS.DOWN;
+            enemy.username = uniqueName;
+
+            // Устанавливаем ИИ соответствующий уровню
+            if (enemy.setAILevel) {
+                enemy.setAILevel(this.level);
+            }
+
+            this.enemyManager.enemies.push(enemy);
+            console.log(`🎯 Заспавнен ${enemyType} танк на уровне ${this.level}`);
+        }, 1000);
+    }
+
+    // НОВОЕ: Обновление дебаг информации
+    updateDebugInfo() {
+        // ДОБАВЛЯЕМ ПРОВЕРКУ НА СУЩЕСТВОВАНИЕ this.level
+        if (typeof this.level === 'undefined') {
+            console.warn('⚠️ this.level не определен, устанавливаем значение по умолчанию 1');
+            this.level = 1;
+        }
+
+        const currentAIElement = document.getElementById('debugCurrentAI');
+        if (currentAIElement) {
+            // ТОЛЬКО ДВА ТИПА ИИ: базовый (1-4) и продвинутый (5-10)
+            let aiName = this.level <= 4 ? 'Базовый' : 'Продвинутый';
+            currentAIElement.textContent = aiName;
+        }
+
+        // Обновляем выбранный уровень в селекте
+        const levelSelect = document.getElementById('debugLevelSelect');
+        if (levelSelect) {
+            levelSelect.value = this.level.toString();
+        }
+
+        // Обновляем информацию об игроке
+        const playerLevelElement = document.getElementById('debugPlayerLevel');
+        const playerExpElement = document.getElementById('debugPlayerExp');
+        const gameLevelElement = document.getElementById('debugGameLevel');
+
+        if (playerLevelElement) {
+            playerLevelElement.textContent = this.playerLevel || 1;
+        }
+        if (playerExpElement) {
+            playerExpElement.textContent = this.playerExperience || 0;
+        }
+        if (gameLevelElement) {
+            gameLevelElement.textContent = this.level || 1;
+        }
+    }
+
+    // НОВЫЕ МЕТОДЫ ДЛЯ ТЕСТИРОВАНИЯ
+    debugTogglePanel() {
+        const panel = document.getElementById('debugPanel');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    debugAddBonus(bonusType) {
+        if (this.player && this.player.isDestroyed) return;
+
+        console.log(`🎁 Выдаем бонус: ${bonusType}`);
+
+        switch(bonusType) {
+            case 'SHIELD':
+                if (this.player) this.player.activateShield();
+                break;
+            case 'INVINCIBILITY':
+                if (this.player) this.player.activateShield(10000);
+                break;
+            case 'AUTO_AIM':
+                if (this.player) this.player.activateAutoAim();
+                break;
+            case 'FORTIFY':
+                this.fortifyBase(30000);
+                break;
+            case 'TIME_STOP':
+                this.activateTimeStop(8000);
+                break;
+        }
+
+        this.updateStatusIndicators();
+    }
+
+    debugAddLife() {
+        this.lives++;
+        this.updateUI();
+        console.log(`❤️ Добавлена жизнь. Всего: ${this.lives}`);
+    }
+
+    debugSpawnEnemyWithBonus(enemyType) {
+        const spawnPoint = this.enemyManager.getNextSpawnPoint();
+        this.enemyManager.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
+
+        setTimeout(() => {
+            const uniqueName = this.enemyManager.generateUniqueEnemyName(enemyType);
+            const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
+            enemy.direction = DIRECTIONS.DOWN;
+            enemy.username = uniqueName;
+
+            const bonusTypes = ['SHIELD', 'INVINCIBILITY', 'AUTO_AIM', 'FORTIFY'];
+            const randomBonus = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
+            enemy.hasBonus = true;
+            enemy.bonusType = BONUS_TYPES[randomBonus];
+
+            this.enemyManager.enemies.push(enemy);
+            console.log(`🎁 Создан ${enemyType} танк с бонусом: ${randomBonus}`);
+        }, 1000);
     }
 
     // НОВЫЙ МЕТОД: Загрузка прогресса игрока (возвращает объект)
@@ -143,6 +467,9 @@ class Game {
             // Устанавливаем здоровье
             this.player.health = this.player.upgrade.health;
         }
+
+        // НОВОЕ: Обновляем дебаг информацию
+        this.updateDebugInfo();
 
         // Очищаем менеджеры
         this.enemyManager.clear();
@@ -234,7 +561,10 @@ class Game {
         }
 
         // Обновляем через менеджеры
-        this.enemyManager.update();
+        // Обновляем врагов только если ИИ загружен
+        if (typeof EnemyAI !== 'undefined') {
+            this.enemyManager.update();
+        }
         this.enemyManager.updateRespawns();
         this.updateBullets();
         this.effectManager.update();
@@ -1087,7 +1417,47 @@ class Game {
 
         this.renderUIOverlays();
 
+        // НОВОЕ: Отрисовка дебаг информации (зоны видимости и т.д.)
+        if (this.debugShowVision) {
+            this.drawDebugVision();
+        }
+
         // Восстанавливаем контекст
+        this.ctx.restore();
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка зон видимости врагов
+    drawDebugVision() {
+        this.ctx.save();
+
+        this.enemyManager.enemies.forEach(enemy => {
+            if (!enemy.isDestroyed) {
+                const visionRange = VISION_RANGES[enemy.enemyType] || VISION_RANGES.BASIC;
+
+                // Рисуем зону видимости
+                this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                this.ctx.arc(enemy.position.x, enemy.position.y, visionRange, 0, Math.PI * 2);
+                this.ctx.stroke();
+
+                // Рисуем линию к игроку если видит
+                if (this.player && !this.player.isDestroyed && enemy.canSeePlayer(this.player, this.map)) {
+                    this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(enemy.position.x, enemy.position.y);
+                    this.ctx.lineTo(this.player.position.x, this.player.position.y);
+                    this.ctx.stroke();
+                }
+
+                // Подпись с типом ИИ
+                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                this.ctx.font = '10px Arial';
+                this.ctx.fillText(`AI:${enemy.aiLevel}`, enemy.position.x - 15, enemy.position.y - 10);
+            }
+        });
+
         this.ctx.restore();
     }
 

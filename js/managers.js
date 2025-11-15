@@ -102,26 +102,21 @@ class EnemyManager {
         this.enemies.forEach(enemy => {
             enemy.update();
 
-            if (Math.random() < 0.02) {
-                const directions = Object.values(DIRECTIONS);
-                const randomDir = directions[Math.floor(Math.random() * directions.length)];
-                enemy.direction = randomDir;
-            }
+            // ВЫЗЫВАЕМ новый ИИ вместо старого случайного поведения
+            enemy.updateEnemyAI(this.game.map, allTanks, allFragments, this.game.player);
 
-            const otherTanksForEnemy = allTanks.filter(t => t !== enemy && !t.isDestroyed);
-            enemy.move(enemy.direction, this.game.map, otherTanksForEnemy, allFragments);
-
-            if (Math.random() < 0.015 && enemy.canShoot) {
-                const bullet = enemy.shoot();
-                if (bullet) {
-                    this.game.bullets.push(bullet);
-                    this.game.soundManager.playEnemyShot(enemy.enemyType);
-                }
+            // НОВОЕ: Проверяем не вышел ли враг за границы
+            if (!enemy.isPositionInBounds(enemy.position.x, enemy.position.y)) {
+                console.log(`⚠️ Враг ${enemy.username} вышел за границы! Спасаем...`);
+                enemy.attemptEscape();
             }
         });
 
         // Обрабатываем столкновения между танками
         this.handleTankCollisions(allTanks);
+
+        // НОВОЕ: Удаляем уничтоженных врагов (включая застрявших)
+        this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
     }
 
     handleTankCollisions(allTanks) {
@@ -174,24 +169,6 @@ class EnemyManager {
         this.currentSpawnIndex = 0;
     }
 
-    completeSpawnAnimation(spawnPoint) {
-        const enemyType = this.getRandomEnemyType();
-        const uniqueName = this.generateUniqueEnemyName(enemyType);
-
-        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.game.level, enemyType);
-        enemy.direction = DIRECTIONS.DOWN;
-        enemy.username = uniqueName;
-
-        // ЕСЛИ АКТИВНА ОСТАНОВКА ВРЕМЕНИ - ЗАМОРАЖИВАЕМ НОВЫЙ ТАНК
-        if (this.game.timeStopActive) {
-            const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
-            if (remainingTime > 0) {
-                enemy.freeze(remainingTime);
-            }
-        }
-
-        this.enemies.push(enemy);
-    }
 }
 
 // === МЕНЕДЖЕР БОНУСОВ ===

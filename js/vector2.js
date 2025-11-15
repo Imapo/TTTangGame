@@ -20,4 +20,9 @@ class Vector2 {
     clone() {
         return new Vector2(this.x, this.y);
     }
+
+    // НОВЫЙ МЕТОД: Длина вектора
+    length() {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
 }

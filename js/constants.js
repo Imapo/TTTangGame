@@ -6,7 +6,7 @@ const CANVAS_WIDTH = 832;
 const CANVAS_HEIGHT = 832;
 const FPS = 60;
 const FRAME_TIME = 1000 / FPS;
-const MAX_ENEMIES_ON_SCREEN = 4;
+const MAX_ENEMIES_ON_SCREEN = 1;
 const TOTAL_ENEMIES_PER_LEVEL = 20;
 const RESPAWN_DELAY = 3000;
 const SPAWN_ANIMATION_DURATION = 3000;
@@ -83,6 +83,29 @@ const PLAYER_UPGRADES = {
         canDestroyConcrete: true, // Может разрушать бетон!
         name: 'Элитный танк'
     }
+};
+
+// === СИСТЕМА ИИ ДЛЯ ВРАГОВ ===
+const ENEMY_AI_LEVELS = {
+    BASIC: 'BASIC',
+    ADVANCED: 'ADVANCED'
+};
+
+// Дальность видимости для разных типов врагов
+const VISION_RANGES = {
+    'BASIC': 200,
+    'FAST': 250,
+    'HEAVY': 180,
+    'SNIPER': 400,
+    'BASE_VISION': 350  // Отдельная дальность для базы
+};
+
+// Шансы стрельбы при видимости игрока
+const SHOOT_CHANCES = {
+    'BASIC': 0.02,   // 2% каждый кадр
+    'FAST': 0.025,   // 2.5%
+    'HEAVY': 0.015,  // 1.5% (медленная перезарядка)
+    'SNIPER': 0.01   // 1% но с дальним обстрелом
 };
 
 // Опыт за уничтожение врагов

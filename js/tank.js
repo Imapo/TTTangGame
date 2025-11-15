@@ -67,10 +67,88 @@ class Tank {
         this.freezeDuration = 0;
         this.iceCrystals = [];
 
+        // НОВОЕ: Свойства для анти-застревания
+        this.stuckCheckTimer = 0;
+        this.lastPosition = new Vector2(x, y);
+        this.stuckTime = 0;
+        this.escapeAttempts = 0;
+
+        // НОВОЕ: Свойства для ИИ
+        this.aiLevel = ENEMY_AI_LEVELS.BASIC;
+        this.ai = null; // Будет создан позже
+        this.currentDirectionTime = 0;
+        this.maxDirectionTime = 90; // 3 секунды при 30 FPS
+
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
         }
+    }
+
+    // НОВЫЙ МЕТОД: Инициализация ИИ
+    initAI() {
+        if (this.type !== 'enemy') return;
+
+        if (this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+            this.ai = new BasicEnemyAI(this);
+        } else {
+            this.ai = new EnemyAI(this);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Определение уровня ИИ на основе уровня игры
+    setAILevel(gameLevel) {
+        if (gameLevel <= 5) {
+            this.aiLevel = ENEMY_AI_LEVELS.BASIC;
+        } else {
+            this.aiLevel = ENEMY_AI_LEVELS.ADVANCED;
+        }
+
+        // Переинициализируем ИИ
+        this.initAI();
+    }
+
+    // ИСПРАВЛЯЕМ метод canSeePlayer
+    canSeePlayer(player, map) {
+        if (!player || player.isDestroyed || !map) return false;
+
+        const visionRange = VISION_RANGES[this.enemyType] || VISION_RANGES.BASIC;
+
+        // Проверяем расстояние
+        const distance = Math.sqrt(
+            Math.pow(this.position.x - player.position.x, 2) +
+            Math.pow(this.position.y - player.position.y, 2)
+        );
+
+        if (distance > visionRange) return false;
+
+        // Проверяем линию видимости (прямую без препятствий)
+        return this.hasLineOfSight(player.position.x, player.position.y, map);
+    }
+
+    // НОВЫЙ МЕТОД: Проверка прямой видимости
+    hasLineOfSight(targetX, targetY, map) {
+        if (!map || !map.checkCollision) return false;
+
+        // Используем алгоритм Брезенхема для проверки линии
+        const steps = 20; // Количество проверок вдоль линии
+        const dx = (targetX - this.position.x) / steps;
+        const dy = (targetY - this.position.y) / steps;
+
+        for (let i = 1; i < steps; i++) {
+            const checkX = this.position.x + dx * i;
+            const checkY = this.position.y + dy * i;
+
+            // Создаем маленький прямоугольник для проверки столкновения
+            const checkBounds = new Rectangle(checkX - 2, checkY - 2, 4, 4);
+
+            // Если на пути есть препятствие - видимости нет
+            if (map.checkCollision(checkBounds)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // ОБНОВЛЯЕМ метод addExperience
@@ -215,7 +293,7 @@ class Tank {
     }
 
     // НОВЫЙ МЕТОД: Активация неуязвимости
-    activateInvincibility(duration) {
+    activateInvincibility(duration = 10000) {
         this.isInvincible = true;
         this.invincibilityDuration = duration;
         this.invincibilityTimer = 0;
@@ -260,6 +338,11 @@ class Tank {
     update() {
         if (this.isDestroyed) return;
 
+        // ОБНОВЛЯЕМ ИИ для врагов
+        if (this.type === 'enemy' && typeof game !== 'undefined') {
+            this.setAILevel(game.level);
+        }
+
         // Обновляем эффект заморозки
         if (this.isFrozen) {
             const elapsed = Date.now() - this.freezeStartTime;
@@ -290,7 +373,6 @@ class Tank {
             }
             return;
         }
-
 
         // Обновляем неуязвимость
         this.updateInvincibility();
@@ -325,6 +407,141 @@ class Tank {
         }
     }
 
+    // ОБНОВЛЯЕМ метод для врагов (будет вызываться из EnemyManager)
+    updateEnemyAI(map, otherTanks, brickFragments, player) {
+        if (this.isDestroyed || this.type !== 'enemy' || !map || this.isFrozen) return;
+
+        // Инициализируем ИИ если еще не создан
+        if (!this.ai) {
+            this.initAI();
+        }
+
+        if (this.ai) {
+            this.ai.update(map, player, otherTanks, brickFragments);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Проверка застревания (упрощенная версия)
+    checkIfStuck() {
+        this.stuckCheckTimer++;
+
+        // Проверяем каждые 30 кадров
+        if (this.stuckCheckTimer >= 30) {
+            this.stuckCheckTimer = 0;
+
+            // Вычисляем расстояние от последней позиции
+            const distanceMoved = Math.sqrt(
+                Math.pow(this.position.x - this.lastPosition.x, 2) +
+                Math.pow(this.position.y - this.lastPosition.y, 2)
+            );
+
+            // Если танк почти не двигался - он застрял
+            if (distanceMoved < 2) {
+                this.stuckTime++;
+
+                // Если застрял более 5 секунд - пытаемся спасти
+                if (this.stuckTime > 10) { // 10 * 30 кадров = ~5 секунд
+                    this.attemptEscape();
+                }
+            } else {
+                // Двигается нормально - сбрасываем таймер
+                this.stuckTime = 0;
+                this.escapeAttempts = 0;
+            }
+
+            // Сохраняем текущую позицию для следующей проверки
+            this.lastPosition = this.position.clone();
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Попытка выхода из застревания
+    attemptEscape() {
+        this.escapeAttempts++;
+        console.log(`🆘 Танк ${this.username} застрял! Попытка спасения #${this.escapeAttempts}`);
+
+        // Пытаемся телепортировать в случайную безопасную позицию
+        if (this.escapeAttempts <= 3) {
+            if (this.tryFindSafePosition()) {
+                console.log(`✅ Танк ${this.username} спасен!`);
+                this.stuckTime = 0;
+                this.escapeAttempts = 0;
+            }
+        } else {
+            // Если не удалось спасти после 3 попыток - уничтожаем
+            console.log(`💥 Танк ${this.username} уничтожен из-за застревания`);
+            this.isDestroyed = true;
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Поиск безопасной позиции
+    tryFindSafePosition() {
+        if (typeof game === 'undefined' || !game.map) return false;
+
+        const attempts = 10;
+
+        for (let i = 0; i < attempts; i++) {
+            // Пытаемся найти позицию в пределах игрового поля
+            const newX = TILE_SIZE + Math.random() * (CANVAS_WIDTH - TILE_SIZE * 2);
+            const newY = TILE_SIZE + Math.random() * (CANVAS_HEIGHT - TILE_SIZE * 2);
+
+            const testBounds = new Rectangle(
+                newX - this.size/2 + 2,
+                newY - this.size/2 + 2,
+                this.size - 4,
+                this.size - 4
+            );
+
+            // Проверяем что позиция свободна
+            if (!game.map.checkCollision(testBounds) &&
+                !this.checkTankCollisionAtPosition(newX, newY) &&
+                this.isPositionInBounds(newX, newY)) {
+
+                // Нашли безопасную позицию - телепортируем
+                this.position.x = newX;
+            this.position.y = newY;
+            return true;
+                }
+        }
+
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка столкновения с другими танками на позиции
+    checkTankCollisionAtPosition(testX, testY) {
+        if (typeof game === 'undefined') return false;
+
+        const testBounds = new Rectangle(
+            testX - this.size/2 + 2,
+            testY - this.size/2 + 2,
+            this.size - 4,
+            this.size - 4
+        );
+
+        // Проверяем столкновение с игроком
+        if (!game.player.isDestroyed && testBounds.intersects(game.player.getBounds())) {
+            return true;
+        }
+
+        // Проверяем столкновение с другими врагами
+        if (game.enemyManager && game.enemyManager.enemies) {
+            for (const enemy of game.enemyManager.enemies) {
+                if (enemy !== this && !enemy.isDestroyed && testBounds.intersects(enemy.getBounds())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка что позиция в пределах игрового поля
+    isPositionInBounds(x, y) {
+        return x >= TILE_SIZE + this.size/2 &&
+        x <= CANVAS_WIDTH - TILE_SIZE - this.size/2 &&
+        y >= TILE_SIZE + this.size/2 &&
+        y <= CANVAS_HEIGHT - TILE_SIZE - this.size/2;
+    }
+
     updateIceCrystals() {
         this.iceCrystals.forEach(crystal => {
             crystal.rotation += 0.02;
@@ -336,7 +553,7 @@ class Tank {
 
     // НОВЫЙ МЕТОД: Поиск ближайшего врага для автонаведения
     findNearestTarget(enemies, map) {
-        if (!this.hasAutoAim || enemies.length === 0) return null;
+        if (!this.hasAutoAim || !enemies || enemies.length === 0) return null;
 
         let nearestEnemy = null;
         let nearestDistance = Infinity;
@@ -350,7 +567,7 @@ class Tank {
             );
 
             // Проверяем прямую видимость (упрощенно)
-            if (this.hasLineOfSight(enemy, map) && distance < nearestDistance) {
+            if (this.hasLineOfSight(enemy.position.x, enemy.position.y, map) && distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestEnemy = enemy;
             }
@@ -359,19 +576,7 @@ class Tank {
         return nearestEnemy;
     }
 
-    // НОВЫЙ МЕТОД: Проверка прямой видимости (упрощенная)
-    hasLineOfSight(target, map) {
-        // Упрощенная проверка - только расстояние
-        // Можно улучшить проверкой коллизий с картой
-        const distance = Math.sqrt(
-            Math.pow(this.position.x - target.position.x, 2) +
-            Math.pow(this.position.y - target.position.y, 2)
-        );
-
-        return distance < 400; // Максимальная дальность автонаведения
-    }
-
-    // Новый метод для разрешения столкновений между танками
+    // ОБНОВЛЯЕМ метод resolveTankCollision для предотвращения выталкивания за границы
     resolveTankCollision(otherTank) {
         const dx = this.position.x - otherTank.position.x;
         const dy = this.position.y - otherTank.position.y;
@@ -386,8 +591,22 @@ class Tank {
             const pushX = (dx / distance) * overlap * 0.5;
             const pushY = (dy / distance) * overlap * 0.5;
 
-            this.position = this.position.add(new Vector2(pushX, pushY));
-            otherTank.position = otherTank.position.add(new Vector2(-pushX, -pushY));
+            // НОВОЕ: Проверяем границы перед применением отталкивания
+            const newThisX = this.position.x + pushX;
+            const newThisY = this.position.y + pushY;
+            const newOtherX = otherTank.position.x - pushX;
+            const newOtherY = otherTank.position.y - pushY;
+
+            // Применяем отталкивание только если новые позиции в пределах поля
+            if (this.isPositionInBounds(newThisX, newThisY)) {
+                this.position.x = newThisX;
+                this.position.y = newThisY;
+            }
+
+            if (otherTank.isPositionInBounds(newOtherX, newOtherY)) {
+                otherTank.position.x = newOtherX;
+                otherTank.position.y = newOtherY;
+            }
 
             this.stuckTimer = 0;
             otherTank.stuckTimer = 0;
@@ -399,20 +618,6 @@ class Tank {
         this.shield = new ShieldEffect(this);
         this.shield.duration = duration; // Устанавливаем нужную длительность
         console.log(`🛡️ Активирован щит на ${duration/1000}сек`);
-    }
-
-    activateInvincibility() {
-        this.isInvincible = true;
-        this.invincibilityTimer = 0;
-        this.invincibilityDuration = 10000; // 10 секунд
-        console.log('⭐ Активирована неуязвимость!');
-    }
-
-    activateAutoAim() {
-        this.hasAutoAim = true;
-        this.autoAimTimer = 0;
-        this.autoAimDuration = 20000; // 20 секунд
-        console.log('🎯 Активировано автонаведение!');
     }
 
     // Добавляем метод заморозки
@@ -455,7 +660,7 @@ class Tank {
     }
 
     move(newDirection, map, otherTanks = [], brickFragments = []) {
-        if (this.isDestroyed) return false;
+        if (this.isDestroyed || this.isFrozen) return false;
 
         const oldDirection = this.direction;
         this.direction = newDirection;
@@ -464,6 +669,12 @@ class Tank {
         let currentSpeed = this.speed;
 
         const newPos = this.position.add(directionVector.multiply(currentSpeed));
+
+        // НОВОЕ: Усиленная проверка границ
+        if (!this.isPositionInBounds(newPos.x, newPos.y)) {
+            return false;
+        }
+
         const tankBounds = new Rectangle(
             newPos.x - this.size/2 + 2,
             newPos.y - this.size/2 + 2,
@@ -471,71 +682,78 @@ class Tank {
             this.size - 4
         );
 
-        if (newPos.x < TILE_SIZE + this.size/2 || newPos.x > CANVAS_WIDTH - TILE_SIZE - this.size/2 ||
-            newPos.y < TILE_SIZE + this.size/2 || newPos.y > CANVAS_HEIGHT - TILE_SIZE - this.size/2) {
+        if (map && map.checkCollision && map.checkCollision(tankBounds)) {
             return false;
-            }
+        }
 
-            if (map.checkCollision(tankBounds)) {
-                return false;
-            }
-
+        if (otherTanks) {
             for (const otherTank of otherTanks) {
                 if (otherTank !== this && !otherTank.isDestroyed && tankBounds.intersects(otherTank.getBounds())) {
                     return false;
                 }
             }
+        }
 
-            let fragmentCollision = false;
+        let fragmentCollision = false;
+        if (brickFragments) {
             for (const fragment of brickFragments) {
                 if (fragment.collisionEnabled && fragment.active && tankBounds.intersects(fragment.getBounds())) {
                     fragmentCollision = true;
                     break;
                 }
             }
+        }
 
-            if (fragmentCollision) {
-                let speedMultiplier;
-                if (this.type === 'player') {
-                    speedMultiplier = 0.6;
-                } else {
-                    speedMultiplier = 0.8;
-                }
+        if (fragmentCollision) {
+            let speedMultiplier;
+            if (this.type === 'player') {
+                speedMultiplier = 0.6;
+            } else {
+                speedMultiplier = 0.8;
+            }
 
-                const adjustedSpeed = currentSpeed * speedMultiplier;
-                const adjustedPos = this.position.add(directionVector.multiply(adjustedSpeed));
-                const adjustedBounds = new Rectangle(
-                    adjustedPos.x - this.size/2 + 2,
-                    adjustedPos.y - this.size/2 + 2,
-                    this.size - 4,
-                    this.size - 4
-                );
+            const adjustedSpeed = currentSpeed * speedMultiplier;
+            const adjustedPos = this.position.add(directionVector.multiply(adjustedSpeed));
 
-                if (!map.checkCollision(adjustedBounds)) {
-                    let tankCollision = false;
+            // НОВОЕ: Проверка границ для adjusted позиции
+            if (!this.isPositionInBounds(adjustedPos.x, adjustedPos.y)) {
+                return false;
+            }
+
+            const adjustedBounds = new Rectangle(
+                adjustedPos.x - this.size/2 + 2,
+                adjustedPos.y - this.size/2 + 2,
+                this.size - 4,
+                this.size - 4
+            );
+
+            if (!map.checkCollision(adjustedBounds)) {
+                let tankCollision = false;
+                if (otherTanks) {
                     for (const otherTank of otherTanks) {
                         if (otherTank !== this && !otherTank.isDestroyed && adjustedBounds.intersects(otherTank.getBounds())) {
                             tankCollision = true;
                             break;
                         }
                     }
-
-                    if (!tankCollision) {
-                        this.position = adjustedPos;
-                        return true;
-                    }
                 }
 
-                return false;
-            } else {
-                this.position = newPos;
-                return true;
+                if (!tankCollision) {
+                    this.position = adjustedPos;
+                    return true;
+                }
             }
+
+            return false;
+        } else {
+            this.position = newPos;
+            return true;
+        }
     }
 
     // ОБНОВЛЯЕМ метод shoot для учета улучшенных пуль
     shoot(nearestEnemy = null) {
-        if (this.isDestroyed || !this.canShoot) return null;
+        if (this.isDestroyed || !this.canShoot || this.isFrozen) return null;
 
         this.canShoot = false;
         this.reloadTime = this.type === 'player' ? this.upgrade.reloadTime :
@@ -699,6 +917,45 @@ class Tank {
         if (this.isFrozen && this.freezeProgress > 0) {
             this.drawFreezeEffect(ctx);
         }
+
+        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ (только если включен дебаг-режим)
+        if (typeof game !== 'undefined' && game.debugShowVision && this.type === 'enemy') {
+            this.drawAIDebugInfo(ctx);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка отладочной информации ИИ
+    drawAIDebugInfo(ctx) {
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        // Текст с информацией об ИИ (только BASIC и ADVANCED)
+        const aiNames = {
+            [ENEMY_AI_LEVELS.BASIC]: 'БАЗОВЫЙ',
+            [ENEMY_AI_LEVELS.ADVANCED]: 'ПРОДВИНУТЫЙ'
+        };
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '8px Arial';
+        ctx.textAlign = 'center';
+
+        // Информация об ИИ
+        ctx.fillText(`ИИ: ${aiNames[this.aiLevel] || 'НЕИЗВЕСТНО'}`, 0, -this.size - 25);
+        ctx.fillText(`Зд: ${this.health}`, 0, -this.size - 15);
+
+        // Индикатор состояния
+        let state = 'ПОИСК';
+        if (this.ai && this.ai.state) {
+            const stateNames = {
+                'PATROL': 'ПАТРУЛЬ',
+                'ATTACK_PLAYER': 'АТАКА ИГРОКА',
+                'ATTACK_BASE': 'АТАКА БАЗЫ'
+            };
+            state = stateNames[this.ai.state] || this.ai.state;
+        }
+        ctx.fillText(state, 0, -this.size - 5);
+
+        ctx.restore();
     }
 
     // НОВЫЙ МЕТОД: Отрисовка башни танка
