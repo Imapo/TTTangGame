@@ -27,6 +27,12 @@ window.addEventListener('load', () => {
         console.error('Error initializing game:', error);
         alert('Ошибка загрузки игры: ' + error.message);
     }
+
+    window.closeLevelStats = function() {
+        if (game && game.closeLevelStats) {
+            game.closeLevelStats();
+        }
+    };
 });
 
 // Предотвращаем прокрутку страницы при использовании стрелок и пробела

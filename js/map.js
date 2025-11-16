@@ -364,6 +364,18 @@ class GameMap {
 
                 if (tile === TILE_TYPES.BASE) {
                     this.grid[y][x] = TILE_TYPES.EMPTY;
+
+                    // НОВОЕ: Учет разрушения базы
+                    if (bullet.owner === 'enemy' && bullet.shooter) {
+                        console.log(`🏰 ${bullet.shooter.username} УНИЧТОЖИЛ БАЗУ!`);
+                        bullet.shooter.recordBaseDestroyed();
+
+                        // Сразу сохраняем в localStorage
+                        if (typeof game !== 'undefined') {
+                            game.saveEnemyStatsToStorage(bullet.shooter);
+                        }
+                    }
+
                     this.checkBaseDestruction();
                     return 'base';
                 }
@@ -375,8 +387,18 @@ class GameMap {
                     if (this.brickTiles.has(key)) {
                         const brickTile = this.brickTiles.get(key);
                         if (brickTile.checkBulletCollision(bullet)) {
+                            // НОВОЕ: Учет разрушенной стены
+                            if (bullet.owner === 'enemy' && bullet.shooter) {
+                                console.log(`🧱 ${bullet.shooter.username} разрушил стену`);
+                                bullet.shooter.recordWallDestroyed();
+
+                                // Сразу сохраняем в localStorage
+                                if (typeof game !== 'undefined') {
+                                    game.saveEnemyStatsToStorage(bullet.shooter);
+                                }
+                            }
+
                             if (brickTile.takeDamage()) {
-                                // Звук разрушения кирпичной стены
                                 if (typeof game !== 'undefined' && game.soundManager) {
                                     game.soundManager.play('brickDestroy');
                                 }
@@ -390,7 +412,6 @@ class GameMap {
                         }
                     }
                 }
-                // НОВОЕ: трава не блокирует пули - просто пропускаем
             }
         }
 

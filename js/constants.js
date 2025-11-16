@@ -6,11 +6,22 @@ const CANVAS_WIDTH = 832;
 const CANVAS_HEIGHT = 832;
 const FPS = 60;
 const FRAME_TIME = 1000 / FPS;
-const MAX_ENEMIES_ON_SCREEN = 1;
+const MAX_ENEMIES_ON_SCREEN = 2;
 const TOTAL_ENEMIES_PER_LEVEL = 20;
 const RESPAWN_DELAY = 3000;
 const SPAWN_ANIMATION_DURATION = 3000;
 const PLAYER_SHIELD_DURATION = 5000;
+
+const EXIT_ANIMATION_DURATION = 2000;
+const EXIT_WIDTH = 60;
+
+// Типы проходов
+const EXIT_TYPES = {
+    TOP: 'top',
+    BOTTOM: 'bottom',
+    LEFT: 'left',
+    RIGHT: 'right'
+};
 
 // Направления (обычные объекты)
 const DIRECTIONS = {
@@ -102,10 +113,10 @@ const VISION_RANGES = {
 
 // Шансы стрельбы при видимости игрока
 const SHOOT_CHANCES = {
-    'BASIC': 0.02,   // 2% каждый кадр
-    'FAST': 0.025,   // 2.5%
-    'HEAVY': 0.015,  // 1.5% (медленная перезарядка)
-    'SNIPER': 0.01   // 1% но с дальним обстрелом
+    'BASIC': 0.002,   // 2% каждый кадр
+    'FAST': 0.0025,   // 2.5%
+    'HEAVY': 0.0015,  // 1.5% (медленная перезарядка)
+    'SNIPER': 0.001   // 1% но с дальним обстрелом
 };
 
 // Опыт за уничтожение врагов
@@ -128,7 +139,7 @@ const EXP_REQUIREMENTS = {
 const ENEMY_TYPES = {
     BASIC: {
         chance: 0.5,
-        speed: 0.35,
+        speed: 0.25,  // БЫЛО: 0.35 - УМЕНЬШЕНО
         health: 1,
         color: '#FF4444',
         bulletSpeed: 4,
@@ -136,7 +147,7 @@ const ENEMY_TYPES = {
     },
     FAST: {
         chance: 0.25,
-        speed: 0.7,
+        speed: 0.45,  // БЫЛО: 0.7 - УМЕНЬШЕНО (все еще быстрый, но не слишком)
         health: 1,
         color: '#FFFF00',
         bulletSpeed: 5,
@@ -144,7 +155,7 @@ const ENEMY_TYPES = {
     },
     HEAVY: {
         chance: 0.1,
-        speed: 0.25,
+        speed: 0.18,  // БЫЛО: 0.25 - УМЕНЬШЕНО (должен быть медленным)
         health: 3,
         color: '#800080',
         bulletSpeed: 3,
@@ -152,7 +163,7 @@ const ENEMY_TYPES = {
     },
     SNIPER: {
         chance: 0.15,
-        speed: 0.3,
+        speed: 0.22,  // БЫЛО: 0.3 - УМЕНЬШЕНО
         health: 1,
         color: '#00FF00',
         bulletSpeed: 7,
@@ -221,4 +232,34 @@ let leaderboard = [];
 // === КЛЮЧИ LOCALSTORAGE ===
 const STORAGE_KEYS = {
     LEADERBOARD: 'tankGame_leaderboard'
+};
+
+// === СИСТЕМА СТАТИСТИКИ УРОВНЯ ===
+const LEVEL_STATS_POINTS = {
+    SHOT: 1,
+    WALL_DESTROYED: 5,
+    PLAYER_KILL: 100,
+    BASE_DESTROYED: 1000
+};
+
+// Добавьте в начало файла с константами
+const TELEPORT_RADIUS = 30;
+const TELEPORT_ANIMATION_DURATION = 2000; // 2 секунды
+
+// В constants.js обновляем PATROL_BEHAVIOR:
+const PATROL_BEHAVIOR = {
+    MOVE_MIN_TIME: 3000,    // Увеличиваем время движения
+    MOVE_MAX_TIME: 7000,
+    STOP_MIN_TIME: 800,     // Уменьшаем время остановки
+    STOP_MAX_TIME: 2000,
+    LOOK_AROUND_CHANCE: 0.4, // Уменьшаем вероятность осмотра
+    DIRECTION_CHANGE_ON_STOP: 0.4
+};
+
+// ДОБАВЛЯЕМ в constants.js:
+const DEBUG_COLORS = {
+    BASIC_AI: '#4CAF50',    // Зеленый для базового ИИ
+    ADVANCED_AI: '#FF9800', // Оранжевый для продвинутого ИИ
+    PLAYER_VISION: '#FF4444', // Красный для видимости игрока
+    BASE_VISION: '#9C27B0'  // Фиолетовый для видимости базы
 };

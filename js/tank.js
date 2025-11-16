@@ -79,9 +79,192 @@ class Tank {
         this.currentDirectionTime = 0;
         this.maxDirectionTime = 90; // 3 секунды при 30 FPS
 
+        // ИСПРАВЛЕНИЕ: Правильная инициализация патрулирования
+        if (type === 'enemy') {
+            this.patrolState = 'MOVING'; // Начинаем с движения!
+            this.patrolTimer = 0;
+            this.nextStateChangeTime = 0;
+            this.lookAroundDirection = this.direction;
+            this.lookAroundProgress = 0;
+
+            // Устанавливаем время первого перехода
+            const now = Date.now();
+            const initialMoveTime = PATROL_BEHAVIOR.MOVE_MIN_TIME +
+            Math.random() * (PATROL_BEHAVIOR.MOVE_MAX_TIME - PATROL_BEHAVIOR.MOVE_MIN_TIME);
+            this.nextStateChangeTime = now + initialMoveTime;
+        }
+
         // Для врагов определяем, есть ли бонус
         if (type === 'enemy') {
             this.determineBonus();
+        }
+
+        // УБЕДИТЕСЬ что этот код есть для врагов:
+        if (type === 'enemy') {
+            this.levelStats = {
+                shots: 0,
+                wallsDestroyed: 0,
+                playerKills: 0,
+                baseDestroyed: false,
+                totalScore: 0
+            };
+        }
+    }
+
+    // ИСПРАВЛЕННЫЙ МЕТОД: Обновление состояния патрулирования
+    updatePatrolState() {
+        if (this.type !== 'enemy' || this.isDestroyed || this.isFrozen) return;
+
+        const now = Date.now();
+
+        // Если пришло время сменить состояние
+        if (now >= this.nextStateChangeTime) {
+            this.changePatrolState();
+        }
+
+        // Обновление текущего состояния
+        switch (this.patrolState) {
+            case 'LOOKING_AROUND':
+                this.updateLookAround();
+                break;
+            case 'STOPPED':
+                // Просто стоим на месте
+                break;
+            case 'MOVING':
+                // Движение обрабатывается в основном update
+                break;
+        }
+    }
+
+    // ИСПРАВЛЕННЫЙ МЕТОД: Смена состояния патрулирования
+    changePatrolState() {
+        const now = Date.now();
+
+        switch (this.patrolState) {
+            case 'MOVING':
+                // Решаем, что делать после движения
+                if (Math.random() < PATROL_BEHAVIOR.LOOK_AROUND_CHANCE) {
+                    // Осматриваемся
+                    this.patrolState = 'LOOKING_AROUND';
+                    this.lookAroundDirection = this.direction;
+                    this.lookAroundProgress = 0;
+                    const lookTime = PATROL_BEHAVIOR.STOP_MIN_TIME +
+                    Math.random() * (PATROL_BEHAVIOR.STOP_MAX_TIME - PATROL_BEHAVIOR.STOP_MIN_TIME);
+                    this.nextStateChangeTime = now + lookTime;
+                } else {
+                    // Просто стоим
+                    this.patrolState = 'STOPPED';
+                    const stopTime = PATROL_BEHAVIOR.STOP_MIN_TIME +
+                    Math.random() * (PATROL_BEHAVIOR.STOP_MAX_TIME - PATROL_BEHAVIOR.STOP_MIN_TIME);
+                    this.nextStateChangeTime = now + stopTime;
+                }
+                break;
+
+            case 'STOPPED':
+            case 'LOOKING_AROUND':
+                // Возвращаемся к движению
+                this.patrolState = 'MOVING';
+                const moveTime = PATROL_BEHAVIOR.MOVE_MIN_TIME +
+                Math.random() * (PATROL_BEHAVIOR.MOVE_MAX_TIME - PATROL_BEHAVIOR.MOVE_MIN_TIME);
+                this.nextStateChangeTime = now + moveTime;
+
+                // С вероятностью меняем направление после остановки
+                if (Math.random() < PATROL_BEHAVIOR.DIRECTION_CHANGE_ON_STOP) {
+                    this.changeRandomDirection();
+                }
+                break;
+        }
+
+        console.log(`🎯 ${this.username} -> ${this.getPatrolStateName()}`);
+    }
+
+    // НОВЫЙ МЕТОД: Обновление осмотра вокруг
+    updateLookAround() {
+        this.lookAroundProgress += 0.02; // Скорость осмотра
+
+        if (this.lookAroundProgress >= 1) {
+            this.lookAroundProgress = 0;
+            this.cycleLookAroundDirection();
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Циклическое изменение направления при осмотре
+    cycleLookAroundDirection() {
+        const directions = [DIRECTIONS.UP, DIRECTIONS.RIGHT, DIRECTIONS.DOWN, DIRECTIONS.LEFT];
+        const currentIndex = directions.findIndex(dir =>
+        dir.x === this.lookAroundDirection.x && dir.y === this.lookAroundDirection.y
+        );
+
+        const nextIndex = (currentIndex + 1) % directions.length;
+        this.lookAroundDirection = directions[nextIndex];
+    }
+
+    // НОВЫЙ МЕТОД: Случайная смена направления
+    changeRandomDirection() {
+        const directions = Object.values(DIRECTIONS);
+        const availableDirections = directions.filter(dir => dir !== this.direction);
+        this.direction = availableDirections[Math.floor(Math.random() * availableDirections.length)];
+    }
+
+    // НОВЫЙ МЕТОД: Получение имени состояния для отладки
+    getPatrolStateName() {
+        const states = {
+            'MOVING': '🚗 Движение',
+            'STOPPED': '🛑 Остановка',
+            'LOOKING_AROUND': '👀 Осмотр'
+        };
+        return states[this.patrolState] || this.patrolState;
+    }
+
+    // ОБНОВЛЯЕМ методы учета статистики с отладкой
+    recordShot() {
+        if (this.type === 'enemy' && this.levelStats) {
+            this.levelStats.shots++;
+            this.calculateTotalScore();
+        }
+    }
+
+    recordWallDestroyed(count = 1) {
+        if (this.type === 'enemy' && this.levelStats) {
+            this.levelStats.wallsDestroyed += count;
+            this.calculateTotalScore();
+        }
+    }
+
+    recordPlayerKill() {
+        if (this.type === 'enemy' && this.levelStats) {
+            this.levelStats.playerKills++;
+            this.calculateTotalScore();
+        }
+    }
+
+    recordBaseDestroyed() {
+        if (this.type === 'enemy' && this.levelStats) {
+            this.levelStats.baseDestroyed = true;
+            this.calculateTotalScore();
+        }
+    }
+
+    calculateTotalScore() {
+        if (this.type === 'enemy' && this.levelStats) {
+            this.levelStats.totalScore =
+            (this.levelStats.shots * LEVEL_STATS_POINTS.SHOT) +
+            (this.levelStats.wallsDestroyed * LEVEL_STATS_POINTS.WALL_DESTROYED) +
+            (this.levelStats.playerKills * LEVEL_STATS_POINTS.PLAYER_KILL) +
+            (this.levelStats.baseDestroyed ? LEVEL_STATS_POINTS.BASE_DESTROYED : 0);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Сброс статистики
+    resetLevelStats() {
+        if (this.type === 'enemy') {
+            this.levelStats = {
+                shots: 0,
+                wallsDestroyed: 0,
+                playerKills: 0,
+                baseDestroyed: false,
+                totalScore: 0
+            };
         }
     }
 
@@ -337,6 +520,11 @@ class Tank {
     // ОБНОВЛЯЕМ метод update
     update() {
         if (this.isDestroyed) return;
+
+        // ОБНОВЛЯЕМ ПЕРВЫМ: систему патрулирования для врагов с базовым ИИ
+        if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+            this.updatePatrolState();
+        }
 
         // ОБНОВЛЯЕМ ИИ для врагов
         if (this.type === 'enemy' && typeof game !== 'undefined') {
@@ -790,13 +978,14 @@ class Tank {
         return bullet;
     }
 
-    // ОБНОВЛЯЕМ метод draw для добавления башни
+    // ОБНОВЛЯЕМ метод draw для отображения состояния патрулирования
     draw(ctx) {
         if (this.isDestroyed) return;
 
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
+        // ВСЕГДА используем основное направление для корпуса танка
         let angle = 0;
         if (this.direction === DIRECTIONS.RIGHT) angle = Math.PI / 2;
         else if (this.direction === DIRECTIONS.DOWN) angle = Math.PI;
@@ -862,6 +1051,9 @@ class Tank {
             this.drawAutoAimDevice(ctx);
         }
 
+        // Отрисовка башни - может поворачиваться независимо при осмотре
+        this.drawTurret(ctx, this.patrolState === 'LOOKING_AROUND' ? this.lookAroundDirection : this.direction);
+
         ctx.restore();
 
         // Рисуем щит поверх танка
@@ -898,21 +1090,6 @@ class Tank {
             this.drawPlayerLevel(ctx);
         }
 
-        if (this.type === 'enemy' && this.username) {
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            const textWidth = ctx.measureText(this.username).width;
-            ctx.fillRect(
-                this.position.x - textWidth/2 - 2,
-                this.position.y - this.size - (this.hasBonus ? 45 : 22),
-                         textWidth + 4,
-                         16
-            );
-            ctx.fillStyle = '#FFF';
-            ctx.font = '10px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(this.username, this.position.x, this.position.y - this.size - (this.hasBonus ? 35 : 10));
-        }
-
         // Рисуем эффект заморозки поверх танка
         if (this.isFrozen && this.freezeProgress > 0) {
             this.drawFreezeEffect(ctx);
@@ -922,40 +1099,241 @@ class Tank {
         if (typeof game !== 'undefined' && game.debugShowVision && this.type === 'enemy') {
             this.drawAIDebugInfo(ctx);
         }
+
+        // Визуальные эффекты для разных состояний патрулирования
+        if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+            this.drawPatrolEffects(ctx);
+        }
     }
 
-    // НОВЫЙ МЕТОД: Отрисовка отладочной информации ИИ
-    drawAIDebugInfo(ctx) {
+    // ОБНОВЛЯЕМ метод отрисовки башни
+    drawTurret(ctx, direction) {
+        const turretRadius = this.size / 3;
+
+        // Поворачиваем башню в нужном направлении
+        let turretAngle = 0;
+        if (direction === DIRECTIONS.RIGHT) turretAngle = Math.PI / 2;
+        else if (direction === DIRECTIONS.DOWN) turretAngle = Math.PI;
+        else if (direction === DIRECTIONS.LEFT) turretAngle = -Math.PI / 2;
+
+        ctx.save();
+        ctx.rotate(turretAngle);
+
+        // Основная башня
+        ctx.fillStyle = this.type === 'player' ? this.getDarkColor(this.color) : '#AA3333';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Обводка башни
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Детали на башне (люк)
+        ctx.fillStyle = '#2C3E50';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Блики на башне для объема
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.beginPath();
+        ctx.arc(-turretRadius/3, -turretRadius/3, turretRadius/4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+        // Дуло (рисуем в направлении башни)
+        ctx.save();
+        ctx.rotate(turretAngle);
+
+        const barrelWidth = this.size * (this.type === 'player' ? 0.15 + (this.playerLevel * 0.015) : 0.2);
+        const barrelLength = this.size * 0.8;
+
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        ctx.restore();
+    }
+
+    // ОБНОВЛЯЕМ метод drawPatrolEffects:
+    drawPatrolEffects(ctx) {
+        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return;
+
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        // Текст с информацией об ИИ (только BASIC и ADVANCED)
-        const aiNames = {
-            [ENEMY_AI_LEVELS.BASIC]: 'БАЗОВЫЙ',
-            [ENEMY_AI_LEVELS.ADVANCED]: 'ПРОДВИНУТЫЙ'
-        };
+        switch (this.patrolState) {
+            case 'LOOKING_AROUND':
+                // Пульсирующий желтый круг при осмотре
+                const pulse = (Math.sin(Date.now() * 0.01) + 1) * 0.5;
+                ctx.strokeStyle = `rgba(255, 255, 0, ${0.3 + pulse * 0.2})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size * 0.7, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
 
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = '8px Arial';
-        ctx.textAlign = 'center';
+            case 'STOPPED':
+                // Мигающий красный круг при остановке
+                const blink = Math.floor(Date.now() / 500) % 2 === 0;
+                if (blink) {
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size * 0.6, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                break;
 
-        // Информация об ИИ
-        ctx.fillText(`ИИ: ${aiNames[this.aiLevel] || 'НЕИЗВЕСТНО'}`, 0, -this.size - 25);
-        ctx.fillText(`Зд: ${this.health}`, 0, -this.size - 15);
-
-        // Индикатор состояния
-        let state = 'ПОИСК';
-        if (this.ai && this.ai.state) {
-            const stateNames = {
-                'PATROL': 'ПАТРУЛЬ',
-                'ATTACK_PLAYER': 'АТАКА ИГРОКА',
-                'ATTACK_BASE': 'АТАКА БАЗЫ'
-            };
-            state = stateNames[this.ai.state] || this.ai.state;
+            case 'MOVING':
+                // Слабый зеленый след при движении
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(0, 0, this.size * 0.5, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
         }
-        ctx.fillText(state, 0, -this.size - 5);
 
         ctx.restore();
+    }
+
+    // ЗАМЕНЯЕМ метод drawAIDebugInfo на версию с выравниванием по левому краю:
+    drawAIDebugInfo(ctx) {
+        if (this.type !== 'enemy') return;
+
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        // Собираем информацию в три строки
+        const debugLines = [];
+
+        // Строка 1: Здоровье
+        const healthIcons = ['❤️', '❤️❤️', '❤️❤️❤️'];
+        const healthIcon = healthIcons[this.health - 1] || '❤️';
+        debugLines.push(`${healthIcon} = ${this.health}`);
+
+        // Строка 2: Тип ИИ
+        const aiIcons = {
+            [ENEMY_AI_LEVELS.BASIC]: '🚲 Базовый ИИ',
+            [ENEMY_AI_LEVELS.ADVANCED]: '🚨 Продвинутый ИИ'
+        };
+        debugLines.push(`${aiIcons[this.aiLevel] || '❓ Неизвестный ИИ'}`);
+
+        // Строка 3: Состояние
+        let stateLine = '';
+
+        // Для базового ИИ - состояние патрулирования
+        if (this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+            const stateIcons = {
+                'MOVING': '🚗 Еду',
+                'STOPPED': '🛑 Стою',
+                'LOOKING_AROUND': '👀 Осматриваюсь'
+            };
+            stateLine = stateIcons[this.patrolState] || '❓';
+        }
+        // Для продвинутого ИИ - состояние атаки
+        else if (this.aiLevel === ENEMY_AI_LEVELS.ADVANCED && this.ai) {
+            const player = typeof game !== 'undefined' ? game.player : null;
+            const map = typeof game !== 'undefined' ? game.map : null;
+
+            if (player && !player.isDestroyed && this.canSeePlayer(player, map)) {
+                stateLine = '😈 Вижу игрока';
+            } else if (this.ai.state === 'ATTACK_BASE') {
+                stateLine = '💀 Вижу базу';
+            } else if (this.ai.state === 'ATTACK_PLAYER' && this.ai.lastKnownPlayerPosition) {
+                stateLine = '🎯 Ищу игрока';
+            } else {
+                stateLine = '🤔 Не вижу игрока';
+            }
+        } else {
+            stateLine = '🤔 Не вижу игрока';
+        }
+
+        debugLines.push(stateLine);
+
+        // Вычисляем размеры блока
+        const lineHeight = 14;
+        const padding = 6;
+        const totalHeight = debugLines.length * lineHeight + padding * 2;
+        const maxWidth = this.getMaxTextWidth(ctx, debugLines) + padding * 2;
+
+        // Позиционируем блок слева от танка
+        const blockX = -this.size - maxWidth - 10; // Слева от танка
+        const blockY = -this.size - totalHeight - 5;
+
+        // Градиентный фон
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + maxWidth, blockY + totalHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, maxWidth, totalHeight);
+
+        // Обводка
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(blockX, blockY, maxWidth, totalHeight);
+
+        // Отображаем строки информации с выравниванием по левому краю
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        debugLines.forEach((line, index) => {
+            const yPos = blockY + padding + (index * lineHeight) + lineHeight/2;
+            const xPos = blockX + padding;
+
+            // Тень для лучшей читаемости
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillText(line, xPos + 1, yPos + 1);
+
+            // Основной текст
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(line, xPos, yPos);
+        });
+
+        // Стрелка-указатель к танку
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(blockX + maxWidth, blockY + totalHeight/2); // От правого края блока
+        ctx.lineTo(-this.size/2, 0); // К центру танка
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // Вспомогательный метод для вычисления ширины текста
+    getMaxTextWidth(ctx, lines) {
+        ctx.save();
+        ctx.font = 'bold 11px Arial';
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const width = ctx.measureText(line).width;
+            if (width > maxWidth) maxWidth = width;
+        });
+            ctx.restore();
+            return maxWidth;
+    }
+
+    // ДОБАВЛЯЕМ в класс Tank:
+    canSeeBase(map) {
+        if (!map || !map.basePosition) return false;
+
+        const basePos = map.basePosition;
+        const distance = Math.sqrt(
+            Math.pow(this.position.x - basePos.x, 2) +
+            Math.pow(this.position.y - basePos.y, 2)
+        );
+
+        const baseVisionRange = VISION_RANGES.BASE_VISION || 350;
+        if (distance > baseVisionRange) return false;
+
+        return this.hasLineOfSight(basePos.x, basePos.y, map);
     }
 
     // НОВЫЙ МЕТОД: Отрисовка башни танка

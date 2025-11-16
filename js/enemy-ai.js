@@ -531,6 +531,10 @@ class EnemyAI {
             if (bullet && typeof game !== 'undefined') {
                 game.bullets.push(bullet);
                 game.soundManager.playEnemyShot(this.tank.enemyType);
+
+                // НОВОЕ: Учет выстрела и сохранение
+                this.tank.recordShot();
+                game.saveEnemyStatsToStorage(this.tank);
             }
             this.tank.canShoot = false;
             this.tank.reloadTime = this.getReloadTime();
@@ -596,18 +600,63 @@ class EnemyAI {
     }
 }
 
-// Базовый ИИ остается без изменений
 class BasicEnemyAI extends EnemyAI {
+    constructor(tank) {
+        super(tank);
+        // Инициализация теперь происходит в классе Tank
+    }
+
     update(map, player, otherTanks, brickFragments) {
         if (this.tank.isFrozen) return;
-        this.tank.currentDirectionTime++;
-        if (this.tank.currentDirectionTime >= this.tank.maxDirectionTime ||
-            Math.random() < 0.01 ||
-            !this.tank.move(this.tank.direction, map, otherTanks, brickFragments)) {
-            this.changeRandomDirection();
-        this.tank.currentDirectionTime = 0;
+
+        // Состояние патрулирования уже обновлено в классе Tank
+
+        // Движение только в состоянии MOVING и если можем двигаться
+        if (this.tank.patrolState === 'MOVING') {
+            this.tank.currentDirectionTime++;
+
+            // Пытаемся двигаться в текущем направлении
+            const canMove = this.tank.move(this.tank.direction, map, otherTanks, brickFragments);
+
+            if (!canMove || this.tank.currentDirectionTime >= this.tank.maxDirectionTime) {
+                // Меняем направление при столкновении или по истечении времени
+                this.changeRandomDirection();
+                this.tank.currentDirectionTime = 0;
+
+                // Короткая остановка после смены направления
+                if (Math.random() < 0.3) {
+                    this.tank.patrolState = 'STOPPED';
+                    this.tank.nextStateChangeTime = Date.now() + 1000; // 1 секунда остановки
+                }
             }
-            this.updateShooting(player, map);
-            this.checkStuck();
+        }
+
+        // Стрельба возможна в любом состоянии
+        this.updateShooting(player, map);
+        this.checkStuck();
+    }
+
+    // УПРОЩАЕМ метод стрельбы
+    updateShooting(player, map) {
+        if (!this.tank.canShoot || this.tank.isFrozen) return;
+
+        let shootChance = SHOOT_CHANCES[this.tank.enemyType] || 0.02;
+
+        // Немного увеличиваем шанс стрельбы при осмотре
+        if (this.tank.patrolState === 'LOOKING_AROUND') {
+            shootChance *= 1.3;
+        }
+
+        if (Math.random() < shootChance) {
+            const bullet = this.tank.shoot();
+            if (bullet && typeof game !== 'undefined') {
+                game.bullets.push(bullet);
+                game.soundManager.playEnemyShot(this.tank.enemyType);
+                this.tank.recordShot();
+                game.saveEnemyStatsToStorage(this.tank);
+            }
+            this.tank.canShoot = false;
+            this.tank.reloadTime = this.getReloadTime();
+        }
     }
 }

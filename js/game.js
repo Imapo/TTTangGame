@@ -67,9 +67,133 @@ class Game {
         this.playerExperience = this.playerProgress.experience;
         this.nextLevelExp = EXP_REQUIREMENTS[this.playerLevel + 1] || 999;
 
+        // НОВОЕ: Система проходов между уровнями
+        this.currentExit = null; // Текущий открытый проход
+        this.nextLevelExit = null; // Проход для следующего уровня
+        this.exitAnimationProgress = 0;
+        this.waitingForExit = false;
+        this.playerEnteredLevel = false;
+
+        // НОВОЕ: Статистика уровня
+        this.levelLeader = null;
+        this.showLevelCompleteStats = false;
+        this.levelCompleteTimer = 0;
+
+        // Добавьте свойства для телепортов
+        this.exitTeleport = null;
+        this.entryTeleport = null;
+        this.playerEnteredLevel = true; // Для первого уровня сразу true
+
         console.log(`🎮 Загружен прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
 
         this.initLevel();
+    }
+
+    // ОБНОВЛЯЕМ метод создания телепорта выхода с использованием безопасных зон
+    createExitTeleport() {
+        // Безопасные зоны у границ (координаты в пикселях)
+        const safeZones = [
+            // Верхняя граница
+            { x: CANVAS_WIDTH / 2, y: 80, width: CANVAS_WIDTH - 160, height: 60 },
+            // Нижняя граница
+            { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 80, width: CANVAS_WIDTH - 160, height: 60 },
+            // Левая граница
+            { x: 80, y: CANVAS_HEIGHT / 2, width: 60, height: CANVAS_HEIGHT - 160 },
+            // Правая граница
+            { x: CANVAS_WIDTH - 80, y: CANVAS_HEIGHT / 2, width: 60, height: CANVAS_HEIGHT - 160 }
+        ];
+
+        // Выбираем случайную безопасную зону
+        const randomZone = safeZones[Math.floor(Math.random() * safeZones.length)];
+
+        // Генерируем случайные координаты внутри выбранной зоны
+        const x = randomZone.x - randomZone.width / 2 + Math.random() * randomZone.width;
+        const y = randomZone.y - randomZone.height / 2 + Math.random() * randomZone.height;
+
+        // Проверяем, что позиция свободна от стен
+        const tileX = Math.floor(x / TILE_SIZE);
+        const tileY = Math.floor(y / TILE_SIZE);
+        const isWall = tileX >= 0 && tileX < this.map.width &&
+        tileY >= 0 && tileY < this.map.height &&
+        (this.map.grid[tileY][tileX] === TILE_TYPES.BRICK ||
+        this.map.grid[tileY][tileX] === TILE_TYPES.CONCRETE);
+
+        if (isWall) {
+            // Если попали в стену, используем центр зоны
+            this.exitTeleport = new Teleport(randomZone.x, randomZone.y, 'exit');
+            console.log(`🌀 Создан телепорт выхода в центре безопасной зоны (${Math.round(randomZone.x)}, ${Math.round(randomZone.y)})`);
+        } else {
+            this.exitTeleport = new Teleport(x, y, 'exit');
+            console.log(`🌀 Создан телепорт выхода в безопасной зоне (${Math.round(x)}, ${Math.round(y)})`);
+        }
+
+        console.log(`📍 Зона: ${this.getZoneName(randomZone)}`);
+    }
+
+    // Вспомогательный метод для получения названия зоны
+    getZoneName(zone) {
+        if (zone.y === 80) return "ВЕРХ";
+        if (zone.y === CANVAS_HEIGHT - 80) return "НИЗ";
+        if (zone.x === 80) return "ЛЕВО";
+        if (zone.x === CANVAS_WIDTH - 80) return "ПРАВО";
+        return "НЕИЗВЕСТНО";
+    }
+
+    // ОБНОВЛЯЕМ метод создания телепорта входа
+    createEntryTeleport(x, y) {
+        // Проверяем, что координаты находятся в безопасной зоне или корректируем их
+        const safePosition = this.ensureSafePosition(x, y);
+
+        this.entryTeleport = new Teleport(safePosition.x, safePosition.y, 'entry');
+        console.log(`🌀 Создан телепорт входа в (${Math.round(safePosition.x)}, ${Math.round(safePosition.y)})`);
+
+        // Запускаем таймер для схлопывания через 2 секунды
+        setTimeout(() => {
+            if (this.entryTeleport) {
+                this.entryTeleport.startClosing();
+                console.log("🌀 Запущено схлопывание телепорта входа");
+            }
+        }, 2000);
+    }
+
+    // НОВЫЙ МЕТОД: Обеспечение безопасной позиции
+    ensureSafePosition(x, y) {
+        // Проверяем, находится ли позиция в стене
+        const tileX = Math.floor(x / TILE_SIZE);
+        const tileY = Math.floor(y / TILE_SIZE);
+        const isWall = tileX >= 0 && tileX < this.map.width &&
+        tileY >= 0 && tileY < this.map.height &&
+        (this.map.grid[tileY][tileX] === TILE_TYPES.BRICK ||
+        this.map.grid[tileY][tileX] === TILE_TYPES.CONCRETE);
+
+        if (!isWall) {
+            return { x: x, y: y }; // Позиция безопасна
+        }
+
+        // Если позиция в стене, ищем ближайшую безопасную зону
+        console.log("⚠️  Позиция в стене, ищем безопасную альтернативу...");
+
+        const safeZones = [
+            { x: CANVAS_WIDTH / 2, y: 80 },      // Верх
+            { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 80 }, // Низ
+            { x: 80, y: CANVAS_HEIGHT / 2 },     // Лево
+            { x: CANVAS_WIDTH - 80, y: CANVAS_HEIGHT / 2 }  // Право
+        ];
+
+        // Находим ближайшую безопасную зону
+        let closestZone = safeZones[0];
+        let minDistance = Infinity;
+
+        safeZones.forEach(zone => {
+            const distance = Math.sqrt(Math.pow(zone.x - x, 2) + Math.pow(zone.y - y, 2));
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestZone = zone;
+            }
+        });
+
+        console.log(`✅ Перемещено в безопасную зону: ${this.getZoneName(closestZone)}`);
+        return closestZone;
     }
 
     // НОВЫЙ МЕТОД: Создание дебаг-меню
@@ -468,8 +592,17 @@ class Game {
             this.player.health = this.player.upgrade.health;
         }
 
+        // Очищаем телепорты
+        this.exitTeleport = null;
+        this.entryTeleport = null;
+
         // НОВОЕ: Обновляем дебаг информацию
         this.updateDebugInfo();
+
+        // НОВОЕ: Очищаем статистику врагов
+        if (this.enemyManager) {
+            this.enemyManager.clearStats();
+        }
 
         // Очищаем менеджеры
         this.enemyManager.clear();
@@ -554,22 +687,62 @@ class Game {
     update() {
         this.handleInput();
 
+        // Проверяем вход в телепорт
+        if (this.exitTeleport && this.exitTeleport.active) {
+            this.checkTeleportEntry();
+        }
+
+        // Обновляем телепорты
+        if (this.exitTeleport) {
+            this.exitTeleport.update();
+        }
+        if (this.entryTeleport) {
+            this.entryTeleport.update();
+
+            // Удаляем неактивный телепорт входа
+            if (!this.entryTeleport.active) {
+                this.entryTeleport = null;
+            }
+        }
+
+        // НОВОЕ: Проверяем вход/выход игрока
+        if (!this.playerEnteredLevel) {
+            this.checkPlayerEntry();
+        } else if (this.waitingForExit) {
+            this.checkPlayerExit();
+        }
+
         const allTanks = [this.player, ...this.enemyManager.enemies];
 
         if (!this.player.isDestroyed) {
             this.player.update();
         }
 
-        // Обновляем через менеджеры
+        // ОБНОВЛЯЕМ: Враги обновляются только если игрок вошел на уровень
+        if ((this.playerEnteredLevel || this.level === 1) && !this.levelComplete) {
+            if (typeof EnemyAI !== 'undefined') {
+                this.enemyManager.update();
+            }
+            this.enemyManager.updateRespawns();
+        }
+
         // Обновляем врагов только если ИИ загружен
         if (typeof EnemyAI !== 'undefined') {
             this.enemyManager.update();
         }
-        this.enemyManager.updateRespawns();
+
         this.updateBullets();
         this.effectManager.update();
         this.updateScreenShake();
         this.updateStatusIndicators();
+
+        // ОБНОВЛЯЕМ: Обновляем карту только если игрок вошел
+        if (this.playerEnteredLevel) {
+            this.updateBaseFortification();
+            this.bonusManager.update();
+            this.map.update(allTanks);
+            this.checkLevelCompletion();
+        }
 
         // Обновление специальных систем
         this.updateBaseFortification();
@@ -803,6 +976,7 @@ class Game {
         }, 3000);
     }
 
+    // ОБНОВЛЯЕМ метод handleEnemyBulletCollision для учета убийств игрока
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
         if (!this.player.isDestroyed && bulletBounds.intersects(this.player.getBounds())) {
             if (this.player.takeDamage()) {
@@ -810,8 +984,14 @@ class Game {
                 this.screenShake = 35;
                 this.soundManager.play('tankExplosion');
 
+                // НОВОЕ: Учет убийства игрока (должно быть ДО создания нового танка)
                 if (bullet.shooter && bullet.owner === 'enemy') {
+                    console.log(`💀 ${bullet.shooter.username} УБИЛ ИГРОКА!`);
+                    bullet.shooter.recordPlayerKill();
                     this.addToLeaderboard(bullet.shooter);
+
+                    // Сразу сохраняем в localStorage
+                    this.saveEnemyStatsToStorage(bullet.shooter);
                 }
 
                 this.lives--;
@@ -1146,24 +1326,445 @@ class Game {
         this.updateStatusIndicator('fortifyIndicator', 'fortifyTime', this.baseFortified, remainingTime);
     }
 
+    // ВРЕМЕННЫЙ МЕТОД для тестирования
+    testLevelLeader() {
+        console.log("🧪 Тестируем систему лидеров...");
+
+        // Создаем тестового врага с статистикой
+        if (this.enemyManager.enemies.length > 0) {
+            const testEnemy = this.enemyManager.enemies[0];
+            if (testEnemy.levelStats) {
+                testEnemy.levelStats.shots = 10;
+                testEnemy.levelStats.wallsDestroyed = 5;
+                testEnemy.levelStats.playerKills = 1;
+                testEnemy.levelStats.baseDestroyed = false;
+                testEnemy.calculateTotalScore();
+
+                console.log(`🧪 Тестовые данные: ${testEnemy.username}`, testEnemy.levelStats);
+            }
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод checkLevelCompletion - враги появляются только после входа
     checkLevelCompletion() {
+        // Убедитесь, что игрок вошел на уровень
+        if (!this.playerEnteredLevel && this.level !== 1) return;
+
+        //console.log(`🔍 Проверка завершения: врагов уничтожено ${this.enemiesDestroyed}/${TOTAL_ENEMIES_PER_LEVEL}, осталось врагов: ${this.enemyManager.enemies.length}, спавн анимаций: ${this.enemyManager.spawnAnimations.length}`);
+
         if (this.enemiesDestroyed >= TOTAL_ENEMIES_PER_LEVEL &&
             this.enemyManager.enemies.length === 0 &&
             this.enemyManager.spawnAnimations.length === 0 &&
             !this.levelComplete) {
 
-            this.levelComplete = true;
-        this.showLevelCompleteScreen = true;
-        this.showLevelComplete();
+            console.log("✅ Условия завершения уровня выполнены!");
+        this.levelComplete = true;
+        this.levelCompleteTimer = 0;
+
+        // Сразу показываем завершение уровня
+        setTimeout(() => {
+            console.log("🎯 Запускаем расчет лидера и показ статистики");
+            this.calculateLevelLeader();
+            this.showLevelCompleteStats = true;
+            this.showLevelComplete();
+        }, 1000); // Уменьшил задержку для тестирования
             }
     }
 
+    // НОВЫЙ МЕТОД: Сохранение статистики врага в localStorage
+    saveEnemyStatsToStorage(enemy) {
+        if (!enemy || !enemy.username) return;
+
+        try {
+            const storageKey = `tankGame_level_${this.level}_stats`;
+            let levelStats = JSON.parse(localStorage.getItem(storageKey)) || {};
+
+            // Сохраняем/обновляем статистику врага
+            levelStats[enemy.username] = {
+                enemyType: enemy.enemyType,
+                stats: enemy.levelStats,
+                timestamp: Date.now()
+            };
+
+            localStorage.setItem(storageKey, JSON.stringify(levelStats));
+            console.log(`💾 Сохранена статистика ${enemy.username} для уровня ${this.level}`);
+        } catch (error) {
+            console.error('Ошибка сохранения статистики:', error);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Загрузка статистики уровня из localStorage
+    loadLevelStatsFromStorage() {
+        try {
+            const storageKey = `tankGame_level_${this.level}_stats`;
+            return JSON.parse(localStorage.getItem(storageKey)) || {};
+        } catch (error) {
+            console.error('Ошибка загрузки статистики:', error);
+            return {};
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Очистка статистики уровня (при переходе на следующий уровень)
+    clearLevelStatsFromStorage() {
+        try {
+            const storageKey = `tankGame_level_${this.level}_stats`;
+            localStorage.removeItem(storageKey);
+            console.log(`🗑️ Очищена статистика уровня ${this.level}`);
+        } catch (error) {
+            console.error('Ошибка очистки статистики:', error);
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод calculateLevelLeader - используем localStorage
+    calculateLevelLeader() {
+        console.log("🔍 Начинаем расчет лидера уровня из localStorage...");
+
+        let bestEnemy = null;
+        let bestScore = -1;
+
+        // Загружаем статистику из localStorage
+        const levelStats = this.loadLevelStatsFromStorage();
+        console.log(`📊 Загружено записей из localStorage: ${Object.keys(levelStats).length}`);
+
+        // Ищем врага с максимальным счетом
+        Object.entries(levelStats).forEach(([enemyName, data]) => {
+            const stats = data.stats;
+            console.log(`📈 ${enemyName}: ${stats.totalScore} очков (выстрелы: ${stats.shots}, стены: ${stats.wallsDestroyed}, убийства: ${stats.playerKills}, база: ${stats.baseDestroyed})`);
+
+            if (stats.totalScore > bestScore) {
+                bestScore = stats.totalScore;
+                bestEnemy = {
+                    enemy: {
+                        username: enemyName,
+                        enemyType: data.enemyType
+                    },
+                    stats: stats
+                };
+                console.log(`🎯 Новый лидер: ${enemyName}`);
+            }
+        });
+
+        this.levelLeader = bestEnemy;
+
+        if (this.levelLeader) {
+            console.log(`🏆 Лидер уровня: ${this.levelLeader.enemy.username} с ${this.levelLeader.stats.totalScore} очками`);
+        } else {
+            console.log("❌ Лидер не найден в localStorage");
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Сохранение в таблицу лидеров уровня
+    saveLevelLeaderboard() {
+        if (!this.levelLeader) return;
+
+        const levelKey = `level_${this.level}_leader`;
+        const leaderData = {
+            level: this.level,
+            enemyName: this.levelLeader.enemy.username,
+            enemyType: this.levelLeader.enemy.enemyType,
+            stats: this.levelLeader.stats,
+            timestamp: Date.now()
+        };
+
+        try {
+            localStorage.setItem(levelKey, JSON.stringify(leaderData));
+        } catch (error) {
+            console.error('Ошибка сохранения лидера уровня:', error);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Загрузка лидера уровня
+    loadLevelLeader(level) {
+        const levelKey = `level_${level}_leader`;
+        try {
+            const saved = localStorage.getItem(levelKey);
+            return saved ? JSON.parse(saved) : null;
+        } catch (error) {
+            console.error('Ошибка загрузки лидера уровня:', error);
+            return null;
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод showLevelComplete
     showLevelComplete() {
+        console.log("🖥️ Показываем экран завершения уровня");
         this.showLevelCompleteScreen = true;
         const levelCompleteScreen = document.getElementById('levelComplete');
+
+        if (!levelCompleteScreen) {
+            console.error("❌ Элемент levelComplete не найден!");
+            return;
+        }
+
+        // Обычная информация
         document.getElementById('destroyedTanks').textContent = this.enemiesDestroyed;
         document.getElementById('levelScore').textContent = this.score;
+
+        // Показываем статистику лидера
+        this.showLevelLeaderStats();
+
         levelCompleteScreen.style.display = 'block';
+        console.log("✅ Экран завершения уровня показан");
+    }
+
+    // ОБНОВЛЯЕМ метод showLevelLeaderStats - упрощенная версия
+    showLevelLeaderStats() {
+        const leaderContent = document.getElementById('leaderContent');
+        const levelLeaderStats = document.getElementById('levelLeaderStats');
+
+        if (this.levelLeader && leaderContent) {
+            leaderContent.innerHTML = this.generateLeaderStatsHTML(this.levelLeader);
+            levelLeaderStats.style.display = 'block';
+            console.log(`✅ Показан лидер: ${this.levelLeader.enemy.username}`);
+        } else {
+            // Простое сообщение если лидера нет
+            leaderContent.innerHTML = `
+            <div style="text-align: center; color: #888; padding: 20px;">
+            <p>Ни один противник не проявил активности</p>
+            <p>🥱 Все враги были пассивны</p>
+            </div>
+            `;
+            levelLeaderStats.style.display = 'block';
+            console.log("ℹ️ Показано сообщение об отсутствии активности");
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Создание UI для статистики лидера
+    createLevelLeaderStatsUI() {
+        const levelCompleteScreen = document.getElementById('levelComplete');
+
+        const statsHTML = `
+        <div class="level-leader-stats" id="levelLeaderStats" style="display: none;">
+        <div class="leader-header">
+        <h3>🥇 Лидер уровня</h3>
+        <button class="close-stats-btn" onclick="game.closeLevelStats()" style="
+        background: none;
+        border: none;
+        color: white;
+        font-size: 20px;
+        cursor: pointer;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        ">×</button>
+        </div>
+        <div class="leader-content" id="leaderContent">
+        <!-- Сюда будет вставлена статистика -->
+        </div>
+        </div>
+        `;
+
+        levelCompleteScreen.insertAdjacentHTML('beforeend', statsHTML);
+        this.showLevelLeaderStats(); // Показываем статистику если есть
+    }
+
+    // ОБНОВЛЯЕМ метод generateLeaderStatsHTML для работы с данными из localStorage
+    generateLeaderStatsHTML(leader) {
+        const enemyTypeIcons = {
+            'BASIC': '🔴',
+            'FAST': '🟡',
+            'HEAVY': '🟣',
+            'SNIPER': '🟢'
+        };
+
+        const icon = enemyTypeIcons[leader.enemy.enemyType] || '⚫';
+
+        return `
+        <div class="leader-tank-info">
+        <div class="tank-icon-large">${icon}</div>
+        <div class="tank-name">${leader.enemy.username}</div>
+        <div class="total-score">Общий счет: ${leader.stats.totalScore}</div>
+        </div>
+        <div class="leader-stats-details">
+        <div class="stat-row">
+        <span class="stat-label">Выстрелов:</span>
+        <span class="stat-value">${leader.stats.shots}</span>
+        </div>
+        <div class="stat-row">
+        <span class="stat-label">Разрушенных стен:</span>
+        <span class="stat-value">${leader.stats.wallsDestroyed}</span>
+        </div>
+        <div class="stat-row">
+        <span class="stat-label">Убийств игрока:</span>
+        <span class="stat-value">${leader.stats.playerKills}</span>
+        </div>
+        <div class="stat-row">
+        <span class="stat-label">Разрушений базы:</span>
+        <span class="stat-value">${leader.stats.baseDestroyed ? '1' : '0'}</span>
+        </div>
+        </div>
+        `;
+    }
+
+    // ОБНОВЛЯЕМ метод closeLevelStats
+    closeLevelStats() {
+        console.log("🚪 Закрываем статистику и создаем телепорт");
+
+        // Останавливаем обратный отсчет если он идет
+        if (this.countdownInterval) {
+            clearInterval(this.countdownInterval);
+            this.countdownInterval = null;
+        }
+
+        this.showLevelCompleteStats = false;
+        this.showLevelCompleteScreen = false;
+
+        const levelCompleteScreen = document.getElementById('levelComplete');
+        if (levelCompleteScreen) {
+            levelCompleteScreen.style.display = 'none';
+        }
+
+        // Создаем телепорт выхода
+        this.createExitTeleport();
+    }
+
+    // НОВЫЙ МЕТОД: Проверка входа в телепорт
+    checkTeleportEntry() {
+        if (!this.exitTeleport || !this.exitTeleport.active) return false;
+
+        if (this.exitTeleport.isPlayerInside(this.player)) {
+            console.log("🎯 Игрок вошел в телепорт выхода!");
+
+            // Сохраняем ТОЧНЫЕ координаты телепорта
+            const exitX = this.exitTeleport.position.x;
+            const exitY = this.exitTeleport.position.y;
+
+            // Активируем эффект телепортации
+            this.exitTeleport.activate();
+
+            // Деактивируем телепорт
+            this.exitTeleport.active = false;
+
+            // Переходим на следующий уровень с сохранением координат
+            setTimeout(() => {
+                this.nextLevel(exitX, exitY);
+            }, 500);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Открытие случайного прохода
+    openRandomExit() {
+        const exitTypes = [EXIT_TYPES.TOP, EXIT_TYPES.BOTTOM, EXIT_TYPES.LEFT, EXIT_TYPES.RIGHT];
+        this.currentExit = exitTypes[Math.floor(Math.random() * exitTypes.length)];
+        this.waitingForExit = true;
+        this.exitAnimationProgress = 0;
+
+        console.log(`🚪 Открыт проход: ${this.currentExit}`);
+
+        // Запускаем анимацию открытия
+        this.animateExitOpening();
+    }
+
+    // НОВЫЙ МЕТОД: Анимация открытия прохода
+    animateExitOpening() {
+        const animationDuration = EXIT_ANIMATION_DURATION;
+        const startTime = Date.now();
+
+        const animate = () => {
+            const elapsed = Date.now() - startTime;
+            this.exitAnimationProgress = Math.min(elapsed / animationDuration, 1);
+
+            if (this.exitAnimationProgress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                console.log(`✅ Проход полностью открыт: ${this.currentExit}`);
+            }
+        };
+
+        animate();
+    }
+
+    // НОВЫЙ МЕТОД: Определение прохода для следующего уровня
+    calculateNextLevelExit() {
+        if (!this.currentExit) return EXIT_TYPES.TOP; // По умолчанию сверху
+
+        // Противоположная сторона
+        const oppositeExits = {
+            [EXIT_TYPES.TOP]: EXIT_TYPES.BOTTOM,
+            [EXIT_TYPES.BOTTOM]: EXIT_TYPES.TOP,
+            [EXIT_TYPES.LEFT]: EXIT_TYPES.RIGHT,
+            [EXIT_TYPES.RIGHT]: EXIT_TYPES.LEFT
+        };
+
+        return oppositeExits[this.currentExit];
+    }
+
+    // НОВЫЙ МЕТОД: Проверка выхода игрока через проход
+    checkPlayerExit() {
+        if (!this.waitingForExit || !this.currentExit || this.player.isDestroyed) return false;
+
+        const playerBounds = this.player.getBounds();
+        let exited = false;
+
+        switch (this.currentExit) {
+            case EXIT_TYPES.TOP:
+                exited = playerBounds.y + playerBounds.height < -10; // Небольшой зазор
+                break;
+            case EXIT_TYPES.BOTTOM:
+                exited = playerBounds.y > CANVAS_HEIGHT + 10; // Небольшой зазор
+                break;
+            case EXIT_TYPES.LEFT:
+                exited = playerBounds.x + playerBounds.width < -10; // Небольшой зазор
+                break;
+            case EXIT_TYPES.RIGHT:
+                exited = playerBounds.x > CANVAS_WIDTH + 10; // Небольшой зазор
+                break;
+        }
+
+        if (exited) {
+            console.log(`🎯 Игрок вышел через проход: ${this.currentExit}`);
+            this.nextLevelExit = this.calculateNextLevelExit();
+            this.nextLevel();
+            return true;
+        }
+
+        return false;
+    }
+
+    // НОВЫЙ МЕТОД: Проверка входа игрока на уровень
+    checkPlayerEntry() {
+        if (this.playerEnteredLevel || !this.nextLevelExit || this.player.isDestroyed) return false;
+
+        const playerBounds = this.player.getBounds();
+        let entered = false;
+
+        switch (this.nextLevelExit) {
+            case EXIT_TYPES.TOP:
+                entered = playerBounds.y > TILE_SIZE;
+                break;
+            case EXIT_TYPES.BOTTOM:
+                entered = playerBounds.y + playerBounds.height < CANVAS_HEIGHT - TILE_SIZE;
+                break;
+            case EXIT_TYPES.LEFT:
+                entered = playerBounds.x > TILE_SIZE;
+                break;
+            case EXIT_TYPES.RIGHT:
+                entered = playerBounds.x + playerBounds.width < CANVAS_WIDTH - TILE_SIZE;
+                break;
+        }
+
+        if (entered) {
+            console.log(`🎯 Игрок вошел на уровень через: ${this.nextLevelExit}`);
+            this.playerEnteredLevel = true;
+            this.nextLevelExit = null;
+
+            // Закрываем проход
+            this.closeExit();
+        }
+
+        return entered;
+    }
+
+    // НОВЫЙ МЕТОД: Закрытие прохода
+    closeExit() {
+        this.currentExit = null;
+        this.waitingForExit = false;
+        this.exitAnimationProgress = 0;
+        console.log("🚪 Проход закрыт");
     }
 
     showGameOver() {
@@ -1177,16 +1778,121 @@ class Game {
     }
 
     // ОБНОВЛЯЕМ метод nextLevel
-    nextLevel() {
-        // СОХРАНЯЕМ прогресс из объекта игрока в game
+    nextLevel(exitX = null, exitY = null) {
+        // Очищаем статистику ТЕКУЩЕГО уровня перед переходом
+        this.clearLevelStatsFromStorage();
+
         this.playerLevel = this.player.playerLevel;
         this.playerExperience = this.player.experience;
         this.savePlayerProgress();
 
-        console.log(`➡️ Переход на уровень ${this.level + 1}. Прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
+        console.log(`➡️ Переход на уровень ${this.level + 1}`);
+
+        // Сохраняем координаты выхода для отладки
+        if (exitX !== null && exitY !== null) {
+            console.log(`📍 Координаты выхода: (${exitX}, ${exitY})`);
+        }
 
         this.level++;
+
+        // Инициализируем уровень
         this.initLevel();
+
+        // Создаем телепорт входа на ТОЧНОЙ позиции выхода с предыдущего уровня
+        if (exitX !== null && exitY !== null) {
+            this.createEntryTeleport(exitX, exitY);
+
+            // Размещаем игрока на ТОЧНОЙ позиции телепорта
+            this.placePlayerAtTeleport(exitX, exitY);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Размещение игрока на позиции телепорта
+    placePlayerAtTeleport(teleportX, teleportY) {
+        // Просто ставим игрока на те же координаты
+        this.player.position.x = teleportX;
+        this.player.position.y = teleportY;
+
+        // Даем щит на входе
+        this.player.activateShield(3000);
+
+        console.log(`🎮 Игрок размещен на позиции телепорта в (${Math.round(teleportX)}, ${Math.round(teleportY)})`);
+    }
+
+    // НОВЫЙ МЕТОД: Размещение игрока рядом с телепортом входа
+    placePlayerNearEntry(entryPosition) {
+        // Размещаем игрока на небольшом расстоянии от телепорта (в направлении от центра)
+        const offset = 80; // Увеличим расстояние для лучшей видимости
+
+        // Вычисляем направление от центра карты к телепорту
+        const centerX = CANVAS_WIDTH / 2;
+        const centerY = CANVAS_HEIGHT / 2;
+        const directionX = entryPosition.x - centerX;
+        const directionY = entryPosition.y - centerY;
+
+        // Нормализуем направление
+        const length = Math.sqrt(directionX * directionX + directionY * directionY);
+        const normalizedX = directionX / length;
+        const normalizedY = directionY / length;
+
+        // Размещаем игрока в направлении от центра
+        this.player.position.x = entryPosition.x + normalizedX * offset;
+        this.player.position.y = entryPosition.y + normalizedY * offset;
+
+        // Направляем игрока к центру карты
+        this.player.direction = this.calculateDirectionToCenter(this.player.position);
+
+        // Даем щит на входе
+        this.player.activateShield(3000);
+
+        console.log(`🎮 Игрок размещен рядом с телепортом входа в (${Math.round(this.player.position.x)}, ${Math.round(this.player.position.y)})`);
+    }
+
+    // НОВЫЙ МЕТОД: Расчет направления к центру карты
+    calculateDirectionToCenter(position) {
+        const centerX = CANVAS_WIDTH / 2;
+        const centerY = CANVAS_HEIGHT / 2;
+
+        const dx = centerX - position.x;
+        const dy = centerY - position.y;
+
+        // Определяем основное направление по большей компоненте
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        } else {
+            return dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Размещение игрока у входа на уровень
+    placePlayerAtEntry(entryExit) {
+        this.playerEnteredLevel = false;
+
+        switch (entryExit) {
+            case EXIT_TYPES.TOP:
+                this.player.position.x = CANVAS_WIDTH / 2;
+                this.player.position.y = -this.player.size;
+                this.player.direction = DIRECTIONS.DOWN;
+                break;
+            case EXIT_TYPES.BOTTOM:
+                this.player.position.x = CANVAS_WIDTH / 2;
+                this.player.position.y = CANVAS_HEIGHT + this.player.size;
+                this.player.direction = DIRECTIONS.UP;
+                break;
+            case EXIT_TYPES.LEFT:
+                this.player.position.x = -this.player.size;
+                this.player.position.y = CANVAS_HEIGHT / 2;
+                this.player.direction = DIRECTIONS.RIGHT;
+                break;
+            case EXIT_TYPES.RIGHT:
+                this.player.position.x = CANVAS_WIDTH + this.player.size;
+                this.player.position.y = CANVAS_HEIGHT / 2;
+                this.player.direction = DIRECTIONS.LEFT;
+                break;
+        }
+
+        // Даем щит на входе
+        this.player.activateShield(3000);
     }
 
     // ОБНОВЛЯЕМ метод restartGame
@@ -1360,6 +2066,7 @@ class Game {
     }
 
     render() {
+        // Очистка canvas
         if (this.screenShake > 0) {
             const intensity = this.screenShake / 50;
             this.ctx.fillStyle = `rgba(255, 100, 0, ${intensity * 0.3})`;
@@ -1369,6 +2076,7 @@ class Game {
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
+        // СНАЧАЛА рисуем карту и основные объекты
         this.map.draw(this.ctx);
         this.bonusManager.bonuses.forEach(bonus => bonus.draw(this.ctx));
         this.enemyManager.spawnAnimations.forEach(animation => animation.draw(this.ctx));
@@ -1382,83 +2090,224 @@ class Game {
         this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
         this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
 
-        // НОВОЕ: Рисуем траву ПОСЛЕ всего (поверх танков, пуль и эффектов)
+        // Рисуем траву
         this.map.drawGrassOverlay(this.ctx);
 
-        this.renderUIOverlays();
-
-        // Сохраняем оригинальный контекст
-        this.ctx.save();
-
-        if (this.screenShake > 0) {
-            const intensity = this.screenShake / 50;
-            this.ctx.fillStyle = `rgba(255, 100, 0, ${intensity * 0.3})`;
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        } else {
-            this.ctx.fillStyle = '#000';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // ПОТОМ рисуем телепорты ПОВЕРХ всего
+        if (this.exitTeleport && this.exitTeleport.active) {
+            this.exitTeleport.draw(this.ctx);
+        }
+        if (this.entryTeleport) {
+            this.entryTeleport.draw(this.ctx);
         }
 
-        this.map.draw(this.ctx);
-        this.bonusManager.bonuses.forEach(bonus => bonus.draw(this.ctx));
-        this.enemyManager.spawnAnimations.forEach(animation => animation.draw(this.ctx));
-
-        if (!this.player.isDestroyed) {
-            this.player.draw(this.ctx);
-        }
-
-        this.enemyManager.enemies.forEach(enemy => enemy.draw(this.ctx));
-        this.bullets.forEach(bullet => bullet.draw(this.ctx));
-        this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
-        this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
-
-        // НОВОЕ: Рисуем траву ПОСЛЕ всего (повторяем для второй части рендера)
-        this.map.drawGrassOverlay(this.ctx);
-
+        // Остальные overlay'и
         this.renderUIOverlays();
 
-        // НОВОЕ: Отрисовка дебаг информации (зоны видимости и т.д.)
+        // Дебаг информация
         if (this.debugShowVision) {
-            this.drawDebugVision();
+            this.drawDebugVision(this.ctx);
         }
-
-        // Восстанавливаем контекст
-        this.ctx.restore();
     }
 
-    // НОВЫЙ МЕТОД: Отрисовка зон видимости врагов
-    drawDebugVision() {
-        this.ctx.save();
+    // НОВЫЙ МЕТОД: Отрисовка открытых проходов в границах
+    drawExitOpenings(ctx) {
+        if (!this.waitingForExit && !this.nextLevelExit) return;
 
+        ctx.save();
+
+        // Проход для выхода (если есть)
+        if (this.waitingForExit && this.currentExit) {
+            this.drawExitOpening(ctx, this.currentExit, true);
+        }
+
+        // Проход для входа (если есть)
+        if (this.nextLevelExit && !this.playerEnteredLevel) {
+            this.drawExitOpening(ctx, this.nextLevelExit, false);
+        }
+
+        ctx.restore();
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка прохода в стене
+    drawExitOpening(ctx, exitType, isExit) {
+        const progress = isExit ? this.exitAnimationProgress : 1;
+        const color = isExit ? 'rgba(76, 175, 80, 0.7)' : 'rgba(33, 150, 243, 0.7)';
+
+        ctx.fillStyle = color;
+
+        switch (exitType) {
+            case EXIT_TYPES.TOP:
+                ctx.fillRect(
+                    CANVAS_WIDTH / 2 - (EXIT_WIDTH * progress) / 2,
+                             0,
+                             EXIT_WIDTH * progress,
+                             TILE_SIZE
+                );
+                break;
+            case EXIT_TYPES.BOTTOM:
+                ctx.fillRect(
+                    CANVAS_WIDTH / 2 - (EXIT_WIDTH * progress) / 2,
+                             CANVAS_HEIGHT - TILE_SIZE,
+                             EXIT_WIDTH * progress,
+                             TILE_SIZE
+                );
+                break;
+            case EXIT_TYPES.LEFT:
+                ctx.fillRect(
+                    0,
+                    CANVAS_HEIGHT / 2 - (EXIT_WIDTH * progress) / 2,
+                             TILE_SIZE,
+                             EXIT_WIDTH * progress
+                );
+                break;
+            case EXIT_TYPES.RIGHT:
+                ctx.fillRect(
+                    CANVAS_WIDTH - TILE_SIZE,
+                    CANVAS_HEIGHT / 2 - (EXIT_WIDTH * progress) / 2,
+                             TILE_SIZE,
+                             EXIT_WIDTH * progress
+                );
+                break;
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Отрисовка прохода в стене
+    drawExitOpening(ctx, exitType, isExit) {
+        const progress = isExit ? this.exitAnimationProgress : 1;
+        const color = isExit ? 'rgba(76, 175, 80, 0.7)' : 'rgba(33, 150, 243, 0.7)';
+
+        ctx.fillStyle = color;
+
+        switch (exitType) {
+            case EXIT_TYPES.TOP:
+                // Убираем стену сверху
+                this.removeWallAtPosition(CANVAS_WIDTH / 2, 0, EXIT_WIDTH * progress, TILE_SIZE);
+                ctx.fillRect(
+                    CANVAS_WIDTH / 2 - (EXIT_WIDTH * progress) / 2,
+                             0,
+                             EXIT_WIDTH * progress,
+                             TILE_SIZE
+                );
+                break;
+            case EXIT_TYPES.BOTTOM:
+                // Убираем стену снизу
+                this.removeWallAtPosition(CANVAS_WIDTH / 2, CANVAS_HEIGHT - TILE_SIZE, EXIT_WIDTH * progress, TILE_SIZE);
+                ctx.fillRect(
+                    CANVAS_WIDTH / 2 - (EXIT_WIDTH * progress) / 2,
+                             CANVAS_HEIGHT - TILE_SIZE,
+                             EXIT_WIDTH * progress,
+                             TILE_SIZE
+                );
+                break;
+            case EXIT_TYPES.LEFT:
+                // Убираем стену слева
+                this.removeWallAtPosition(0, CANVAS_HEIGHT / 2, TILE_SIZE, EXIT_WIDTH * progress);
+                ctx.fillRect(
+                    0,
+                    CANVAS_HEIGHT / 2 - (EXIT_WIDTH * progress) / 2,
+                             TILE_SIZE,
+                             EXIT_WIDTH * progress
+                );
+                break;
+            case EXIT_TYPES.RIGHT:
+                // Убираем стену справа
+                this.removeWallAtPosition(CANVAS_WIDTH - TILE_SIZE, CANVAS_HEIGHT / 2, TILE_SIZE, EXIT_WIDTH * progress);
+                ctx.fillRect(
+                    CANVAS_WIDTH - TILE_SIZE,
+                    CANVAS_HEIGHT / 2 - (EXIT_WIDTH * progress) / 2,
+                             TILE_SIZE,
+                             EXIT_WIDTH * progress
+                );
+                break;
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Удаление стен в области прохода
+    removeWallAtPosition(x, y, width, height) {
+        const startTileX = Math.floor(x / TILE_SIZE);
+        const startTileY = Math.floor(y / TILE_SIZE);
+        const endTileX = Math.floor((x + width) / TILE_SIZE);
+        const endTileY = Math.floor((y + height) / TILE_SIZE);
+
+        for (let tileY = startTileY; tileY <= endTileY; tileY++) {
+            for (let tileX = startTileX; tileX <= endTileX; tileX++) {
+                if (tileX >= 0 && tileX < this.map.width && tileY >= 0 && tileY < this.map.height) {
+                    // Заменяем кирпичные и бетонные стены на пустоту в области прохода
+                    if (this.map.grid[tileY][tileX] === TILE_TYPES.BRICK ||
+                        this.map.grid[tileY][tileX] === TILE_TYPES.CONCRETE) {
+                        this.map.grid[tileY][tileX] = TILE_TYPES.EMPTY;
+
+                    // Удаляем из brickTiles если есть
+                    const key = `${tileX},${tileY}`;
+                    if (this.map.brickTiles.has(key)) {
+                        this.map.brickTiles.delete(key);
+                    }
+                        }
+                }
+            }
+        }
+    }
+
+    // ОБНОВЛЯЕМ метод drawDebugVision:
+    drawDebugVision(ctx) {
         this.enemyManager.enemies.forEach(enemy => {
             if (!enemy.isDestroyed) {
                 const visionRange = VISION_RANGES[enemy.enemyType] || VISION_RANGES.BASIC;
 
-                // Рисуем зону видимости
-                this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
-                this.ctx.lineWidth = 1;
-                this.ctx.beginPath();
-                this.ctx.arc(enemy.position.x, enemy.position.y, visionRange, 0, Math.PI * 2);
-                this.ctx.stroke();
+                // Рисуем зону видимости (стильную)
+                const gradient = ctx.createRadialGradient(
+                    enemy.position.x, enemy.position.y, 0,
+                    enemy.position.x, enemy.position.y, visionRange
+                );
+                gradient.addColorStop(0, 'rgba(255, 255, 0, 0.1)');
+                gradient.addColorStop(1, 'rgba(255, 255, 0, 0.05)');
+
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(enemy.position.x, enemy.position.y, visionRange, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Обводка зоны
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.arc(enemy.position.x, enemy.position.y, visionRange, 0, Math.PI * 2);
+                ctx.stroke();
 
                 // Рисуем линию к игроку если видит
                 if (this.player && !this.player.isDestroyed && enemy.canSeePlayer(this.player, this.map)) {
-                    this.ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-                    this.ctx.lineWidth = 2;
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(enemy.position.x, enemy.position.y);
-                    this.ctx.lineTo(this.player.position.x, this.player.position.y);
-                    this.ctx.stroke();
+                    // Градиентная линия
+                    const lineGradient = ctx.createLinearGradient(
+                        enemy.position.x, enemy.position.y,
+                        this.player.position.x, this.player.position.y
+                    );
+                    lineGradient.addColorStop(0, 'rgba(255, 0, 0, 0.8)');
+                    lineGradient.addColorStop(1, 'rgba(255, 100, 100, 0.4)');
+
+                    ctx.strokeStyle = lineGradient;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(enemy.position.x, enemy.position.y);
+                    ctx.lineTo(this.player.position.x, this.player.position.y);
+                    ctx.stroke();
+
+                    // Индикатор цели на конце линии
+                    ctx.save();
+                    ctx.translate(this.player.position.x, this.player.position.y);
+                    ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
+                    ctx.font = 'bold 16px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('🎯', 0, -25);
+                    ctx.restore();
                 }
 
-                // Подпись с типом ИИ
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-                this.ctx.font = '10px Arial';
-                this.ctx.fillText(`AI:${enemy.aiLevel}`, enemy.position.x - 15, enemy.position.y - 10);
+                // Дебаг-информация ИИ
+                if (typeof enemy.drawAIDebugInfo === 'function') {
+                    enemy.drawAIDebugInfo(ctx);
+                }
             }
         });
-
-        this.ctx.restore();
     }
 
     renderUIOverlays() {

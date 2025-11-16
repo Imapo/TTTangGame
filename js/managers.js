@@ -4,9 +4,12 @@ class EnemyManager {
         this.game = game;
         this.enemies = [];
         this.spawnAnimations = [];
-        this.usedEnemyNames = new Set();
+        this.usedEnemyNames = new Set(); // Убедитесь что эта строка есть
         this.currentSpawnIndex = 0;
         this.lastRespawnTime = Date.now();
+
+        // НОВОЕ: Храним статистику уничтоженных врагов
+        this.destroyedEnemiesStats = [];
     }
 
     showSpawnNotification() {
@@ -38,6 +41,7 @@ class EnemyManager {
         return spawnPoint;
     }
 
+    // ОБНОВЛЯЕМ метод completeSpawnAnimation
     completeSpawnAnimation(spawnPoint) {
         const enemyType = this.getRandomEnemyType();
         const uniqueName = this.generateUniqueEnemyName(enemyType);
@@ -55,6 +59,9 @@ class EnemyManager {
         }
 
         this.enemies.push(enemy);
+
+        // НОВОЕ: Сохраняем ссылку для статистики
+        console.log(`🎯 Создан враг ${uniqueName} со статистикой`);
     }
 
     getRandomEnemyType() {
@@ -94,6 +101,7 @@ class EnemyManager {
         return selectedName;
     }
 
+    // ОБНОВЛЯЕМ метод update - сохраняем статистику уничтоженных врагов
     update() {
         const allTanks = [this.game.player, ...this.enemies];
         const allFragments = this.game.getAllFragments();
@@ -101,22 +109,53 @@ class EnemyManager {
         // Обновляем существующих врагов
         this.enemies.forEach(enemy => {
             enemy.update();
-
-            // ВЫЗЫВАЕМ новый ИИ вместо старого случайного поведения
             enemy.updateEnemyAI(this.game.map, allTanks, allFragments, this.game.player);
+        });
 
-            // НОВОЕ: Проверяем не вышел ли враг за границы
-            if (!enemy.isPositionInBounds(enemy.position.x, enemy.position.y)) {
-                console.log(`⚠️ Враг ${enemy.username} вышел за границы! Спасаем...`);
-                enemy.attemptEscape();
+        // НОВОЕ: Сохраняем статистику перед удалением уничтоженных врагов
+        const destroyedEnemies = this.enemies.filter(enemy => enemy.isDestroyed);
+        destroyedEnemies.forEach(enemy => {
+            if (enemy.levelStats && enemy.levelStats.totalScore > 0) {
+                console.log(`💾 Сохраняем статистику уничтоженного врага ${enemy.username}:`, enemy.levelStats);
+                this.destroyedEnemiesStats.push({
+                    enemy: enemy,
+                    stats: {...enemy.levelStats} // копируем объект
+                });
             }
         });
 
+        // Удаляем уничтоженных врагов
+        this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
+
         // Обрабатываем столкновения между танками
         this.handleTankCollisions(allTanks);
+    }
 
-        // НОВОЕ: Удаляем уничтоженных врагов (включая застрявших)
-        this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
+    // НОВЫЙ МЕТОД: Получить всю статистику уровня (включая уничтоженных врагов)
+    getAllEnemiesStats() {
+        const allStats = [];
+
+        // Добавляем текущих живых врагов
+        this.enemies.forEach(enemy => {
+            if (enemy.levelStats) {
+                allStats.push({
+                    enemy: enemy,
+                    stats: enemy.levelStats
+                });
+            }
+        });
+
+        // Добавляем уничтоженных врагов
+        allStats.push(...this.destroyedEnemiesStats);
+
+        console.log(`📊 Всего записей статистики: ${allStats.length} (${this.enemies.length} живых + ${this.destroyedEnemiesStats.length} уничтоженных)`);
+
+        return allStats;
+    }
+
+    // НОВЫЙ МЕТОД: Очистка статистики при новом уровне
+    clearStats() {
+        this.destroyedEnemiesStats = [];
     }
 
     handleTankCollisions(allTanks) {
@@ -162,11 +201,17 @@ class EnemyManager {
             }
     }
 
+    // ОБНОВЛЯЕМ метод clear
     clear() {
         this.enemies = [];
         this.spawnAnimations = [];
-        this.usedEnemyNames.clear();
+        if (this.usedEnemyNames) {
+            this.usedEnemyNames.clear();
+        }
         this.currentSpawnIndex = 0;
+
+        // НОВОЕ: Очищаем статистику
+        this.destroyedEnemiesStats = [];
     }
 
 }
