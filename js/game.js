@@ -84,9 +84,90 @@ class Game {
         this.entryTeleport = null;
         this.playerEnteredLevel = true; // Для первого уровня сразу true
 
-        console.log(`🎮 Загружен прогресс: уровень ${this.playerLevel}, опыт ${this.playerExperience}`);
+        // НОВОЕ: Система статистики игрока
+        this.playerStats = this.loadPlayerStats();
 
         this.initLevel();
+    }
+
+    // НОВЫЙ МЕТОД: Загрузка статистики игрока
+    loadPlayerStats() {
+        try {
+            const savedStats = localStorage.getItem('tankGame_playerStats');
+            if (savedStats) {
+                const stats = JSON.parse(savedStats);
+                console.log('📊 Статистика игрока загружена:', stats);
+                return stats;
+            }
+        } catch (error) {
+            console.error('Ошибка загрузки статистики:', error);
+        }
+
+        // Статистика по умолчанию
+        return {
+            level: 1,
+            enemiesKilled: 0,
+            deaths: 0,
+            blocksDestroyed: 0,
+            playTime: 0, // в секундах
+            levelsCompleted: 0,
+            startTime: Date.now()
+        };
+    }
+
+    // НОВЫЙ МЕТОД: Сохранение статистики
+    savePlayerStats() {
+        try {
+            // Обновляем время игры
+            if (this.playerStats.startTime) {
+                this.playerStats.playTime = Math.floor((Date.now() - this.playerStats.startTime) / 1000);
+            }
+
+            localStorage.setItem('tankGame_playerStats', JSON.stringify(this.playerStats));
+        } catch (error) {
+            console.error('Ошибка сохранения статистики:', error);
+        }
+    }
+
+    // НОВЫЙ МЕТОД: Сброс статистики
+    resetPlayerStats() {
+        this.playerStats = {
+            level: 1,
+            enemiesKilled: 0,
+            deaths: 0,
+            blocksDestroyed: 0,
+            playTime: 0,
+            levelsCompleted: 0,
+            startTime: Date.now()
+        };
+        this.savePlayerStats();
+        console.log('🔄 Статистика игрока сброшена');
+    }
+
+    // НОВЫЕ МЕТОДЫ: Обновление статистики
+    recordEnemyKill() {
+        this.playerStats.enemiesKilled++;
+        this.savePlayerStats();
+    }
+
+    recordPlayerDeath() {
+        this.playerStats.deaths++;
+        this.savePlayerStats();
+    }
+
+    recordBlockDestroyed(count = 1) {
+        this.playerStats.blocksDestroyed += count;
+        this.savePlayerStats();
+    }
+
+    recordLevelCompleted() {
+        this.playerStats.levelsCompleted++;
+        this.savePlayerStats();
+    }
+
+    updatePlayerLevel(newLevel) {
+        this.playerStats.level = newLevel;
+        this.savePlayerStats();
     }
 
     // ОБНОВЛЯЕМ метод создания телепорта выхода с использованием безопасных зон
@@ -289,6 +370,18 @@ class Game {
         </div>
         </div>
 
+        <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
+        <h4 style="margin: 0 0 8px 0; color: #FF9800;">Статистика:</h4>
+        <button id="debugResetStats" style="width: 100%; padding: 8px; background: #FF5722; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 5px;">
+        🗑️ Сбросить статистику
+        </button>
+        <div style="font-size: 10px; color: #888; text-align: center;">
+        Убийств: <span id="debugKills">0</span> |
+        Смертей: <span id="debugDeaths">0</span> |
+        Уровней: <span id="debugLevels">0</span>
+        </div>
+        </div>
+
         <div style="border-top: 1px solid #444; padding-top: 10px;">
         <div style="font-size: 10px; color: #888;">
         <div>Текущий ИИ: <span id="debugCurrentAI">Базовый</span></div>
@@ -357,6 +450,14 @@ class Game {
                 const bonusType = e.target.dataset.bonus;
                 this.debugAddBonus(bonusType);
             });
+        });
+
+        // Сброс статистики
+        document.getElementById('debugResetStats').addEventListener('click', () => {
+            if (confirm('Точно сбросить всю статистику? Это действие нельзя отменить.')) {
+                this.resetPlayerStats();
+                console.log('🗑️ Статистика сброшена');
+            }
         });
 
         // Сворачивание/разворачивание меню
@@ -435,6 +536,17 @@ class Game {
         const playerLevelElement = document.getElementById('debugPlayerLevel');
         const playerExpElement = document.getElementById('debugPlayerExp');
         const gameLevelElement = document.getElementById('debugGameLevel');
+
+        // Обновляем статистику в дебаг-меню
+        const killsElement = document.getElementById('debugKills');
+        const deathsElement = document.getElementById('debugDeaths');
+        const levelsElement = document.getElementById('debugLevels');
+
+        if (killsElement && this.playerStats) {
+            killsElement.textContent = this.playerStats.enemiesKilled;
+            deathsElement.textContent = this.playerStats.deaths;
+            levelsElement.textContent = this.playerStats.levelsCompleted;
+        }
 
         if (playerLevelElement) {
             playerLevelElement.textContent = this.playerLevel || 1;
@@ -868,7 +980,7 @@ class Game {
         return true;
     }
 
-    // ОБНОВЛЯЕМ метод добавления опыта
+    // В методе handlePlayerBulletCollision ДОБАВЛЯЕМ:
     handlePlayerBulletCollision(bullet, index, bulletBounds) {
         for (let j = this.enemyManager.enemies.length - 1; j >= 0; j--) {
             const enemy = this.enemyManager.enemies[j];
@@ -891,10 +1003,10 @@ class Game {
                     }
                     this.soundManager.play('tankExplosion');
 
-                    // ДОБАВЛЯЕМ опыт игроку
-                    this.player.addExperience(enemy.enemyType);
+                    // НОВОЕ: Учет убийства врага
+                    this.recordEnemyKill();
 
-                    // СИНХРОНИЗИРУЕМ опыт с game и сохраняем
+                    this.player.addExperience(enemy.enemyType);
                     this.playerExperience = this.player.experience;
                     this.playerLevel = this.player.playerLevel;
                     this.savePlayerProgress();
@@ -981,7 +1093,7 @@ class Game {
         }, 3000);
     }
 
-    // ОБНОВЛЯЕМ метод handleEnemyBulletCollision для учета убийств игрока
+    // В методе handleEnemyBulletCollision ДОБАВЛЯЕМ:
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
         if (!this.player.isDestroyed && bulletBounds.intersects(this.player.getBounds())) {
             if (this.player.takeDamage()) {
@@ -989,13 +1101,13 @@ class Game {
                 this.screenShake = 35;
                 this.soundManager.play('tankExplosion');
 
-                // НОВОЕ: Учет убийства игрока (должно быть ДО создания нового танка)
+                // НОВОЕ: Учет смерти игрока
+                this.recordPlayerDeath();
+
                 if (bullet.shooter && bullet.owner === 'enemy') {
                     console.log(`💀 ${bullet.shooter.username} УБИЛ ИГРОКА!`);
                     bullet.shooter.recordPlayerKill();
                     this.addToLeaderboard(bullet.shooter);
-
-                    // Сразу сохраняем в localStorage
                     this.saveEnemyStatsToStorage(bullet.shooter);
                 }
 
@@ -1817,6 +1929,9 @@ class Game {
 
     // ОБНОВЛЯЕМ метод nextLevel
     nextLevel(exitX = null, exitY = null) {
+        // НОВОЕ: Учет пройденного уровня
+        this.recordLevelCompleted();
+
         // Очищаем статистику ТЕКУЩЕГО уровня перед переходом
         this.clearLevelStatsFromStorage();
 
@@ -2149,8 +2264,10 @@ class Game {
         this.bonusManager.bonuses.forEach(bonus => bonus.draw(this.ctx));
         this.enemyManager.spawnAnimations.forEach(animation => animation.draw(this.ctx));
 
+        // ПОТОМ рисуем игрока и его статистику
         if (!this.player.isDestroyed) {
             this.player.draw(this.ctx);
+            this.drawPlayerStats(this.ctx); // ← ДОБАВИТЬ ЭТУ СТРОКУ
         }
 
         this.enemyManager.enemies.forEach(enemy => enemy.draw(this.ctx));
@@ -2171,6 +2288,9 @@ class Game {
 
         // Остальные overlay'и
         this.renderUIOverlays();
+
+        // Отрисовываем статистику игрока
+        this.drawPlayerStats(this.ctx);
 
         // Дебаг информация
         if (this.debugShowVision) {
@@ -2362,6 +2482,107 @@ class Game {
                 }
             }
         });
+    }
+
+    // ЗАМЕНЯЕМ метод drawPlayerStats на новый вариант:
+    drawPlayerStats(ctx) {
+        if (this.player.isDestroyed || !this.playerStats) return;
+
+        ctx.save();
+        ctx.translate(this.player.position.x, this.player.position.y);
+
+        // Собираем информацию
+        const statsLines = [];
+
+        // Всегда отображаем
+        statsLines.push(`🧠 Уровень: ${this.player.playerLevel}`);
+        statsLines.push(`🤖 Убито противников: ${this.playerStats.enemiesKilled}`);
+        statsLines.push(`💀 Смертей: ${this.playerStats.deaths}`);
+
+        // Только в дебаг-режиме
+        if (this.debugShowVision) {
+            statsLines.push(`🧱 Сломано блоков: ${this.playerStats.blocksDestroyed}`);
+
+            // Форматируем время
+            const minutes = Math.floor(this.playerStats.playTime / 60);
+            const hours = Math.floor(minutes / 60);
+            const displayMinutes = minutes % 60;
+            const timeText = hours > 0 ? `${hours}ч ${displayMinutes}м` : `${minutes}м`;
+            statsLines.push(`⏰ Сыграно времени: ${timeText}`);
+
+            statsLines.push(`🚧 Пройдено уровней: ${this.playerStats.levelsCompleted}`);
+        }
+
+        // Вычисляем размеры блока
+        const lineHeight = 14;
+        const padding = 6;
+        const totalHeight = statsLines.length * lineHeight + padding * 2;
+        const maxWidth = this.getPlayerStatsTextWidth(ctx, statsLines) + padding * 2;
+
+        // Позиционируем блок СЛЕВА от игрока (как у противников)
+        const blockX = -this.player.size - maxWidth - 15; // Слева от игрока
+        const blockY = -this.player.size - totalHeight - 10; // Выше игрока
+
+        // Градиентный фон (синий для игрока)
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + maxWidth, blockY + totalHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+        gradient.addColorStop(1, 'rgba(70, 130, 180, 0.85)'); // Синий градиент
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, maxWidth, totalHeight);
+
+        // Обводка
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(blockX, blockY, maxWidth, totalHeight);
+
+        // Отображаем строки информации с выравниванием по левому краю
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        statsLines.forEach((line, index) => {
+            const yPos = blockY + padding + (index * lineHeight) + lineHeight/2;
+            const xPos = blockX + padding;
+
+            // Тень для лучшей читаемости
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillText(line, xPos + 1, yPos + 1);
+
+            // Основной текст
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(line, xPos, yPos);
+        });
+
+        // Стрелка-указатель к игроку (как у противников)
+        ctx.strokeStyle = 'rgba(100, 200, 255, 0.6)'; // Голубая линия для игрока
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(blockX + maxWidth, blockY + totalHeight/2); // От правого края блока
+        ctx.lineTo(-this.player.size/2, 0); // К центру игрока
+        ctx.stroke();
+
+        // Заголовок (над блоком)
+        ctx.fillStyle = 'rgba(100, 200, 255, 0.9)'; // Голубой для игрока
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎮 Игрок', blockX + maxWidth/2, blockY - 8);
+
+        ctx.restore();
+    }
+
+    // Вспомогательный метод для вычисления ширины текста (оставляем без изменений)
+    getPlayerStatsTextWidth(ctx, lines) {
+        ctx.save();
+        ctx.font = 'bold 11px Arial';
+        let maxWidth = 0;
+        lines.forEach(line => {
+            const width = ctx.measureText(line).width;
+            if (width > maxWidth) maxWidth = width;
+        });
+            ctx.restore();
+            return maxWidth;
     }
 
     renderUIOverlays() {

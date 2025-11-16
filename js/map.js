@@ -396,6 +396,10 @@ class GameMap {
                                 if (typeof game !== 'undefined') {
                                     game.saveEnemyStatsToStorage(bullet.shooter);
                                 }
+                            } else if(bullet.owner !== 'enemy' && bullet.shooter) {
+                                if (typeof game !== 'undefined') {
+                                    game.recordBlockDestroyed(1); // Учитываем 1 разрушенный блок
+                                }
                             }
 
                             if (brickTile.takeDamage()) {

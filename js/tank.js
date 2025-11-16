@@ -384,6 +384,11 @@ class Tank {
 
         console.log(`🚀 Апгрейд до ${newUpgrade.name}! Уровень ${newLevel}`);
 
+        // НОВОЕ: Обновляем статистику в game
+        if (typeof game !== 'undefined') {
+            game.updatePlayerLevel(newLevel);
+        }
+
         // Визуальный эффект апгрейда
         this.showUpgradeEffect();
     }
@@ -1103,11 +1108,6 @@ class Tank {
             this.drawEnemyInfo(ctx);
         }
 
-        // Отображаем уровень игрока над танком
-        if (this.type === 'player') {
-            this.drawPlayerLevel(ctx);
-        }
-
         // Рисуем эффект заморозки поверх танка
         if (this.isFrozen && this.freezeProgress > 0) {
             this.drawFreezeEffect(ctx);
@@ -1398,24 +1398,6 @@ class Tank {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(this.playerLevel.toString(), 0, 0);
-    }
-
-    // НОВЫЙ МЕТОД: Отрисовка уровня над танком
-    drawPlayerLevel(ctx) {
-        const levelText = `Ур.${this.playerLevel}`;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        const textWidth = ctx.measureText(levelText).width;
-        ctx.fillRect(
-            this.position.x - textWidth/2 - 3,
-            this.position.y - this.size - 42,
-            textWidth + 6,
-            14
-        );
-
-        ctx.fillStyle = this.color;
-        ctx.font = 'bold 10px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(levelText, this.position.x, this.position.y - this.size - 32);
     }
 
     // НОВЫЙ МЕТОД: Получение темного цвета для деталей
