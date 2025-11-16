@@ -201,7 +201,7 @@ const BONUS_TYPES = {
         id: 'FORTIFY',
         symbol: '🏰',
         color: '#4CAF50',
-        duration: 60000,
+        duration: 30000,
         chance: 0.3,
         sound: 'bonusPickup'
     },

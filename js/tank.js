@@ -412,25 +412,38 @@ class Tank {
     }
 
     // НОВЫЙ МЕТОД: Активация автонаведения
-    activateAutoAim(duration) {
-        if (this.type !== 'player') return; // Только для игрока
+    activateAutoAim(duration = 15000) { // Добавляем значение по умолчанию
+        if (this.type !== 'player') return;
 
         this.hasAutoAim = true;
-        this.autoAimDuration = duration;
+        this.autoAimDuration = duration || 15000; // Защита от undefined
         this.autoAimTimer = 0;
         this.autoAimBlink = 0;
-        console.log(`🎯 Активировано автонаведение на ${duration/1000}сек`);
+        console.log(`🎯 Активировано автонаведение на ${this.autoAimDuration/1000}сек`);
     }
 
-    // НОВЫЙ МЕТОД: Обновление автонаведения
+    // В классе Tank ИСПРАВЛЯЕМ метод updateAutoAim:
     updateAutoAim() {
         if (this.hasAutoAim) {
-            this.autoAimTimer += 16; // примерно 60 FPS
+            this.autoAimTimer += 16; // ~60 FPS
+
+            // Защита от NaN
+            if (isNaN(this.autoAimTimer)) this.autoAimTimer = 0;
+            if (isNaN(this.autoAimDuration)) this.autoAimDuration = 15000;
+
             this.autoAimBlink++;
 
+            // ИСПРАВЛЕНИЕ: Правильная проверка истечения времени
             if (this.autoAimTimer >= this.autoAimDuration) {
                 this.hasAutoAim = false;
+                this.autoAimTimer = 0;
+                this.autoAimDuration = 0;
                 console.log('🎯 Автонаведение закончилось');
+
+                // Принудительно обновляем UI
+                if (typeof game !== 'undefined') {
+                    game.updateStatusIndicators();
+                }
             }
         }
     }
@@ -1085,6 +1098,11 @@ class Tank {
             ctx.globalAlpha = 1.0;
         }
 
+        // ОТОБРАЖЕНИЕ ИНФОРМАЦИИ О ТАНКЕ (единый метод для всех режимов)
+        if (this.type === 'enemy' && this.username && !this.isDestroyed) {
+            this.drawEnemyInfo(ctx);
+        }
+
         // Отображаем уровень игрока над танком
         if (this.type === 'player') {
             this.drawPlayerLevel(ctx);
@@ -1093,11 +1111,6 @@ class Tank {
         // Рисуем эффект заморозки поверх танка
         if (this.isFrozen && this.freezeProgress > 0) {
             this.drawFreezeEffect(ctx);
-        }
-
-        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ (только если включен дебаг-режим)
-        if (typeof game !== 'undefined' && game.debugShowVision && this.type === 'enemy') {
-            this.drawAIDebugInfo(ctx);
         }
 
         // Визуальные эффекты для разных состояний патрулирования
@@ -1200,59 +1213,73 @@ class Tank {
         ctx.restore();
     }
 
-    // ЗАМЕНЯЕМ метод drawAIDebugInfo на версию с выравниванием по левому краю:
-    drawAIDebugInfo(ctx) {
-        if (this.type !== 'enemy') return;
+    // В методе drawEnemyInfo ИСПРАВЛЯЕМ позиционирование:
+    drawEnemyInfo(ctx) {
+        if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
 
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        // Собираем информацию в три строки
+        // Собираем информацию в зависимости от режима
         const debugLines = [];
 
-        // Строка 1: Здоровье
-        const healthIcons = ['❤️', '❤️❤️', '❤️❤️❤️'];
-        const healthIcon = healthIcons[this.health - 1] || '❤️';
-        debugLines.push(`${healthIcon} = ${this.health}`);
-
-        // Строка 2: Тип ИИ
-        const aiIcons = {
-            [ENEMY_AI_LEVELS.BASIC]: '🚲 Базовый ИИ',
-            [ENEMY_AI_LEVELS.ADVANCED]: '🚨 Продвинутый ИИ'
+        // Всегда: имя с аватаркой
+        const tempAvatars = {
+            'BASIC': '🚵‍♂️',
+            'FAST': '🌠',
+            'HEAVY': '🦏',
+            'SNIPER': '🎯'
         };
-        debugLines.push(`${aiIcons[this.aiLevel] || '❓ Неизвестный ИИ'}`);
+        const avatar = tempAvatars[this.enemyType] || '👤';
+        debugLines.push(`${avatar} ${this.username}`);
 
-        // Строка 3: Состояние
-        let stateLine = '';
+        // Только в дебаг-режиме: дополнительная информация
+        const isDebugMode = typeof game !== 'undefined' && game.debugShowVision;
+        if (isDebugMode) {
+            // Строка 2: Здоровье
+            const healthIcons = ['❤️', '❤️❤️', '❤️❤️❤️'];
+            const healthIcon = healthIcons[this.health - 1] || '❤️';
+            debugLines.push(`${healthIcon} Жизней = ${this.health}`);
 
-        // Для базового ИИ - состояние патрулирования
-        if (this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
-            const stateIcons = {
-                'MOVING': '🚗 Еду',
-                'STOPPED': '🛑 Стою',
-                'LOOKING_AROUND': '👀 Осматриваюсь'
+            // Строка 3: Тип ИИ
+            const aiIcons = {
+                [ENEMY_AI_LEVELS.BASIC]: '🚲 Базовый ИИ',
+                [ENEMY_AI_LEVELS.ADVANCED]: '🚨 Продвинутый ИИ'
             };
-            stateLine = stateIcons[this.patrolState] || '❓';
-        }
-        // Для продвинутого ИИ - состояние атаки
-        else if (this.aiLevel === ENEMY_AI_LEVELS.ADVANCED && this.ai) {
-            const player = typeof game !== 'undefined' ? game.player : null;
-            const map = typeof game !== 'undefined' ? game.map : null;
+            debugLines.push(`${aiIcons[this.aiLevel] || '❓ Неизвестный ИИ'}`);
 
-            if (player && !player.isDestroyed && this.canSeePlayer(player, map)) {
-                stateLine = '😈 Вижу игрока';
-            } else if (this.ai.state === 'ATTACK_BASE') {
-                stateLine = '💀 Вижу базу';
-            } else if (this.ai.state === 'ATTACK_PLAYER' && this.ai.lastKnownPlayerPosition) {
-                stateLine = '🎯 Ищу игрока';
+            // Строка 4: Состояние
+            let stateLine = '';
+
+            // Для базового ИИ - состояние патрулирования
+            if (this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+                const stateIcons = {
+                    'MOVING': '🚗 Еду',
+                    'STOPPED': '🛑 Стою',
+                    'LOOKING_AROUND': '👀 Осматриваюсь'
+                };
+                stateLine = stateIcons[this.patrolState] || '❓';
+            }
+            // Для продвинутого ИИ - состояние атаки
+            else if (this.aiLevel === ENEMY_AI_LEVELS.ADVANCED && this.ai) {
+                const player = typeof game !== 'undefined' ? game.player : null;
+                const map = typeof game !== 'undefined' ? game.map : null;
+
+                if (player && !player.isDestroyed && this.canSeePlayer(player, map)) {
+                    stateLine = '😈 Вижу игрока';
+                } else if (this.ai.state === 'ATTACK_BASE') {
+                    stateLine = '💀 Вижу базу';
+                } else if (this.ai.state === 'ATTACK_PLAYER' && this.ai.lastKnownPlayerPosition) {
+                    stateLine = '🎯 Ищу игрока';
+                } else {
+                    stateLine = '🤔 Не вижу игрока';
+                }
             } else {
                 stateLine = '🤔 Не вижу игрока';
             }
-        } else {
-            stateLine = '🤔 Не вижу игрока';
-        }
 
-        debugLines.push(stateLine);
+            debugLines.push(stateLine);
+        }
 
         // Вычисляем размеры блока
         const lineHeight = 14;
@@ -1260,9 +1287,9 @@ class Tank {
         const totalHeight = debugLines.length * lineHeight + padding * 2;
         const maxWidth = this.getMaxTextWidth(ctx, debugLines) + padding * 2;
 
-        // Позиционируем блок слева от танка
-        const blockX = -this.size - maxWidth - 10; // Слева от танка
-        const blockY = -this.size - totalHeight - 5;
+        // ИСПРАВЛЕНИЕ: Позиционируем блок СЛЕВА от танка (как раньше)
+        const blockX = -this.size - maxWidth - 15; // Слева от танка
+        const blockY = -this.size - totalHeight - 10; // Выше танка
 
         // Градиентный фон
         const gradient = ctx.createLinearGradient(blockX, blockY, blockX + maxWidth, blockY + totalHeight);
@@ -1272,7 +1299,7 @@ class Tank {
         ctx.fillStyle = gradient;
         ctx.fillRect(blockX, blockY, maxWidth, totalHeight);
 
-        // Обводка
+        // Обводка (УБИРАЕМ оранжевую обводку в дебаг-режиме)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.lineWidth = 1;
         ctx.strokeRect(blockX, blockY, maxWidth, totalHeight);
@@ -1296,7 +1323,7 @@ class Tank {
             ctx.fillText(line, xPos, yPos);
         });
 
-        // Стрелка-указатель к танку
+        // Стрелка-указатель к танку (ИСПРАВЛЯЕМ направление)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
         ctx.lineWidth = 1;
         ctx.beginPath();

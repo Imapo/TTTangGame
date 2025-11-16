@@ -457,20 +457,22 @@ class Game {
         }
     }
 
+    // В методе debugAddBonus в Game.js ДОБАВЛЯЕМ проверки:
     debugAddBonus(bonusType) {
-        if (this.player && this.player.isDestroyed) return;
+        if (this.player.isDestroyed) return;
 
         console.log(`🎁 Выдаем бонус: ${bonusType}`);
 
         switch(bonusType) {
             case 'SHIELD':
-                if (this.player) this.player.activateShield();
+                this.player.activateShield(5000);
                 break;
             case 'INVINCIBILITY':
-                if (this.player) this.player.activateShield(10000);
+                this.player.activateShield(10000);
                 break;
             case 'AUTO_AIM':
-                if (this.player) this.player.activateAutoAim();
+                // ИСПРАВЛЕНИЕ: явно передаём время
+                this.player.activateAutoAim(15000);
                 break;
             case 'FORTIFY':
                 this.fortifyBase(30000);
@@ -714,11 +716,14 @@ class Game {
 
         const allTanks = [this.player, ...this.enemyManager.enemies];
 
+        // ИСПРАВЛЕНИЕ: Правильное использование deltaTime
+        const fixedDelta = 16; // Фиксированный шаг для 60 FPS
+
         if (!this.player.isDestroyed) {
             this.player.update();
         }
 
-        // ОБНОВЛЯЕМ: Враги обновляются только если игрок вошел на уровень
+        // Обновляем врагов с фиксированным временем
         if ((this.playerEnteredLevel || this.level === 1) && !this.levelComplete) {
             if (typeof EnemyAI !== 'undefined') {
                 this.enemyManager.update();
@@ -1291,15 +1296,21 @@ class Game {
         this.updateAutoAimIndicator();
     }
 
+    // В Game.js ОБНОВЛЯЕМ метод updateStatusIndicator:
     updateStatusIndicator(indicatorId, timeElementId, isActive, remainingTime) {
         const indicator = document.getElementById(indicatorId);
         const timeElement = document.getElementById(timeElementId);
 
-        if (isActive && !this.player.isDestroyed && !this.baseDestroyed) {
+        // ИСПРАВЛЕНИЕ: Более строгая проверка активности
+        const shouldShow = isActive && remainingTime > 0 && !this.player.isDestroyed && !this.baseDestroyed;
+
+        if (shouldShow) {
             timeElement.textContent = remainingTime.toFixed(1);
             indicator.style.display = 'block';
         } else {
+            // ИСПРАВЛЕНИЕ: Гарантированно скрываем при неактивности
             indicator.style.display = 'none';
+            timeElement.textContent = '0.0';
         }
     }
 
@@ -1314,16 +1325,43 @@ class Game {
         this.updateStatusIndicator('invincibilityIndicator', 'invincibilityTime', this.player.isInvincible, remainingTime);
     }
 
+    // В Game.js ИСПРАВЛЯЕМ метод updateAutoAimIndicator:
     updateAutoAimIndicator() {
-        const remainingTime = this.player.hasAutoAim ?
-        (this.player.autoAimDuration - this.player.autoAimTimer) / 1000 : 0;
-        this.updateStatusIndicator('autoaimIndicator', 'autoaimTime', this.player.hasAutoAim, remainingTime);
+        // ИСПРАВЛЕНИЕ: Правильная проверка наличия бонуса
+        const hasAutoAim = this.player.hasAutoAim &&
+        this.player.autoAimDuration > 0 &&
+        this.player.autoAimTimer < this.player.autoAimDuration;
+
+        if (!hasAutoAim) {
+            // Сбрасываем таймер и скрываем индикатор
+            this.player.autoAimTimer = 0;
+            this.player.autoAimDuration = 0;
+            const indicator = document.getElementById('autoaimIndicator');
+            const timeElement = document.getElementById('autoaimTime');
+            if (indicator) indicator.style.display = 'none';
+            if (timeElement) timeElement.textContent = '0.0';
+            return;
+        }
+
+        const remainingTime = (this.player.autoAimDuration - this.player.autoAimTimer) / 1000;
+        this.updateStatusIndicator('autoaimIndicator', 'autoaimTime', true, Math.max(0, remainingTime));
     }
 
+    // ОБНОВЛЯЕМ метод updateFortifyIndicator:
     updateFortifyIndicator() {
-        const remainingTime = this.baseFortified ?
-        (this.baseFortifyDuration - this.baseFortifyTime) / 1000 : 0;
-        this.updateStatusIndicator('fortifyIndicator', 'fortifyTime', this.baseFortified, remainingTime);
+        if (!this.baseFortified || !this.baseFortifyStartTime) {
+            const indicator = document.getElementById('fortifyIndicator');
+            const timeElement = document.getElementById('fortifyTime');
+            if (indicator) indicator.style.display = 'none';
+            if (timeElement) timeElement.textContent = '0.0';
+            return;
+        }
+
+        const currentTime = Date.now();
+        const elapsedTime = currentTime - this.baseFortifyStartTime;
+        const remainingTime = (this.baseFortifyDuration - elapsedTime) / 1000;
+
+        this.updateStatusIndicator('fortifyIndicator', 'fortifyTime', this.baseFortified, Math.max(0, remainingTime));
     }
 
     // ВРЕМЕННЫЙ МЕТОД для тестирования
@@ -1936,21 +1974,6 @@ class Game {
         }
     }
 
-    // МЕТОД УКРЕПЛЕНИЯ БАЗЫ (один экземпляр)
-    fortifyBase(duration) {
-        if (this.baseFortified) {
-            console.log('🏰 База уже укреплена, продлеваем время');
-            this.baseFortifyDuration = Math.max(this.baseFortifyDuration, duration);
-            return;
-        }
-
-        console.log(`🏰 Укрепляем базу на ${duration/1000}сек`);
-        this.baseFortified = true;
-        this.baseFortifyTime = 0;
-        this.baseFortifyDuration = duration;
-        this.saveOriginalBaseWalls();
-    }
-
     saveOriginalBaseWalls() {
         this.originalBaseWalls = [];
         const baseX = Math.floor(this.map.width / 2);
@@ -1986,12 +2009,24 @@ class Game {
         });
     }
 
+    // В Game.js ПОЛНОСТЬЮ ПЕРЕПИСЫВАЕМ систему укрепления базы:
     updateBaseFortification() {
         if (this.baseFortified) {
-            this.baseFortifyTime += this.deltaTime;
+            // ИСПРАВЛЕНИЕ: Используем реальное время, а не игровое
+            const currentTime = Date.now();
 
-            if (this.baseFortifyDuration - this.baseFortifyTime < 5000) {
-                const blink = Math.floor(this.baseFortifyTime / 200) % 2 === 0;
+            // Если это первый вызов, устанавливаем время начала
+            if (!this.baseFortifyStartTime) {
+                this.baseFortifyStartTime = currentTime;
+            }
+
+            // Вычисляем прошедшее время
+            const elapsedTime = currentTime - this.baseFortifyStartTime;
+            const remainingTime = this.baseFortifyDuration - elapsedTime;
+
+            // Мигание в последние 5 секунд
+            if (remainingTime < 5000) {
+                const blink = Math.floor(elapsedTime / 200) % 2 === 0;
                 if (blink) {
                     this.temporarilyRestoreWalls();
                 } else {
@@ -2001,13 +2036,37 @@ class Game {
                 this.temporarilyUpgradeWalls();
             }
 
-            if (this.baseFortifyTime >= this.baseFortifyDuration) {
+            // Проверяем окончание времени
+            if (remainingTime <= 0) {
                 this.baseFortified = false;
+                this.baseFortifyStartTime = null;
                 this.permanentlyRestoreWalls();
                 console.log('🏰 Укрепление базы закончилось');
             }
+
+            // Обновляем UI
+            this.updateStatusIndicators();
         }
     }
+
+    // ОБНОВЛЯЕМ метод fortifyBase:
+    fortifyBase(duration) {
+        if (this.baseFortified) {
+            console.log('🏰 База уже укреплена, продлеваем время');
+            // ИСПРАВЛЕНИЕ: Правильное продление времени
+            const elapsed = Date.now() - this.baseFortifyStartTime;
+            this.baseFortifyDuration = Math.max(this.baseFortifyDuration - elapsed, duration);
+            this.baseFortifyStartTime = Date.now();
+            return;
+        }
+
+        console.log(`🏰 Укрепляем базу на ${duration/1000}сек`);
+        this.baseFortified = true;
+        this.baseFortifyDuration = duration;
+        this.baseFortifyStartTime = Date.now(); // Запоминаем время начала
+        this.saveOriginalBaseWalls();
+    }
+
 
     temporarilyRestoreWalls() {
         this.originalBaseWalls.forEach(wall => {
@@ -2053,15 +2112,24 @@ class Game {
         console.log('🔧 Восстановление стен завершено');
     }
 
+    // В gameLoop ИСПРАВЛЯЕМ:
     gameLoop(currentTime) {
+        if (!this.lastTime) this.lastTime = currentTime;
         this.deltaTime = currentTime - this.lastTime;
+        this.lastTime = currentTime;
 
-        if (this.deltaTime >= FRAME_TIME) {
-            this.lastTime = currentTime - (this.deltaTime % FRAME_TIME);
+        // Фиксированный шаг времени для стабильности
+        const fixedTimeStep = 16; // 60 FPS
+        let accumulatedTime = this.accumulatedTime || 0;
+        accumulatedTime += this.deltaTime;
+
+        while (accumulatedTime >= fixedTimeStep) {
             this.update();
-            this.render();
+            accumulatedTime -= fixedTimeStep;
         }
+        this.accumulatedTime = accumulatedTime;
 
+        this.render();
         requestAnimationFrame((time) => this.gameLoop(time));
     }
 
@@ -2249,13 +2317,13 @@ class Game {
         }
     }
 
-    // ОБНОВЛЯЕМ метод drawDebugVision:
+    // В методе drawDebugVision УПРОЩАЕМ:
     drawDebugVision(ctx) {
         this.enemyManager.enemies.forEach(enemy => {
             if (!enemy.isDestroyed) {
                 const visionRange = VISION_RANGES[enemy.enemyType] || VISION_RANGES.BASIC;
 
-                // Рисуем зону видимости (стильную)
+                // Рисуем зону видимости
                 const gradient = ctx.createRadialGradient(
                     enemy.position.x, enemy.position.y, 0,
                     enemy.position.x, enemy.position.y, visionRange
@@ -2291,20 +2359,6 @@ class Game {
                     ctx.moveTo(enemy.position.x, enemy.position.y);
                     ctx.lineTo(this.player.position.x, this.player.position.y);
                     ctx.stroke();
-
-                    // Индикатор цели на конце линии
-                    ctx.save();
-                    ctx.translate(this.player.position.x, this.player.position.y);
-                    ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-                    ctx.font = 'bold 16px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('🎯', 0, -25);
-                    ctx.restore();
-                }
-
-                // Дебаг-информация ИИ
-                if (typeof enemy.drawAIDebugInfo === 'function') {
-                    enemy.drawAIDebugInfo(ctx);
                 }
             }
         });
