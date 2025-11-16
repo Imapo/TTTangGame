@@ -262,3 +262,186 @@ border: 2px solid #FFD700;
     font-size: 12px;
     border: 1px solid #FFD700;
 }
+
+/* ОБНОВЛЯЕМ СТИЛИ ДЛЯ ОКНА ЗАВЕРШЕНИЯ УРОВНЯ */
+.level-complete {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.95);
+    padding: 30px;
+    border: 4px solid #4CAF50;
+    border-radius: 15px;
+    z-index: 100;
+    display: none;
+    min-width: 500px;
+    max-width: 600px;
+    color: white;
+    font-family: 'Courier New', monospace;
+}
+
+.level-complete-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #4CAF50;
+    padding-bottom: 15px;
+}
+
+.level-complete-header h2 {
+    color: #4CAF50;
+    margin: 0;
+    font-size: 32px;
+}
+
+.close-stats-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 30px;
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.3s;
+}
+
+.close-stats-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.level-basic-info {
+    text-align: center;
+    margin-bottom: 25px;
+    padding: 15px;
+    background: rgba(76, 175, 80, 0.1);
+    border-radius: 10px;
+}
+
+.level-basic-info p {
+    margin: 10px 0;
+    font-size: 18px;
+}
+
+/* СТИЛИ ДЛЯ СТАТИСТИКИ ЛИДЕРА */
+.level-leader-stats {
+    background: rgba(255, 215, 0, 0.1);
+    border: 2px solid #FFD700;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.leader-header {
+    text-align: center;
+    margin-bottom: 15px;
+}
+
+.leader-header h3 {
+    color: #FFD700;
+    margin: 0;
+    font-size: 24px;
+}
+
+.leader-tank-info {
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: rgba(255, 215, 0, 0.1);
+    border-radius: 8px;
+}
+
+.tank-icon-large {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
+.tank-name {
+    font-size: 22px;
+    font-weight: bold;
+    color: #FFD700;
+    margin-bottom: 8px;
+}
+
+.total-score {
+    font-size: 18px;
+    color: #4CAF50;
+    font-weight: bold;
+    background: rgba(0, 0, 0, 0.5);
+    padding: 5px 15px;
+    border-radius: 20px;
+    display: inline-block;
+}
+
+.leader-stats-details {
+    display: grid;
+    gap: 8px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    transition: background 0.3s;
+}
+
+.stat-row:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.stat-label {
+    color: #CCCCCC;
+    font-size: 16px;
+}
+
+.stat-value {
+    color: #FFFFFF;
+    font-weight: bold;
+    background: rgba(76, 175, 80, 0.3);
+    padding: 4px 12px;
+    border-radius: 4px;
+    min-width: 60px;
+    text-align: center;
+}
+
+.level-complete-footer {
+    text-align: center;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid #444;
+    color: #888;
+    font-size: 14px;
+}
+
+/* Убираем стили для таймера */
+#countdown {
+display: none;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 600px) {
+    .level-complete {
+        min-width: 90%;
+        padding: 20px;
+    }
+
+    .level-complete-header h2 {
+        font-size: 24px;
+    }
+
+    .tank-icon-large {
+        font-size: 36px;
+    }
+
+    .tank-name {
+        font-size: 18px;
+    }
+}
