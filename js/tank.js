@@ -109,6 +109,255 @@ class Tank {
                 totalScore: 0
             };
         }
+
+        // НОВОЕ: Система следов и памяти пути (только для врагов с базовым ИИ)
+        if (type === 'enemy') {
+            this.tracks = []; // Массив следов гусениц
+            this.lastTrackPos = new Vector2(x, y);
+            this.pathMemory = new Map(); // Карта запомненных позиций
+            this.memoryTimer = 0;
+        }
+
+        // ПЕРЕИМЕНОВАЛ: защита → атака
+        this.isInBaseZone = false;
+        this.baseAttackMode = false;  // БЫЛО: baseDefenseMode
+        this.redLightBlink = 0;
+        this.baseZoneEntryTime = 0;
+    }
+
+    // Метод для получения направления стрельбы к базе
+    getBaseShootDirection() {
+        if (!this.isInBaseZone || !game || !game.map.basePosition) return null;
+
+        if (!this.isInBaseZone || !game || !game.map.basePosition) return null;
+
+        const basePos = game.map.basePosition;
+        const baseZone = game.getZoneId(basePos.x * TILE_SIZE + TILE_SIZE/2, basePos.y * TILE_SIZE + TILE_SIZE/2);
+        const currentZone = game.getZoneId(this.position.x, this.position.y);
+
+        console.log(`🎯 ${this.username} в зоне [${currentZone.x},${currentZone.y}], база в [${baseZone.x},${baseZone.y}]`);
+
+        // Логика направлений как ты описал
+        if (currentZone.y === 7) {
+            // Нижний ряд - база слева или справа
+            if (currentZone.x <= 3) return DIRECTIONS.RIGHT;  // [2,7], [3,7] → вправо
+            if (currentZone.x >= 5) return DIRECTIONS.LEFT;   // [5,7], [6,7] → влево
+        }
+
+        if (currentZone.y === 5) {
+            // Верхний ряд - база снизу
+            return DIRECTIONS.DOWN;  // [3,5], [4,5], [5,5] → вниз
+        }
+
+        if (currentZone.y === 6) {
+            // Средний ряд
+            if (currentZone.x <= 2) return DIRECTIONS.RIGHT;  // [2,6] → вправо
+            if (currentZone.x >= 6) return DIRECTIONS.LEFT;   // [6,6] → влево
+        }
+
+        // По умолчанию - в сторону базы
+        const dx = basePos.x * TILE_SIZE - this.position.x;
+        const dy = basePos.y * TILE_SIZE - this.position.y;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        } else {
+            return dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+        }
+    }
+
+    // Метод для добавления следа гусениц
+    addTrack() {
+        if (this.type !== 'enemy') return;
+
+        const distance = Math.sqrt(
+            Math.pow(this.position.x - this.lastTrackPos.x, 2) +
+            Math.pow(this.position.y - this.lastTrackPos.y, 2)
+        );
+
+        // Добавляем след только если проехали достаточное расстояние
+        if (distance >= TRACK_SYSTEM.TRACK_SPACING) {
+            this.tracks.push({
+                x: this.position.x,
+                y: this.position.y,
+                direction: this.direction,
+                lifetime: TRACK_SYSTEM.TRACK_LIFETIME,
+                alpha: 1.0,
+                initialLifetime: TRACK_SYSTEM.TRACK_LIFETIME // Сохраняем начальное время
+            });
+            this.lastTrackPos = this.position.clone();
+
+            // Ограничиваем количество следов
+            if (this.tracks.length > 40) {
+                this.tracks.shift();
+            }
+        }
+    }
+
+    // Метод для обновления следов
+    updateTracks() {
+        if (this.type !== 'enemy') return;
+
+        for (let i = this.tracks.length - 1; i >= 0; i--) {
+            this.tracks[i].lifetime--;
+
+            // ПЛАВНОЕ ИСЧЕЗНОВЕНИЕ - без резких изменений
+            this.tracks[i].alpha = this.tracks[i].lifetime / this.tracks[i].initialLifetime;
+
+            // Удаляем старые следы
+            if (this.tracks[i].lifetime <= 0) {
+                this.tracks.splice(i, 1);
+            }
+        }
+    }
+
+    // Метод для запоминания текущей позиции
+    rememberPosition() {
+        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return;
+
+        const gridX = Math.floor(this.position.x / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const gridY = Math.floor(this.position.y / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const key = `${gridX},${gridY}`;
+
+        // Запоминаем позицию с временной меткой
+        this.pathMemory.set(key, {
+            timestamp: this.memoryTimer,
+            visits: (this.pathMemory.get(key)?.visits || 0) + 1
+        });
+    }
+
+    // Метод для проверки, был ли танк в этой позиции недавно
+    hasBeenHereRecently(x, y) {
+        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return false;
+
+        const gridX = Math.floor(x / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const gridY = Math.floor(y / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const key = `${gridX},${gridY}`;
+
+        const memory = this.pathMemory.get(key);
+        if (!memory) return false;
+
+        // Проверяем, не посещали ли мы эту ячейку недавно
+        const timeSinceVisit = this.memoryTimer - memory.timestamp;
+        return timeSinceVisit < TRACK_SYSTEM.MEMORY_DECAY_TIME && memory.visits > 2;
+    }
+
+    // Метод для получения "штрафа" за посещенную позицию
+    getPositionPenalty(x, y) {
+        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return 0;
+
+        const gridX = Math.floor(x / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const gridY = Math.floor(y / TRACK_SYSTEM.MEMORY_GRID_SIZE);
+        const key = `${gridX},${gridY}`;
+
+        const memory = this.pathMemory.get(key);
+        if (!memory) return 0;
+
+        const timeSinceVisit = this.memoryTimer - memory.timestamp;
+        if (timeSinceVisit < TRACK_SYSTEM.MEMORY_DECAY_TIME) {
+            // Чем чаще посещали и чем недавно - тем больше штраф
+            const recency = 1 - (timeSinceVisit / TRACK_SYSTEM.MEMORY_DECAY_TIME);
+            return memory.visits * recency * 50; // Штраф от 0 до 100+
+        }
+
+        return 0;
+    }
+
+    // Метод для отрисовки следов гусениц
+    drawTracks(ctx) {
+        if (this.type !== 'enemy' || this.tracks.length === 0) return;
+
+        ctx.save();
+
+        this.tracks.forEach(track => {
+            ctx.save();
+            ctx.translate(track.x, track.y);
+
+            // Поворачиваем в направлении движения
+            let angle = 0;
+            if (track.direction === DIRECTIONS.RIGHT) angle = Math.PI / 2;
+            else if (track.direction === DIRECTIONS.DOWN) angle = Math.PI;
+            else if (track.direction === DIRECTIONS.LEFT) angle = -Math.PI / 2;
+            ctx.rotate(angle);
+
+            // Рисуем след гусеницы - более реалистичный
+            ctx.globalAlpha = track.alpha * 0.4; // Постоянная прозрачность
+
+            // Цвет следа - темно-серый как настоящая грязь
+            ctx.fillStyle = '#333333';
+
+            // Две параллельные линии - гусеницы (более тонкие)
+            const trackWidth = this.size * 0.5;
+            const trackHeight = this.size * 0.08;
+            const spacing = this.size * 0.25;
+
+            // Левая гусеница
+            ctx.fillRect(-trackWidth/2, -spacing/2, trackWidth, trackHeight);
+            // Правая гусеница
+            ctx.fillRect(-trackWidth/2, spacing/2 - trackHeight, trackWidth, trackHeight);
+
+            // ТЕКСТУРА СЛЕДА - добавляем неровности
+            ctx.globalAlpha = track.alpha * 0.2;
+            ctx.fillStyle = '#555555';
+
+            // Случайные пятна на следах для реалистичности
+            for (let i = 0; i < 3; i++) {
+                const spotX = -trackWidth/2 + Math.random() * trackWidth;
+                const spotY = -spacing/2 + Math.random() * trackHeight;
+                const spotSize = 2 + Math.random() * 3;
+                ctx.fillRect(spotX, spotY, spotSize, spotSize);
+            }
+
+            for (let i = 0; i < 3; i++) {
+                const spotX = -trackWidth/2 + Math.random() * trackWidth;
+                const spotY = spacing/2 - trackHeight + Math.random() * trackHeight;
+                const spotSize = 2 + Math.random() * 3;
+                ctx.fillRect(spotX, spotY, spotSize, spotSize);
+            }
+
+            ctx.restore();
+        });
+
+        ctx.restore();
+    }
+
+    // Метод для отрисовки визуализации памяти пути (для дебага)
+    drawPathMemory(ctx) {
+        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return;
+        if (!this.debugShowMemory) return;
+
+        ctx.save();
+
+        this.pathMemory.forEach((memory, key) => {
+            const [gridX, gridY] = key.split(',').map(Number);
+            const x = gridX * TRACK_SYSTEM.MEMORY_GRID_SIZE;
+            const y = gridY * TRACK_SYSTEM.MEMORY_GRID_SIZE;
+
+            const timeSinceVisit = this.memoryTimer - memory.timestamp;
+            if (timeSinceVisit < TRACK_SYSTEM.MEMORY_DECAY_TIME) {
+                const alpha = 0.3 * (1 - timeSinceVisit / TRACK_SYSTEM.MEMORY_DECAY_TIME);
+                const intensity = Math.min(memory.visits / 5, 1);
+
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = `rgba(255, ${255 - intensity * 200}, 0, ${alpha})`;
+                ctx.fillRect(
+                    x - TRACK_SYSTEM.MEMORY_GRID_SIZE/2,
+                    y - TRACK_SYSTEM.MEMORY_GRID_SIZE/2,
+                    TRACK_SYSTEM.MEMORY_GRID_SIZE,
+                    TRACK_SYSTEM.MEMORY_GRID_SIZE
+                );
+
+                // Показываем количество посещений
+                ctx.globalAlpha = alpha * 0.8;
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '8px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(memory.visits.toString(), x, y);
+            }
+        });
+
+        ctx.restore();
     }
 
     // ИСПРАВЛЕННЫЙ МЕТОД: Обновление состояния патрулирования
@@ -175,7 +424,7 @@ class Tank {
                 break;
         }
 
-        console.log(`🎯 ${this.username} -> ${this.getPatrolStateName()}`);
+        //console.log(`🎯 ${this.username} -> ${this.getPatrolStateName()}`);
     }
 
     // НОВЫЙ МЕТОД: Обновление осмотра вокруг
@@ -539,6 +788,47 @@ class Tank {
     update() {
         if (this.isDestroyed) return;
 
+        // Проверка нахождения в зоне базы
+        if (this.type === 'enemy' && game) {
+            const wasInBaseZone = this.isInBaseZone;
+            this.isInBaseZone = game.isInBaseProtectedZone(this.position.x, this.position.y);
+
+            if (this.isInBaseZone && !wasInBaseZone) {
+                // Только что вошел в зону базы - ВКЛЮЧАЕМ РЕЖИМ АТАКИ!
+                this.baseAttackMode = true;
+                this.baseZoneEntryTime = Date.now();
+                console.log(`💥 ${this.username} вошел в зону базы! РЕЖИМ АТАКИ!`);
+            }
+
+            if (!this.isInBaseZone && wasInBaseZone) {
+                // Вышел из зоны базы
+                this.baseAttackMode = false;
+                console.log(`💥 ${this.username} вышел из зоны базы`);
+            }
+
+            // Обновляем мигание лампочки
+            if (this.baseAttackMode) {
+                this.redLightBlink++;
+            }
+        }
+
+        // ОБНОВЛЯЕМ ПЕРВЫМ: систему патрулирования для врагов с базовым ИИ
+        if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
+            this.updatePatrolState();
+        }
+
+        // НОВОЕ: Обновляем систему следов и памяти
+        if (this.type === 'enemy') {
+            this.updateTracks();
+            this.memoryTimer++;
+
+            // Добавляем следы каждые несколько кадров
+            if (this.memoryTimer % 3 === 0) {
+                this.addTrack();
+                this.rememberPosition();
+            }
+        }
+
         // ОБНОВЛЯЕМ ПЕРВЫМ: систему патрулирования для врагов с базовым ИИ
         if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
             this.updatePatrolState();
@@ -876,9 +1166,22 @@ class Tank {
 
         const newPos = this.position.add(directionVector.multiply(currentSpeed));
 
-        // НОВОЕ: Усиленная проверка границ
-        if (!this.isPositionInBounds(newPos.x, newPos.y)) {
-            return false;
+        // ЖЕСТКАЯ ГРАНИЦА ДЛЯ РЕЖИМА АТАКИ БАЗЫ
+        if (this.baseAttackMode && game) {
+            const baseZone = game.getBaseZone();
+            const newZone = game.getZoneId(newPos.x, newPos.y);
+
+            const distanceToBase = Math.max(
+                Math.abs(newZone.x - baseZone.x),
+                                            Math.abs(newZone.y - baseZone.y)
+            );
+
+            // ЕСЛИ НОВАЯ ПОЗИЦИЯ ВНЕ ЗОНЫ БАЗЫ - БЛОКИРУЕМ ДВИЖЕНИЕ
+            if (distanceToBase > 2) {
+                console.log(`🚫 ${this.username} ЗАБЛОКИРОВАН: попытка выехать из зоны базы!`);
+                this.direction = oldDirection; // Возвращаем старое направление
+                return false;
+            }
         }
 
         const tankBounds = new Rectangle(
@@ -968,7 +1271,18 @@ class Tank {
 
         let direction = this.direction;
 
-        // Автонаведение для игрока
+        // ПОВОРАЧИВАЕМ ДУЛО ПРИ АТАКЕ БАЗЫ
+        if (this.type === 'enemy' && this.baseAttackMode) {
+            const baseDirection = this.getBaseShootDirection();
+            if (baseDirection) {
+                direction = baseDirection;
+                // ОБНОВЛЯЕМ НАПРАВЛЕНИЕ ТАНКА чтобы дуло повернулось
+                this.direction = baseDirection;
+                console.log(`🎯 ${this.username} поворачивает дуло к базе: ${this.getDirectionName(baseDirection)}`);
+            }
+        }
+
+        // Автонаведение для игрока (оставляем как было)
         if (this.type === 'player' && this.hasAutoAim && nearestEnemy) {
             const dx = nearestEnemy.position.x - this.position.x;
             const dy = nearestEnemy.position.y - this.position.y;
@@ -980,12 +1294,11 @@ class Tank {
             }
         }
 
-        const directionVector = new Vector2(this.direction.x, this.direction.y);
+        const directionVector = new Vector2(direction.x, direction.y);
         const offset = directionVector.multiply(this.size / 2 + 5);
         const bulletX = this.position.x + offset.x;
         const bulletY = this.position.y + offset.y;
 
-        // НОВОЕ: Передаем мощность пули
         const bullet = new Bullet(bulletX, bulletY, direction, this.type, this,
                                   this.hasAutoAim, nearestEnemy, this.bulletPower);
 
@@ -996,9 +1309,25 @@ class Tank {
         return bullet;
     }
 
+    getDirectionName(direction) {
+        if (direction === DIRECTIONS.UP) return 'ВВЕРХ';
+        if (direction === DIRECTIONS.DOWN) return 'ВНИЗ';
+        if (direction === DIRECTIONS.LEFT) return 'ВЛЕВО';
+        if (direction === DIRECTIONS.RIGHT) return 'ВПРАВО';
+        return 'НЕИЗВЕСТНО';
+    }
+
     // ОБНОВЛЯЕМ метод draw для отображения состояния патрулирования
     draw(ctx) {
         if (this.isDestroyed) return;
+
+        // СНАЧАЛА рисуем следы гусениц (под танком)
+        this.drawTracks(ctx);
+
+        // ПОТОМ визуализацию памяти пути (если включено)
+        if (this.type === 'enemy' && this.ai && this.ai.debugShowMemory) {
+            this.drawPathMemory(ctx);
+        }
 
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
@@ -1071,6 +1400,31 @@ class Tank {
 
         // Отрисовка башни - может поворачиваться независимо при осмотре
         this.drawTurret(ctx, this.patrolState === 'LOOKING_AROUND' ? this.lookAroundDirection : this.direction);
+
+        // НОВОЕ: Мигающая красная лампочка при защите базы
+        // В методе draw добавь более заметную индикацию:
+        if (this.baseAttackMode) {
+            const blinkVisible = Math.floor(this.redLightBlink / 8) % 2 === 0;
+            if (blinkVisible) {
+                // Большая красная лампочка АТАКИ
+                ctx.fillStyle = '#FF0000';
+                ctx.beginPath();
+                ctx.arc(this.size/2 - 8, -this.size/2 + 8, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Яркое свечение
+                ctx.shadowColor = '#FF0000';
+                ctx.shadowBlur = 15;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Текст "АТАКА" вместо "ЗАЩИТА"
+                ctx.fillStyle = '#FF0000';
+                ctx.font = 'bold 10px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('АТАКА', 0, -this.size/2 - 10);
+            }
+        }
 
         ctx.restore();
 

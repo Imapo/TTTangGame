@@ -263,3 +263,36 @@ const DEBUG_COLORS = {
     PLAYER_VISION: '#FF4444', // Красный для видимости игрока
     BASE_VISION: '#9C27B0'  // Фиолетовый для видимости базы
 };
+
+// === СИСТЕМА СЛЕДОВ ГУСЕНИЦ И ПАМЯТИ ПУТИ ===
+const TRACK_SYSTEM = {
+    TRACK_LIFETIME: 180,        // Увеличим время жизни (3 секунды при 60 FPS)
+    TRACK_FADE_TIME: 60,        // Время затухания (1 секунда)
+    TRACK_SPACING: 6,           // Уменьшим расстояние между следами
+    MEMORY_GRID_SIZE: 16,
+    MEMORY_DECAY_TIME: 1000,
+    SHOW_TRACKS: false          // Добавим переключатель
+};
+
+// === СИСТЕМА ВИЗУАЛИЗАЦИИ СЕТКИ ===
+window.ZONE_SYSTEM = {
+    ZONE_SIZE: 96,              // Уменьшим размер зоны для лучшего соответствия
+    SHOW_ZONE_BORDERS: false,
+    SHOW_ZONE_NUMBERS: false,
+    ZONE_COLOR: 'rgba(255, 255, 255, 0.2)',
+    TEXT_COLOR: 'rgba(255, 255, 255, 0.6)',
+    GAME_AREA: {
+        startX: TILE_SIZE,      // Начинаем от первой стены
+        startY: TILE_SIZE,
+        width: CANVAS_WIDTH - TILE_SIZE * 2,   // Исключаем границы
+        height: CANVAS_HEIGHT - TILE_SIZE * 2
+    }
+};
+
+// === СИСТЕМА ЗОН БАЗЫ ===
+window.BASE_ZONE_SYSTEM = {
+    PROTECTED_RADIUS: 2,
+    PLAYER_BASE_COLOR: 'rgba(0, 255, 0, 0.1)',     // Очень прозрачный зеленый
+    CRITICAL_ZONE_COLOR: 'rgba(255, 0, 0, 0.15)',  // Очень прозрачный красный
+    SHOW_BASE_ZONES: false
+};

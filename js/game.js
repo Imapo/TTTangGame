@@ -41,6 +41,11 @@ class Game {
         this.deltaTime = 0;
         this.directionPriority = null;
 
+        // Оптимизация: счетчик кадров для редких обновлений
+        this.frameCount = 0;
+        this.lastAICheck = 0;
+        this.lastVisionCheck = 0;
+
         this.enemiesDestroyed = 0;
         this.totalEnemies = TOTAL_ENEMIES_PER_LEVEL;
         this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL;
@@ -88,6 +93,82 @@ class Game {
         this.playerStats = this.loadPlayerStats();
 
         this.initLevel();
+    }
+
+    // НОВЫЙ МЕТОД: Оптимизированные редкие обновления
+    updateInfrequentSystems() {
+        const now = Date.now();
+
+        // Проверка зрения врагов реже (каждые 500мс)
+        if (now - this.lastVisionCheck > 500) {
+            this.lastVisionCheck = now;
+            this.updateEnemyVisionChecks();
+        }
+
+        // Обновление ИИ реже (каждые 300мс)
+        if (now - this.lastAICheck > 300) {
+            this.lastAICheck = now;
+            this.updateEnemyAI();
+        }
+
+        // Дебаг информация реже (каждые 1000мс)
+        if (this.frameCount % 60 === 0) {
+            this.updateDebugPerformance();
+        }
+    }
+
+    // Оптимизированная проверка зрения врагов
+    updateEnemyVisionChecks() {
+        if (!this.player || this.player.isDestroyed) return;
+
+        // Ограничиваем количество проверок за кадр
+        const enemies = this.enemyManager.enemies;
+        const maxChecksPerFrame = Math.min(enemies.length, 3);
+
+        for (let i = 0; i < maxChecksPerFrame; i++) {
+            const enemy = enemies[i];
+            if (enemy && !enemy.isDestroyed && enemy.ai) {
+                // Упрощенная проверка расстояния перед полной проверкой LOS
+                const distance = Math.sqrt(
+                    Math.pow(enemy.position.x - this.player.position.x, 2) +
+                    Math.pow(enemy.position.y - this.player.position.y, 2)
+                );
+
+                const visionRange = VISION_RANGES[enemy.enemyType] || 200;
+                if (distance <= visionRange) {
+                    // Только если близко - делаем полную проверку LOS
+                    enemy.canSeePlayer(this.player, this.map);
+                }
+            }
+        }
+    }
+
+    // Оптимизированное обновление ИИ
+    updateEnemyAI() {
+        const enemies = this.enemyManager.enemies;
+        if (enemies.length === 0) return;
+
+        // Ограничиваем количество полных обновлений ИИ за кадр
+        const maxAIUpdates = Math.min(enemies.length, 2);
+        const allTanks = [this.player, ...enemies];
+        const allFragments = this.getAllFragments();
+
+        for (let i = 0; i < maxAIUpdates; i++) {
+            const enemy = enemies[i];
+            if (enemy && !enemy.isDestroyed && enemy.ai) {
+                enemy.updateEnemyAI(this.map, allTanks, allFragments, this.player);
+            }
+        }
+    }
+
+    // Обновление производительности для дебага
+    updateDebugPerformance() {
+        const fps = this.deltaTime > 0 ? Math.round(1000 / this.deltaTime) : 0;
+        const enemies = this.enemyManager.enemies.length;
+        const bullets = this.bullets.length;
+        const effects = this.effectManager.explosions.length + this.effectManager.bulletExplosions.length;
+
+        //console.log(`🎮 FPS: ${fps} | Враги: ${enemies} | Пули: ${bullets} | Эффекты: ${effects}`);
     }
 
     // НОВЫЙ МЕТОД: Загрузка статистики игрока
@@ -370,6 +451,31 @@ class Game {
         </div>
         </div>
 
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowZoneBorders" style="margin-right: 5px;">
+        Границы зон
+        </label>
+        </div>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowZoneNumbers" style="margin-right: 5px;">
+        Номера зон
+        </label>
+        </div>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowZoneInfo" style="margin-right: 5px;">
+        Инфо о зонах
+        </label>
+        </div>
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowBaseZones" style="margin-right: 5px;">
+        Зоны базы игрока (для ИИ)
+        </label>
+        </div>
+
         <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
         <h4 style="margin: 0 0 8px 0; color: #FF9800;">Статистика:</h4>
         <button id="debugResetStats" style="width: 100%; padding: 8px; background: #FF5722; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 5px;">
@@ -380,6 +486,13 @@ class Game {
         Смертей: <span id="debugDeaths">0</span> |
         Уровней: <span id="debugLevels">0</span>
         </div>
+        </div>
+
+        <div style="margin-bottom: 5px;">
+        <label style="display: flex; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="debugShowMemory" style="margin-right: 5px;">
+        Показывать память пути ИИ
+        </label>
         </div>
 
         <div style="border-top: 1px solid #444; padding-top: 10px;">
@@ -408,6 +521,28 @@ class Game {
         const godMode = document.getElementById('debugGodMode');
         const addLifeButton = document.getElementById('debugAddLife');
         const toggleMenuButton = document.getElementById('debugToggleMenu');
+        // Обработчики для сетки зон
+        const showZoneBorders = document.getElementById('debugShowZoneBorders');
+        const showZoneNumbers = document.getElementById('debugShowZoneNumbers');
+        const showZoneInfo = document.getElementById('debugShowZoneInfo');
+        // Обработчик для зон базы
+        const showBaseZones = document.getElementById('debugShowBaseZones');
+        showBaseZones.addEventListener('change', (e) => {
+            console.log("🎯 Зоны защиты базы:", e.target.checked);
+            window.BASE_ZONE_SYSTEM.SHOW_BASE_ZONES = e.target.checked;
+        });
+
+        showZoneBorders.addEventListener('change', (e) => {
+            ZONE_SYSTEM.SHOW_ZONE_BORDERS = e.target.checked;
+        });
+
+        showZoneNumbers.addEventListener('change', (e) => {
+            ZONE_SYSTEM.SHOW_ZONE_NUMBERS = e.target.checked;
+        });
+
+        showZoneInfo.addEventListener('change', (e) => {
+            this.debugShowZoneInfo = e.target.checked;
+        });
 
         // Применение уровня
         applyButton.addEventListener('click', () => {
@@ -799,6 +934,15 @@ class Game {
 
     // ОПТИМИЗИРОВАННЫЙ метод обновления
     update() {
+        // === ОПТИМИЗАЦИЯ: Редкие обновления для тяжелых систем ===
+        this.frameCount = this.frameCount || 0;
+
+        if (this.frameCount % 2 === 0) {
+            this.updateInfrequentSystems();
+        }
+        this.frameCount++;
+        // === КОНЕЦ ОПТИМИЗАЦИИ ===
+
         this.handleInput();
 
         // Проверяем вход в телепорт
@@ -824,6 +968,12 @@ class Game {
             this.checkPlayerEntry();
         } else if (this.waitingForExit) {
             this.checkPlayerExit();
+        }
+
+        // ИСПРАВЛЕНИЕ: Дополнительная проверка звуков при завершении уровня
+        if (this.levelComplete && this.soundManager && !this.isPlayerMoving) {
+            // Если уровень завершён и игрок не двигается - останавливаем звук движения
+            this.soundManager.stopLoop('engineMoving');
         }
 
         const allTanks = [this.player, ...this.enemyManager.enemies];
@@ -907,7 +1057,26 @@ class Game {
 
     // ОПТИМИЗИРОВАННЫЙ метод обновления пуль
     updateBullets() {
-        // Проверка столкновений между пулями (оптимизировано)
+        // Оптимизация: проверяем столкновения пуль только если их много
+        if (this.bullets.length > 10) {
+            this.checkBulletCollisions();
+        }
+
+        // Обновление пуль и проверка столкновений
+        for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const bullet = this.bullets[i];
+            bullet.deltaTime = this.deltaTime;
+            bullet.update();
+
+            if (!this.processBulletCollisions(bullet, i)) {
+                continue;
+            }
+        }
+    }
+
+    // Оптимизированная проверка столкновений пуль
+    checkBulletCollisions() {
+        // Проверка столкновений между пулями (только при большом количестве)
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             for (let j = this.bullets.length - 1; j > i; j--) {
                 if (this.bullets[i].owner !== this.bullets[j].owner &&
@@ -919,17 +1088,6 @@ class Game {
                 this.soundManager.play('bulletCollision');
                 break;
                     }
-            }
-        }
-
-        // Обновление пуль и проверка столкновений
-        for (let i = this.bullets.length - 1; i >= 0; i--) {
-            const bullet = this.bullets[i];
-            bullet.deltaTime = this.deltaTime;
-            bullet.update();
-
-            if (!this.processBulletCollisions(bullet, i)) {
-                continue;
             }
         }
     }
@@ -1128,69 +1286,6 @@ class Game {
         return true;
     }
 
-    // НОВЫЕ МЕТОДЫ ДЛЯ ТЕСТИРОВАНИЯ
-    debugTogglePanel() {
-        const panel = document.getElementById('debugPanel');
-        if (panel.style.display === 'none') {
-            panel.style.display = 'block';
-        } else {
-            panel.style.display = 'none';
-        }
-    }
-
-    debugAddBonus(bonusType) {
-        if (this.player.isDestroyed) return;
-
-        console.log(`🎁 Выдаем бонус: ${bonusType}`);
-
-        switch(bonusType) {
-            case 'SHIELD':
-                this.player.activateShield();
-                break;
-            case 'INVINCIBILITY':
-                this.player.activateShield(10000);
-                break;
-            case 'AUTO_AIM':
-                this.player.activateAutoAim();
-                break;
-            case 'FORTIFY':
-                this.fortifyBase(30000);
-                break;
-            case 'TIME_STOP':
-                // Используем глобальную активацию
-                this.activateTimeStop(8000);
-                break;
-        }
-
-        this.updateStatusIndicators();
-    }
-
-    debugAddLife() {
-        this.lives++;
-        this.updateUI();
-        console.log(`❤️ Добавлена жизнь. Всего: ${this.lives}`);
-    }
-
-    debugSpawnEnemyWithBonus(enemyType) {
-        const spawnPoint = this.enemyManager.getNextSpawnPoint();
-        this.enemyManager.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
-
-        setTimeout(() => {
-            const uniqueName = this.enemyManager.generateUniqueEnemyName(enemyType);
-            const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.level, enemyType);
-            enemy.direction = DIRECTIONS.DOWN;
-            enemy.username = uniqueName;
-
-            const bonusTypes = ['SHIELD', 'INVINCIBILITY', 'AUTO_AIM', 'FORTIFY'];
-            const randomBonus = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
-            enemy.hasBonus = true;
-            enemy.bonusType = BONUS_TYPES[randomBonus];
-
-            this.enemyManager.enemies.push(enemy);
-            console.log(`🎁 Создан ${enemyType} танк с бонусом: ${randomBonus}`);
-        }, 1000);
-    }
-
     setupEventListeners() {
         document.addEventListener('keydown', (e) => {
             this.keys[e.code] = true;
@@ -1260,11 +1355,25 @@ class Game {
             }
         }
 
+        // ИСПРАВЛЕНИЕ: Правильное управление звуками при завершении уровня
         if (wasMoving !== this.isPlayerMoving && this.soundManager) {
-            if (this.gameOver || this.levelComplete || this.player.isDestroyed) {
+            if (this.gameOver || this.player.isDestroyed) {
+                // При gameOver или уничтожении игрока - останавливаем все звуки
                 this.soundManager.stopLoop('engineIdle');
                 this.soundManager.stopLoop('engineMoving');
+            } else if (this.levelComplete) {
+                // При завершении уровня - останавливаем только холостой ход
+                if (this.isPlayerMoving) {
+                    // Если игрок двигается - оставляем звук движения
+                    this.soundManager.stopLoop('engineIdle');
+                    this.soundManager.playLoop('engineMoving');
+                } else {
+                    // Если игрок стоит - останавливаем оба звука
+                    this.soundManager.stopLoop('engineIdle');
+                    this.soundManager.stopLoop('engineMoving');
+                }
             } else {
+                // Обычный режим - стандартное управление звуками
                 if (this.isPlayerMoving) {
                     this.soundManager.stopLoop('engineIdle');
                     this.soundManager.playLoop('engineMoving');
@@ -1537,7 +1646,7 @@ class Game {
             };
 
             localStorage.setItem(storageKey, JSON.stringify(levelStats));
-            console.log(`💾 Сохранена статистика ${enemy.username} для уровня ${this.level}`);
+            //console.log(`💾 Сохранена статистика ${enemy.username} для уровня ${this.level}`);
         } catch (error) {
             console.error('Ошибка сохранения статистики:', error);
         }
@@ -1635,7 +1744,7 @@ class Game {
         }
     }
 
-    // ОБНОВЛЯЕМ метод showLevelComplete
+    // В методе showLevelComplete ДОБАВЛЯЕМ управление звуками:
     showLevelComplete() {
         console.log("🖥️ Показываем экран завершения уровня");
         this.showLevelCompleteScreen = true;
@@ -1654,6 +1763,13 @@ class Game {
         this.showLevelLeaderStats();
 
         levelCompleteScreen.style.display = 'block';
+
+        // ИСПРАВЛЕНИЕ: Останавливаем только звук холостого хода
+        if (this.soundManager) {
+            this.soundManager.stopLoop('engineIdle');
+            // Звук движения остаётся, если игрок двигается
+        }
+
         console.log("✅ Экран завершения уровня показан");
     }
 
@@ -1746,11 +1862,12 @@ class Game {
         `;
     }
 
-    // ОБНОВЛЯЕМ метод closeLevelStats
+
+    // В методе closeLevelStats ОБНОВЛЯЕМ управление звуками:
     closeLevelStats() {
         console.log("🚪 Закрываем статистику и создаем телепорт");
 
-        // Останавливаем обратный отсчет если он идет
+        // Останавливаем обратный отсчёт если он идет
         if (this.countdownInterval) {
             clearInterval(this.countdownInterval);
             this.countdownInterval = null;
@@ -2055,7 +2172,14 @@ class Game {
             this.level = 1;
             this.score = 0;
             this.lives = 3;
-            this.soundManager.stopAll();
+
+            // ИСПРАВЛЕНИЕ: Останавливаем только нужные звуки
+            if (this.soundManager) {
+                this.soundManager.stopLoop('engineIdle');
+                this.soundManager.stopLoop('engineMoving');
+                // Другие звуки (выстрелы, взрывы) остаются
+            }
+
             this.initLevel();
         }
     }
@@ -2259,8 +2383,24 @@ class Game {
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         }
 
-        // СНАЧАЛА рисуем карту и основные объекты
+        // СНАЧАЛА карта
         this.map.draw(this.ctx);
+
+        // ПОТОМ защитные зоны базы (под сеткой)
+        this.drawBaseProtectedZones(this.ctx);
+
+        // ПОТОМ сетка зон ПОВЕРХ карты
+        this.drawZoneGrid(this.ctx);
+
+        // ПОТОМ подсветка зон врагов
+        if (this.debugShowZoneInfo) {
+            this.drawEnemyZones(this.ctx);
+        }
+
+        // ПОТОМ подсветка зоны игрока
+        if (this.debugShowZoneInfo) {
+            this.drawPlayerZoneHighlight(this.ctx);
+        }
         this.bonusManager.bonuses.forEach(bonus => bonus.draw(this.ctx));
         this.enemyManager.spawnAnimations.forEach(animation => animation.draw(this.ctx));
 
@@ -2563,13 +2703,193 @@ class Game {
         ctx.lineTo(-this.player.size/2, 0); // К центру игрока
         ctx.stroke();
 
-        // Заголовок (над блоком)
-        ctx.fillStyle = 'rgba(100, 200, 255, 0.9)'; // Голубой для игрока
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('🎮 Игрок', blockX + maxWidth/2, blockY - 8);
+        ctx.restore();
+    }
+
+    // Метод для получения номера зоны по координатам (только игровая область)
+    getZoneId(x, y) {
+        const gameArea = ZONE_SYSTEM.GAME_AREA;
+
+        // Проверяем что координаты в игровой области
+        if (x < gameArea.startX || x > gameArea.startX + gameArea.width ||
+            y < gameArea.startY || y > gameArea.startY + gameArea.height) {
+            return { x: -1, y: -1, id: 'out_of_bounds' };
+            }
+
+            // Вычисляем зону относительно игровой области
+            const zoneX = Math.floor((x - gameArea.startX) / ZONE_SYSTEM.ZONE_SIZE);
+        const zoneY = Math.floor((y - gameArea.startY) / ZONE_SYSTEM.ZONE_SIZE);
+
+        return { x: zoneX, y: zoneY, id: `${zoneX},${zoneY}` };
+    }
+
+    // Метод для получения координат зоны (только игровая область)
+    getZoneCoordinates(zoneX, zoneY) {
+        const gameArea = ZONE_SYSTEM.GAME_AREA;
+
+        return {
+            x: gameArea.startX + zoneX * ZONE_SYSTEM.ZONE_SIZE,
+            y: gameArea.startY + zoneY * ZONE_SYSTEM.ZONE_SIZE,
+            width: ZONE_SYSTEM.ZONE_SIZE,
+            height: ZONE_SYSTEM.ZONE_SIZE
+        };
+    }
+
+    // Обнови метод отрисовки сетки
+    drawZoneGrid(ctx) {
+        if (!window.ZONE_SYSTEM.SHOW_ZONE_BORDERS && !window.ZONE_SYSTEM.SHOW_ZONE_NUMBERS) return;
+
+        ctx.save();
+
+        const gameArea = ZONE_SYSTEM.GAME_AREA;
+
+        // Вычисляем количество зон в игровой области
+        const zonesX = Math.ceil(gameArea.width / ZONE_SYSTEM.ZONE_SIZE);
+        const zonesY = Math.ceil(gameArea.height / ZONE_SYSTEM.ZONE_SIZE);
+
+        //console.log(`🎯 Игровая область: ${gameArea.width}x${gameArea.height}, Зоны: ${zonesX}x${zonesY}`);
+
+        // Рисуем границы зон
+        if (window.ZONE_SYSTEM.SHOW_ZONE_BORDERS) {
+            ctx.strokeStyle = window.ZONE_SYSTEM.ZONE_COLOR;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+
+            // Вертикальные линии
+            for (let x = 0; x <= zonesX; x++) {
+                const lineX = gameArea.startX + x * ZONE_SYSTEM.ZONE_SIZE;
+                ctx.beginPath();
+                ctx.moveTo(lineX, gameArea.startY);
+                ctx.lineTo(lineX, gameArea.startY + gameArea.height);
+                ctx.stroke();
+            }
+
+            // Горизонтальные линии
+            for (let y = 0; y <= zonesY; y++) {
+                const lineY = gameArea.startY + y * ZONE_SYSTEM.ZONE_SIZE;
+                ctx.beginPath();
+                ctx.moveTo(gameArea.startX, lineY);
+                ctx.lineTo(gameArea.startX + gameArea.width, lineY);
+                ctx.stroke();
+            }
+
+            ctx.setLineDash([]);
+        }
+
+        // Рисуем номера зон
+        if (window.ZONE_SYSTEM.SHOW_ZONE_NUMBERS) {
+            ctx.fillStyle = window.ZONE_SYSTEM.TEXT_COLOR;
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            for (let x = 0; x < zonesX; x++) {
+                for (let y = 0; y < zonesY; y++) {
+                    const zoneRect = this.getZoneCoordinates(x, y);
+                    const centerX = zoneRect.x + zoneRect.width / 2;
+                    const centerY = zoneRect.y + zoneRect.height / 2;
+
+                    ctx.fillText(`${x},${y}`, centerX, centerY);
+                }
+            }
+        }
 
         ctx.restore();
+    }
+
+    // Метод для отображения дополнительной информации о зоне
+    drawZoneInfo(ctx, zoneX, zoneY, screenX, screenY) {
+        // Собираем статистику по зоне
+        let enemyCount = 0;
+        let playerInZone = false;
+
+        // Проверяем врагов в зоне
+        this.enemyManager.enemies.forEach(enemy => {
+            if (!enemy.isDestroyed) {
+                const enemyZone = this.getZoneId(enemy.position.x, enemy.position.y);
+                if (enemyZone.x === zoneX && enemyZone.y === zoneY) {
+                    enemyCount++;
+                }
+            }
+        });
+
+        // Проверяем игрока в зоне
+        if (!this.player.isDestroyed) {
+            const playerZone = this.getZoneId(this.player.position.x, this.player.position.y);
+            playerInZone = (playerZone.x === zoneX && playerZone.y === zoneY);
+        }
+
+        // Отображаем информацию маленьким шрифтом
+        ctx.font = '8px Arial';
+        ctx.fillStyle = playerInZone ? '#FF4444' : '#FFFFFF';
+
+        let infoText = '';
+        if (playerInZone) infoText += 'P';
+        if (enemyCount > 0) infoText += `E:${enemyCount}`;
+
+        if (infoText) {
+            ctx.fillText(infoText, screenX, screenY + 15);
+        }
+    }
+
+    // Метод для подсветки текущей зоны игрока
+    drawPlayerZoneHighlight(ctx) {
+        const playerZone = this.getZoneId(this.player.position.x, this.player.position.y);
+        const zoneRect = this.getZoneCoordinates(playerZone.x, playerZone.y);
+
+        ctx.save();
+
+        // Подсветка зоны игрока
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.3)'; // Увеличим прозрачность
+        ctx.fillRect(zoneRect.x, zoneRect.y, zoneRect.width, zoneRect.height);
+
+        // Обводка зоны игрока
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(zoneRect.x, zoneRect.y, zoneRect.width, zoneRect.height);
+
+        // Текст "Игрок" в зоне
+        ctx.fillStyle = '#FF4444';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🎮 ИГРОК',
+                     zoneRect.x + zoneRect.width / 2,
+                     zoneRect.y + zoneRect.height / 2
+        );
+
+        ctx.restore();
+    }
+
+    // Метод для отображения зон с врагами
+    drawEnemyZones(ctx) {
+        const enemies = this.enemyManager.enemies.filter(enemy => !enemy.isDestroyed);
+
+        enemies.forEach(enemy => {
+            const enemyZone = this.getZoneId(enemy.position.x, enemy.position.y);
+            const zoneRect = this.getZoneCoordinates(enemyZone.x, enemyZone.y);
+
+            ctx.save();
+
+            // Подсветка зоны врага
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.2)';
+            ctx.fillRect(zoneRect.x, zoneRect.y, zoneRect.width, zoneRect.height);
+
+            // Точка в позиции врага
+            ctx.fillStyle = '#FFFF00';
+            ctx.beginPath();
+            ctx.arc(enemy.position.x, enemy.position.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Линия от центра зоны к врагу
+            ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(zoneRect.x + zoneRect.width / 2, zoneRect.y + zoneRect.height / 2);
+            ctx.lineTo(enemy.position.x, enemy.position.y);
+            ctx.stroke();
+
+            ctx.restore();
+        });
     }
 
     // Вспомогательный метод для вычисления ширины текста (оставляем без изменений)
@@ -2602,5 +2922,131 @@ class Game {
             this.ctx.font = '16px Courier New';
             this.ctx.fillText('Миссия провалена', this.canvas.width / 2, this.canvas.height / 2 + 10);
         }
+    }
+
+    // Метод для получения позиции базы в зонах
+    getBaseZone() {
+        if (!this.map || !this.map.basePosition) {
+            return { x: 3, y: 6 }; // Центр снизу по умолчанию
+        }
+
+        const basePos = this.map.basePosition;
+
+        // ПРЕОБРАЗУЕМ тайловые координаты в пиксельные!
+        const pixelX = basePos.x * TILE_SIZE + TILE_SIZE / 2;
+        const pixelY = basePos.y * TILE_SIZE + TILE_SIZE / 2;
+
+        //console.log(`🎯 База: тайлы [${basePos.x},${basePos.y}] -> пиксели [${pixelX},${pixelY}]`);
+
+        return this.getZoneId(pixelX, pixelY);
+    }
+
+    debugBasePosition() {
+        if (!this.map) {
+            console.log("❌ Карта не загружена");
+            return;
+        }
+
+        console.log("🔍 Диагностика позиции базы:");
+        console.log("- basePosition:", this.map.basePosition);
+        console.log("- map.width:", this.map.width, "map.height:", this.map.height);
+
+        if (this.map.basePosition) {
+            const basePos = this.map.basePosition;
+            const zone = this.getZoneId(basePos.x, basePos.y);
+            console.log("- Координаты базы (пиксели):", basePos.x, basePos.y);
+            console.log("- Координаты базы (зоны):", zone.x, zone.y);
+            console.log("- Размер зоны:", ZONE_SYSTEM.ZONE_SIZE);
+        } else {
+            console.log("❌ basePosition не определен");
+
+            // Попробуем найти базу вручную
+            if (this.map.grid) {
+                for (let y = 0; y < this.map.height; y++) {
+                    for (let x = 0; x < this.map.width; x++) {
+                        if (this.map.grid[y][x] === TILE_TYPES.BASE) {
+                            console.log(`🎯 Нашел базу вручную: тайл [${x},${y}]`);
+                            const pixelX = x * TILE_SIZE + TILE_SIZE / 2;
+                            const pixelY = y * TILE_SIZE + TILE_SIZE / 2;
+                            console.log("- Пиксельные координаты:", pixelX, pixelY);
+                            const zone = this.getZoneId(pixelX, pixelY);
+                            console.log("- Зона:", zone.x, zone.y);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    drawBaseProtectedZones(ctx) {
+        if (!window.BASE_ZONE_SYSTEM.SHOW_BASE_ZONES) return;
+
+        const baseZone = this.getBaseZone();
+        const protectedRadius = window.BASE_ZONE_SYSTEM.PROTECTED_RADIUS;
+
+        //console.log(`🎯 База в зоне: ${baseZone.x},${baseZone.y}`);
+
+        ctx.save();
+
+        // Рисуем защищенные зоны вокруг базы
+        for (let dx = -protectedRadius; dx <= protectedRadius; dx++) {
+            for (let dy = -protectedRadius; dy <= protectedRadius; dy++) {
+                const zoneX = baseZone.x + dx;
+                const zoneY = baseZone.y + dy;
+
+                // Проверяем что зона в пределах игровой области
+                if (zoneX >= 0 && zoneX < Math.ceil(ZONE_SYSTEM.GAME_AREA.width / ZONE_SYSTEM.ZONE_SIZE) &&
+                    zoneY >= 0 && zoneY < Math.ceil(ZONE_SYSTEM.GAME_AREA.height / ZONE_SYSTEM.ZONE_SIZE)) {
+
+                    const zoneRect = this.getZoneCoordinates(zoneX, zoneY);
+                const distance = Math.max(Math.abs(dx), Math.abs(dy));
+
+                // Полупрозрачная заливка
+                if (distance === 0) {
+                    ctx.fillStyle = window.BASE_ZONE_SYSTEM.CRITICAL_ZONE_COLOR;
+                } else {
+                    ctx.fillStyle = window.BASE_ZONE_SYSTEM.PLAYER_BASE_COLOR;
+                }
+                ctx.fillRect(zoneRect.x, zoneRect.y, zoneRect.width, zoneRect.height);
+
+                // Тонкая обводка
+                ctx.strokeStyle = distance === 0 ? 'rgba(255, 0, 0, 0.3)' : 'rgba(0, 255, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(zoneRect.x, zoneRect.y, zoneRect.width, zoneRect.height);
+                    }
+            }
+        }
+
+        ctx.restore();
+    }
+
+    // Метод для проверки, находится ли позиция в защищенной зоне базы
+    isInBaseProtectedZone(x, y) {
+        const zone = this.getZoneId(x, y);
+        const baseZone = this.getBaseZone();
+        const protectedRadius = BASE_ZONE_SYSTEM.PROTECTED_RADIUS;
+
+        const distance = Math.max(
+            Math.abs(zone.x - baseZone.x),
+                                  Math.abs(zone.y - baseZone.y)
+        );
+
+        return distance <= protectedRadius;
+    }
+
+    // Метод для получения приоритета защиты зоны
+    getZoneProtectionPriority(zoneX, zoneY) {
+        const baseZone = this.getBaseZone();
+        const protectedRadius = BASE_ZONE_SYSTEM.PROTECTED_RADIUS;
+
+        const distance = Math.max(
+            Math.abs(zoneX - baseZone.x),
+                                  Math.abs(zoneY - baseZone.y)
+        );
+
+        if (distance > protectedRadius) return 0; // Вне защитной зоны
+
+        // Чем ближе к базе - тем выше приоритет
+        return protectedRadius - distance + 1;
     }
 }
