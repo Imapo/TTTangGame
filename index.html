@@ -16,22 +16,15 @@
 
         <!-- Основной UI -->
         <div class="ui">
-            <div class="score">Очки: <span id="score">0</span></div>
-            <div class="lives">Жизни: <span id="lives">3</span></div>
-            <div class="level">Уровень: <span id="level">1</span></div>
-            <div class="tank-counter">Танки: <span id="tanksLeft">20</span>/20</div>
+            <div class="score">🎯 Очки: <span id="score">0</span></div>
+            <div class="lives">❤️ Жизни: <span id="lives">3</span></div>
+            <div class="level">🚀 Уровень: <span id="level">1</span></div>
+            <div class="tank-counter">🎯 Танки: <span id="tanksLeft">20</span>/20</div>
 
-            <!-- Статистика прокачки игрока -->
             <div class="player-stats">
-                <div class="player-level">Ур.<span id="playerLevel">1</span></div>
-                <div class="player-exp">Опыт: <span id="playerExp">0/50</span></div>
+                <div class="player-level">⭐ Ур.<span id="playerLevel">1</span></div>
+                <div class="player-exp">📊 <span id="playerExp">0/50</span></div>
                 <button class="reset-progress-btn" onclick="game.resetPlayerProgress()" title="Сбросить прогресс">🔄</button>
-            </div>
-
-            <!-- Отладочная информация -->
-            <div class="debug-stats">
-                Игрок: ур.<span id="debugPlayerLevel">1</span> оп.<span id="debugPlayerExp">0</span> |
-                Игра: ур.<span id="debugGameLevel">1</span> оп.<span id="debugGameExp">0</span>
             </div>
         </div>
 
@@ -72,18 +65,40 @@
                     <!-- Статистика будет здесь -->
                 </div>
             </div>
-            <div class="level-complete-footer">
-                <p>Закрой это окно чтобы открыть выход с уровня</p>
-                <p>➡️ Найди мигающую стрелку и заезжай в проход ⬅️</p>
-            </div>
         </div>
 
         <!-- Экран Game Over -->
         <div class="game-over" id="gameOver">
-            <h2>Игра окончена!</h2>
-            <p>Ваш счет: <span id="finalScore">0</span></p>
-            <p>Уровень: <span id="finalLevel">1</span></p>
-            <button class="restart-btn" onclick="game.restartGame()">Начать заново</button>
+            <div class="game-over-header">
+                <h2>💀 Игра окончена!</h2>
+            </div>
+
+            <div class="game-over-content">
+                <div class="game-over-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">🏆 Ваш счет:</span>
+                        <span class="stat-value" id="finalScore">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">🚀 Достигнут уровень:</span>
+                        <span class="stat-value" id="finalLevel">1</span>
+                    </div>
+                </div>
+
+                <!-- ИСПРАВЛЕНИЕ: используем УНИКАЛЬНЫЕ ID для Game Over -->
+                <div class="game-over-leader-stats" id="gameOverLeaderStats">
+                    <div class="leader-header">
+                        <h3 id="gameOverLeaderTitle">🥇 Лидер этого раунда</h3>
+                    </div>
+                    <div class="leader-content" id="gameOverLeaderContent">
+                        <!-- Статистика будет здесь -->
+                    </div>
+                </div>
+
+                <div class="game-over-actions">
+                    <button class="restart-btn" onclick="game.restartGame()">🎮 Начать заново</button>
+                </div>
+            </div>
         </div>
 
         <!-- Таблица лидеров -->
