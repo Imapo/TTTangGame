@@ -24,7 +24,7 @@ body {
 #gameCanvas {
     border: 4px solid #4CAF50;
     background: #000;
-    margin-bottom: 20px;
+    margin-top: 95px;
     transform: translate(0, 0);
     transition: transform 0.1s;
 }
@@ -444,4 +444,502 @@ display: none;
     .tank-name {
         font-size: 18px;
     }
+}
+
+/* Основной контейнер UI */
+.ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    /*flex-wrap: wrap;*/
+    gap: 15px;
+    background: rgba(0, 0, 0, 0.85);
+    border: 2px solid #4CAF50;
+    border-radius: 12px;
+    padding: 12px;
+    font-family: 'Courier New', monospace;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+/* Базовые стили для всех блоков */
+.ui > div {
+    background: linear-gradient(135deg, #2c3e50, #34495e);
+    border: 1px solid #4CAF50;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #ecf0f1;
+    font-weight: bold;
+    font-size: 14px;
+    min-width: fit-content;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Специфичные стили для каждого блока */
+.lives {
+    background: linear-gradient(135deg, #c0392b, #e74c3c);
+    border-color: #c0392b;
+}
+
+.tank-counter {
+    background: linear-gradient(135deg, #8e44ad, #9b59b6);
+    border-color: #8e44ad;
+}
+
+/* Статистика игрока */
+.player-stats {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: linear-gradient(135deg, #d35400, #e67e22);
+    border-color: #d35400;
+}
+
+.player-level {
+    font-size: 16px;
+    font-weight: bold;
+    color: #f1c40f;
+}
+
+.player-exp {
+    font-size: 12px;
+    opacity: 0.9;
+}
+
+.reset-progress-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.reset-progress-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* Отладочная статистика */
+.debug-stats {
+    background: linear-gradient(135deg, #34495e, #2c3e50);
+    border-color: #7f8c8d;
+    font-size: 11px;
+    opacity: 0.8;
+    flex-grow: 1;
+    text-align: center;
+}
+
+/* Индикаторы статусов */
+.status-indicators {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+}
+
+.status-indicators > div {
+    background: linear-gradient(135deg, #34495e, #2c3e50);
+    border: 1px solid #4CAF50;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #ecf0f1;
+    font-size: 12px;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    display: none;
+    min-width: 180px;
+}
+
+.shield-indicator {
+    border-color: #2196F3;
+    background: linear-gradient(135deg, #1976D2, #2196F3);
+}
+
+.invincibility-indicator {
+    border-color: #9C27B0;
+    background: linear-gradient(135deg, #7B1FA2, #9C27B0);
+}
+
+.fortify-indicator {
+    border-color: #FF9800;
+    background: linear-gradient(135deg, #F57C00, #FF9800);
+}
+
+.autoaim-indicator {
+    border-color: #4CAF50;
+    background: linear-gradient(135deg, #388E3C, #4CAF50);
+}
+
+/* Управление */
+.controls {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #4CAF50;
+    border-radius: 8px;
+    padding: 8px 16px;
+    color: #ecf0f1;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    backdrop-filter: blur(10px);
+}
+
+/* Отладочная информация */
+.debug {
+    position: absolute;
+    bottom: 50px;
+    left: 10px;
+    background: rgba(0, 0, 0, 0.85);
+    border: 1px solid #FF9800;
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: #FF9800;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    max-width: calc(100% - 20px);
+}
+
+/* Кнопка звука */
+.mute-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.85);
+    border: 2px solid #4CAF50;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    color: #4CAF50;
+    font-size: 16px;
+    cursor: pointer;
+    z-index: 1000;
+    transition: all 0.3s;
+}
+
+.mute-btn:hover {
+    background: #4CAF50;
+    color: black;
+    transform: scale(1.1);
+}
+
+/* Таблица лидеров */
+#leaderboard {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.95);
+    border: 2px solid #f1c40f;
+    border-radius: 12px;
+    padding: 15px;
+    color: #ecf0f1;
+    font-family: 'Courier New', monospace;
+    min-width: 250px;
+    backdrop-filter: blur(10px);
+}
+
+.leaderboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #f1c40f;
+    padding-bottom: 8px;
+}
+
+.leaderboard-header h3 {
+    margin: 0;
+    color: #f1c40f;
+}
+
+.leaderboard-controls {
+    display: flex;
+    gap: 5px;
+}
+
+.leaderboard-controls button {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid #f1c40f;
+    border-radius: 4px;
+    color: #f1c40f;
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 12px;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+    .ui {
+        flex-direction: column;
+        gap: 8px;
+        padding: 8px;
+    }
+
+    .ui > div {
+        width: 100%;
+        text-align: center;
+    }
+
+    .status-indicators {
+        position: relative;
+        top: auto;
+        right: auto;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .controls {
+        font-size: 10px;
+        padding: 6px 12px;
+    }
+
+    .debug {
+        font-size: 10px;
+        bottom: 40px;
+    }
+}
+
+/* Анимации */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.ui > div:hover {
+    animation: pulse 0.3s ease-in-out;
+}
+
+/* Стили для чисел (более заметные) */
+.ui span {
+    color: #f1c40f;
+    font-weight: bold;
+    font-size: 15px;
+}
+
+.player-stats span {
+    color: #ffffff;
+}
+
+.debug-stats span {
+    color: #3498db;
+}
+
+#debugMenu, #leaderboard {
+    max-width: 120px;
+}
+
+/* Стили для экрана Game Over */
+.game-over {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    border: 3px solid #e74c3c;
+    border-radius: 15px;
+    padding: 0;
+    color: #ecf0f1;
+    font-family: 'Courier New', monospace;
+    text-align: center;
+    display: none;
+    z-index: 1000;
+    min-width: 500px;
+    max-width: 600px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+}
+
+.game-over-header {
+    background: linear-gradient(135deg, #c0392b, #e74c3c);
+    padding: 20px;
+    border-radius: 12px 12px 0 0;
+    margin-bottom: 0;
+}
+
+.game-over-header h2 {
+    margin: 0;
+    font-size: 28px;
+    color: white;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.game-over-content {
+    padding: 25px;
+}
+
+.game-over-stats {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 25px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 15px;
+}
+
+.stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+}
+
+.stat-label {
+    font-size: 14px;
+    color: #bdc3c7;
+    font-weight: normal;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #f1c40f;
+}
+
+/* Статистика лидера для Game Over */
+#gameOverLeaderStats {
+background: linear-gradient(135deg, #34495e, #2c3e50);
+border: 2px solid #f1c40f;
+border-radius: 10px;
+padding: 20px;
+margin: 20px 0;
+display: none;
+}
+
+#gameOverLeaderStats .leader-header h3 {
+color: #f1c40f;
+margin: 0 0 15px 0;
+font-size: 18px;
+border-bottom: 1px solid #f1c40f;
+padding-bottom: 8px;
+}
+
+.game-over-actions {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.restart-btn {
+    background: linear-gradient(135deg, #27ae60, #2ecc71);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    padding: 12px 30px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    font-family: 'Courier New', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.restart-btn:hover {
+    background: linear-gradient(135deg, #229954, #27ae60);
+    transform: scale(1.05);
+    box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
+}
+
+/* Адаптивность */
+@media (max-width: 600px) {
+    .game-over {
+        min-width: 90%;
+        max-width: 95%;
+    }
+
+    .game-over-stats {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .game-over-header h2 {
+        font-size: 24px;
+    }
+}
+
+/* Добавьте в style.css */
+.game-over .level-leader-stats {
+    background: rgba(255, 0, 0, 0.1);
+    border: 2px solid #ff4444;
+    border-radius: 10px;
+    padding: 15px;
+    margin: 15px 0;
+}
+
+.game-over .leader-header h3 {
+    color: #ff6b6b;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.game-over .leader-content {
+    color: #fff;
+}
+
+.leaderboard-entry[style*="background: rgba(255, 0, 0, 0.2)"] {
+    animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+    0% { background: rgba(255, 0, 0, 0.2); }
+    50% { background: rgba(255, 0, 0, 0.4); }
+    100% { background: rgba(255, 0, 0, 0.2); }
+}
+
+.leaderboard-entry .name:contains("💥") {
+    font-weight: bold;
+    color: #ff4444;
+}
+
+/* Добавляем в style.css с !important */
+.game-over-leader-stats {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: rgba(255, 0, 0, 0.1) !important;
+    border: 2px solid #ff4444 !important;
+    border-radius: 10px !important;
+    padding: 15px !important;
+    margin: 15px 0 !important;
+}
+
+/* Класс для принудительного показа */
+.force-visible {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.game-over .leader-header h3 {
+    color: #ff6b6b;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.game-over .leader-content {
+    color: #fff;
+}
+
+/* Стили для разрушителя базы */
+.leader-tank-info .total-score[style*="color: #ff4444"] {
+    font-weight: bold;
+    animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+    0% { color: #ff4444; }
+    50% { color: #ff8888; }
+    100% { color: #ff4444; }
 }
