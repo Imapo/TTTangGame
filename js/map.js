@@ -297,7 +297,25 @@ class GameMap {
         return grid;
     }
 
+    // ДОБАВЬТЕ этот метод в класс GameMap
+    checkBoundaryCollision(rect) {
+        // Проверяем выход за границы игровой области
+        if (rect.x < TILE_SIZE ||
+            rect.x + rect.width > CANVAS_WIDTH - TILE_SIZE ||
+            rect.y < TILE_SIZE ||
+            rect.y + rect.height > CANVAS_HEIGHT - TILE_SIZE) {
+            return true;
+            }
+            return false;
+    }
+
+    // ОБНОВИТЕ метод checkCollision:
     checkCollision(rect) {
+        // ПЕРВАЯ проверка: границы карты
+        if (this.checkBoundaryCollision(rect)) {
+            return true;
+        }
+
         const startX = Math.max(0, Math.floor(rect.x / this.tileSize));
         const startY = Math.max(0, Math.floor(rect.y / this.tileSize));
         const endX = Math.min(this.width-1, Math.floor((rect.x + rect.width) / this.tileSize));
@@ -307,6 +325,7 @@ class GameMap {
             for (let x = startX; x <= endX; x++) {
                 const tile = this.grid[y][x];
 
+                // ВТОРАЯ проверка: конкретные тайлы
                 // ПРОВЕРКА СТОЛКНОВЕНИЙ: трава не блокирует движение
                 if (tile === TILE_TYPES.WATER || tile === TILE_TYPES.BASE || tile === TILE_TYPES.CONCRETE) {
                     const tileRect = new Rectangle(

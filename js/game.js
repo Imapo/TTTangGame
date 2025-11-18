@@ -20,6 +20,11 @@ class Game {
         // НОВОЕ: Создаем дебаг-меню ДО инициализации игры
         this.createDebugMenu();
 
+        // НОВОЕ: Трекер всех врагов раунда
+        this.currentRoundEnemies = new Map(); // Map для быстрого поиска по имени
+        this.roundEnemiesList = [];           // Array для сохранения порядка
+        this.totalEnemiesSpawned = 0;         // Счётчик всех заспавненных врагов
+
         this.initGameState();
         this.setupEventListeners();
         this.gameLoop(0);
@@ -93,6 +98,77 @@ class Game {
         this.playerStats = this.loadPlayerStats();
 
         this.initLevel();
+    }р
+
+    // Отметка об уничтожении врага
+    markEnemyDestroyed(enemy) {
+        if (!enemy || !enemy.username) return;
+
+        const username = enemy.username;
+        const trackedEnemy = this.currentRoundEnemies.get(username);
+
+        if (trackedEnemy && !trackedEnemy.destroyed) {
+            trackedEnemy.destroyed = true;
+            trackedEnemy.destroyTime = Date.now();
+            trackedEnemy.finalStats = {...enemy.levelStats}; // Сохраняем финальную статистику
+
+            console.log(`💀 Отмечен уничтоженным: ${enemy.username}`, enemy.levelStats);
+            this.saveEnemyStatsToStorage(enemy);
+        } else {
+            console.log(`⚠️ Враг ${username} не найден в трекере или уже отмечен как уничтоженный`);
+        }
+    }
+
+    // Получение всех врагов раунда
+    getAllRoundEnemies() {
+        const enemies = [];
+
+        console.log(`🔍 Трекер раунда содержит: ${this.currentRoundEnemies.size} записей`);
+
+        this.currentRoundEnemies.forEach((trackedEnemy, username) => {
+            console.log(`📝 Обрабатываем врага: ${username}`, trackedEnemy);
+
+            // Безопасное извлечение статистики
+            let finalStats;
+            if (trackedEnemy.finalStats) {
+                finalStats = trackedEnemy.finalStats;
+            } else if (trackedEnemy.enemy && trackedEnemy.enemy.levelStats) {
+                finalStats = trackedEnemy.enemy.levelStats;
+            } else {
+                // Создаем пустую статистику если ничего нет
+                finalStats = {
+                    shots: 0,
+                    wallsDestroyed: 0,
+                    playerKills: 0,
+                    baseDestroyed: false,
+                    totalScore: 0
+                };
+            }
+
+            enemies.push({
+                username: username,
+                enemyType: trackedEnemy.enemy?.enemyType || 'BASIC',
+                stats: finalStats,
+                spawnTime: trackedEnemy.spawnTime,
+                destroyed: trackedEnemy.destroyed || false,
+                destroyTime: trackedEnemy.destroyTime
+            });
+        });
+
+        console.log(`📋 getAllRoundEnemies вернул ${enemies.length} врагов`);
+        enemies.forEach(e => console.log(`   - ${e.username}: ${e.stats.totalScore} очков (выстрелы: ${e.stats.shots}, стены: ${e.stats.wallsDestroyed}, убийства: ${e.stats.playerKills})`));
+
+        return enemies;
+    }
+
+    // Очистка трекера для нового раунда
+    clearRoundTracker() {
+        console.log(`🗑️ Очищаем трекер раунда. Было врагов: ${this.currentRoundEnemies.size}`);
+        // НЕ очищаем сразу - сохраняем для расчета лидера
+        // this.currentRoundEnemies.clear();
+        this.roundEnemiesList = [];
+        this.totalEnemiesSpawned = 0;
+        console.log("✅ Трекер раунда подготовлен к очистке");
     }
 
     // НОВЫЙ МЕТОД: Оптимизированные редкие обновления
@@ -315,7 +391,7 @@ class Game {
                 this.entryTeleport.startClosing();
                 console.log("🌀 Запущено схлопывание телепорта входа");
             }
-        }, 2000);
+        }, 1000);
     }
 
     // НОВЫЙ МЕТОД: Обеспечение безопасной позиции
@@ -399,12 +475,12 @@ class Game {
         <option value="2">2 - Базовый ИИ</option>
         <option value="3">3 - Базовый ИИ</option>
         <option value="4">4 - Базовый ИИ</option>
-        <option value="5">5 - Продвинутый ИИ</option>
-        <option value="6">6 - Продвинутый ИИ</option>
-        <option value="7">7 - Продвинутый ИИ</option>
-        <option value="8">8 - Продвинутый ИИ</option>
-        <option value="9">9 - Продвинутый ИИ</option>
-        <option value="10">10 - Продвинутый ИИ</option>
+        <option value="5">5 - Базовый ИИ</option>
+        <option value="6">6 - Базовый ИИ</option>
+        <option value="7">7 - Базовый ИИ</option>
+        <option value="8">8 - Базовый ИИ</option>
+        <option value="9">9 - Базовый ИИ</option>
+        <option value="10">10 - Базовый ИИ</option>
         </select>
         </div>
 
@@ -754,6 +830,10 @@ class Game {
             enemy.bonusType = BONUS_TYPES[randomBonus];
 
             this.enemyManager.enemies.push(enemy);
+            // ✅ ДОБАВЬТЕ СЮДА:
+            if (this.game && this.game.registerEnemy) {
+                this.game.registerEnemy(enemy);
+            }
             console.log(`🎁 Создан ${enemyType} танк с бонусом: ${randomBonus}`);
         }, 1000);
     }
@@ -867,6 +947,9 @@ class Game {
         this.baseFortifyDuration = 0;
         this.originalBaseWalls = [];
 
+        // Сбрасываем лидера при инициализации уровня
+        this.levelLeader = null;
+
         this.enemiesDestroyed = 0;
         this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL;
         this.levelComplete = false;
@@ -892,6 +975,9 @@ class Game {
         document.getElementById('gameOver').style.display = 'none';
 
         console.log(`🎮 Игрок создан: уровень ${this.player.playerLevel}, опыт ${this.player.experience}`);
+
+        // ✅ ОЧИЩАЕМ ТРЕКЕР ПРЕДЫДУЩЕГО РАУНДА
+        this.clearRoundTracker();
     }
 
     // Добавляем метод активации остановки времени
@@ -1110,6 +1196,7 @@ class Game {
         return true;
     }
 
+    // ОБНОВЛЯЕМ метод handleBulletMapCollision:
     handleBulletMapCollision(bullet, index, destructionResult) {
         switch(destructionResult) {
             case 'base':
@@ -1120,6 +1207,18 @@ class Game {
                     this.gameOver = true;
                     this.baseDestroyed = true;
                     this.showGameOverScreen = true;
+
+                    // ОПРЕДЕЛЯЕМ КТО УНИЧТОЖИЛ БАЗУ И ДОБАВЛЯЕМ В ТАБЛИЦУ ЛИДЕРОВ
+                    if (bullet.owner === 'enemy' && bullet.shooter) {
+                        console.log(`💥 База уничтожена врагом: ${bullet.shooter.username}`);
+
+                        // ЗАПИСЫВАЕМ В СТАТИСТИКУ И ДОБАВЛЯЕМ В ТАБЛИЦУ ЛИДЕРОВ
+                        this.recordBaseDestroyedByEnemy(bullet.shooter);
+
+                    } else if (bullet.owner === 'player') {
+                        console.log(`💥 ИГРОК САМ УНИЧТОЖИЛ БАЗУ! (friendly fire)`);
+                        // В этом случае не записываем убийство базы никому
+                    }
                     this.showGameOver();
                 }
                 this.bullets.splice(index, 1);
@@ -1153,6 +1252,8 @@ class Game {
                 const destructionResult = enemy.takeDamage();
 
                 if (destructionResult === true || destructionResult === 'bonus') {
+                    // ✅ ОТМЕЧАЕМ УНИЧТОЖЕНИЕ В ТРЕКЕРЕ
+                    this.markEnemyDestroyed(enemy);
                     this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
                     if (enemy.enemyType === 'HEAVY') {
                         this.screenShake = 25;
@@ -1205,6 +1306,7 @@ class Game {
         }
 
         // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ
+        /*
         const debugPlayerLevel = document.getElementById('debugPlayerLevel');
         const debugPlayerExp = document.getElementById('debugPlayerExp');
         const debugGameLevel = document.getElementById('debugGameLevel');
@@ -1218,6 +1320,7 @@ class Game {
             debugGameLevel.textContent = this.playerLevel;
             debugGameExp.textContent = this.playerExperience;
         }
+        */
     }
 
     // НОВЫЙ МЕТОД: Показ уведомления об апгрейде
@@ -1251,7 +1354,7 @@ class Game {
         }, 3000);
     }
 
-    // В методе handleEnemyBulletCollision ДОБАВЛЯЕМ:
+    // ОБНОВЛЯЕМ метод handleEnemyBulletCollision:
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
         if (!this.player.isDestroyed && bulletBounds.intersects(this.player.getBounds())) {
             if (this.player.takeDamage()) {
@@ -1265,7 +1368,7 @@ class Game {
                 if (bullet.shooter && bullet.owner === 'enemy') {
                     console.log(`💀 ${bullet.shooter.username} УБИЛ ИГРОКА!`);
                     bullet.shooter.recordPlayerKill();
-                    this.addToLeaderboard(bullet.shooter);
+                    this.addToLeaderboard(bullet.shooter); // ← Уже есть
                     this.saveEnemyStatsToStorage(bullet.shooter);
                 }
 
@@ -1284,6 +1387,95 @@ class Game {
             return false;
         }
         return true;
+    }
+
+    // ДОБАВЛЯЕМ в Game class новый метод:
+    recordBaseDestroyedByEnemy(enemy) {
+        if (!enemy || !enemy.username) return;
+
+        console.log(`💥 ${enemy.username} УНИЧТОЖИЛ БАЗУ! Добавляем в таблицу лидеров.`);
+
+        // Записываем разрушение базы в статистику врага
+        enemy.recordBaseDestroyed();
+
+        // НЕМЕДЛЕННО сохраняем статистику
+        this.saveEnemyStatsToStorage(enemy);
+
+        // ДОБАВЛЯЕМ в таблицу лидеров с большим количеством очков
+        this.addBaseDestroyerToLeaderboard(enemy);
+    }
+
+    // ДОБАВЛЯЕМ метод для добавления разрушителя базы в таблицу лидеров:
+    // ЗАМЕНИТЕ метод addBaseDestroyerToLeaderboard:
+    addBaseDestroyerToLeaderboard(enemy) {
+        if (!enemy || !enemy.username) return;
+
+        // Рассчитываем полный счет на основе ВСЕЙ статистики + бонус за базу
+        let totalScore = LEVEL_STATS_POINTS.BASE_DESTROYED; // 1000 очков за базу
+
+        // Добавляем очки за всю остальную статистику
+        if (enemy.levelStats) {
+            totalScore += enemy.levelStats.shots * LEVEL_STATS_POINTS.SHOT +
+            enemy.levelStats.wallsDestroyed * LEVEL_STATS_POINTS.WALL_DESTROYED +
+            enemy.levelStats.playerKills * LEVEL_STATS_POINTS.PLAYER_KILL;
+
+            // Обновляем totalScore в статистике врага
+            enemy.levelStats.totalScore = totalScore;
+        }
+
+        const existingIndex = this.leaderboard.findIndex(entry =>
+        entry.name === enemy.username && entry.type === enemy.enemyType
+        );
+
+        if (existingIndex !== -1) {
+            // Обновляем существующую запись - СКЛАДЫВАЕМ очки
+            this.leaderboard[existingIndex].score += totalScore;
+            this.leaderboard[existingIndex].level = this.level;
+            this.leaderboard[existingIndex].baseDestroyed = true;
+
+            // ОБНОВЛЯЕМ статистику если есть
+            if (enemy.levelStats) {
+                // Если уже есть статистика - обновляем, иначе создаем новую
+                if (this.leaderboard[existingIndex].stats) {
+                    this.leaderboard[existingIndex].stats.shots += enemy.levelStats.shots;
+                    this.leaderboard[existingIndex].stats.wallsDestroyed += enemy.levelStats.wallsDestroyed;
+                    this.leaderboard[existingIndex].stats.playerKills += enemy.levelStats.playerKills;
+                    this.leaderboard[existingIndex].stats.baseDestroyed = true;
+                    this.leaderboard[existingIndex].stats.totalScore += totalScore;
+                } else {
+                    this.leaderboard[existingIndex].stats = {...enemy.levelStats};
+                    this.leaderboard[existingIndex].stats.baseDestroyed = true;
+                }
+            }
+            console.log(`🏆 ${enemy.username} получил +${totalScore} очков за разрушение базы + статистику`);
+        } else {
+            // Создаем новую запись с полной статистикой
+            const newEntry = {
+                name: enemy.username,
+                type: enemy.enemyType,
+                score: totalScore,
+                level: this.level,
+                baseDestroyed: true
+            };
+
+            // Сохраняем детальную статистику
+            if (enemy.levelStats) {
+                newEntry.stats = {
+                    shots: enemy.levelStats.shots,
+                    wallsDestroyed: enemy.levelStats.wallsDestroyed,
+                    playerKills: enemy.levelStats.playerKills,
+                    baseDestroyed: true,
+                    totalScore: totalScore
+                };
+            }
+
+            this.leaderboard.push(newEntry);
+            console.log(`🏆 ${enemy.username} добавлен в таблицу лидеров с ${totalScore} очками (разрушение базы + статистика)`);
+        }
+
+        this.leaderboard.sort((a, b) => b.score - a.score);
+        this.saveLeaderboard();
+        this.updateLeaderboardUI();
     }
 
     setupEventListeners() {
@@ -1429,31 +1621,75 @@ class Game {
         }
     }
 
-    addToLeaderboard(enemy) {
+    // ОБНОВЛЯЕМ метод addToLeaderboard:
+    addToLeaderboard(enemy, isBaseDestroyer = false) {
         if (!enemy || !enemy.username) return;
+
+        // Если это разрушитель базы - используем специальный метод
+        if (isBaseDestroyer) {
+            this.addBaseDestroyerToLeaderboard(enemy);
+            return;
+        }
+
+        // Рассчитываем полный счет на основе всей статистики
+        let totalScore = 0;
+        if (enemy.levelStats) {
+            totalScore = enemy.levelStats.totalScore;
+        } else {
+            // Если статистики нет, используем базовые очки
+            totalScore = 100; // за убийство игрока
+        }
 
         const existingIndex = this.leaderboard.findIndex(entry =>
         entry.name === enemy.username && entry.type === enemy.enemyType
         );
 
         if (existingIndex !== -1) {
-            this.leaderboard[existingIndex].score += 100;
+            // Обновляем существующую запись - СКЛАДЫВАЕМ очки
+            this.leaderboard[existingIndex].score += totalScore;
             this.leaderboard[existingIndex].level = this.level;
+
+            // Обновляем статистику если есть
+            if (enemy.levelStats) {
+                if (this.leaderboard[existingIndex].stats) {
+                    // Суммируем статистику
+                    this.leaderboard[existingIndex].stats.shots += enemy.levelStats.shots;
+                    this.leaderboard[existingIndex].stats.wallsDestroyed += enemy.levelStats.wallsDestroyed;
+                    this.leaderboard[existingIndex].stats.playerKills += enemy.levelStats.playerKills;
+                    this.leaderboard[existingIndex].stats.totalScore += totalScore;
+                } else {
+                    this.leaderboard[existingIndex].stats = {...enemy.levelStats};
+                }
+            }
         } else {
+            // Создаем новую запись
             const newEntry = {
                 name: enemy.username,
                 type: enemy.enemyType,
-                score: 100,
-                level: this.level
+                score: totalScore,
+                level: this.level,
+                baseDestroyed: false
             };
+
+            // Сохраняем детальную статистику если есть
+            if (enemy.levelStats) {
+                newEntry.stats = {...enemy.levelStats};
+            }
+
             this.leaderboard.push(newEntry);
         }
 
+        // Сортируем и обрезаем таблицу лидеров
         this.leaderboard.sort((a, b) => b.score - a.score);
+        this.leaderboard.length > 20 && (this.leaderboard = this.leaderboard.slice(0, 20));
+
         this.saveLeaderboard();
         this.updateLeaderboardUI();
+
+        console.log(`🏆 ${enemy.username} добавлен в таблицу лидеров с ${totalScore} очками`);
     }
 
+    // ОБНОВЛЯЕМ метод updateLeaderboardUI:
     updateLeaderboardUI() {
         const container = document.getElementById('leaderboardEntries');
         if (!container) return;
@@ -1467,7 +1703,22 @@ class Game {
             'SNIPER': '🟢'
         };
 
-        const displayEntries = this.showFullLeaderboard ? this.leaderboard : this.leaderboard.slice(0, 3);
+        const displayEntries = this.showFullLeaderboard ? this.leaderboard : this.leaderboard.slice(0, 5);
+
+        // ОБНОВЛЯЕМ ЗАГОЛОВОК
+        const leaderboardElement = document.getElementById("leaderboard");
+        if (leaderboardElement) {
+            const titleElement = leaderboardElement.querySelector("h3");
+            if (titleElement) {
+                if (this.leaderboard.length === 0) {
+                    // Если таблица пустая - стандартный заголовок
+                    titleElement.textContent = "🏆 Таблица лидеров";
+                } else {
+                    const displayedCount = this.showFullLeaderboard ? this.leaderboard.length : Math.min(5, this.leaderboard.length);
+                    titleElement.textContent = `🏆 Лидеры (${displayedCount}/${this.leaderboard.length})`;
+                }
+            }
+        }
 
         if (displayEntries.length === 0) {
             container.innerHTML = '<div style="text-align: center; color: #888; font-size: 12px;">Победителей пока нет</div>';
@@ -1478,12 +1729,21 @@ class Game {
             const entryEl = document.createElement('div');
             entryEl.className = 'leaderboard-entry';
 
+            // Подсвечиваем разрушителей базы
+            if (entry.baseDestroyed) {
+                entryEl.style.background = 'rgba(255, 0, 0, 0.2)';
+                entryEl.style.border = '1px solid #ff4444';
+            }
+
             const rank = this.showFullLeaderboard ? index + 1 : (this.leaderboard.findIndex(e => e.name === entry.name && e.type === entry.type) + 1);
+
+            // Добавляем иконку разрушителя базы
+            const baseDestroyerIcon = entry.baseDestroyed ? ' 💥' : '';
 
             entryEl.innerHTML = `
             <span class="rank">${rank}</span>
             <span class="tank-icon">${icons[entry.type] || '⚫'}</span>
-            <span class="name">${entry.name}</span>
+            <span class="name">${entry.name}${baseDestroyerIcon}</span>
             <span class="score">${entry.score}</span>
             <span class="level">ур.${entry.level}</span>
             `;
@@ -1495,7 +1755,7 @@ class Game {
             const title = leaderboard.querySelector('h3');
             if (title) {
                 const total = this.leaderboard.length;
-                const shown = this.showFullLeaderboard ? total : Math.min(3, total);
+                const shown = this.showFullLeaderboard ? total : Math.min(5, total);
                 title.textContent = `🏆 Лидеры (${shown}/${total})`;
             }
             leaderboard.style.display = 'block';
@@ -1606,12 +1866,8 @@ class Game {
 
     // ОБНОВЛЯЕМ метод checkLevelCompletion - враги появляются только после входа
     checkLevelCompletion() {
-        // Убедитесь, что игрок вошел на уровень
-        if (!this.playerEnteredLevel && this.level !== 1) return;
-
-        //console.log(`🔍 Проверка завершения: врагов уничтожено ${this.enemiesDestroyed}/${TOTAL_ENEMIES_PER_LEVEL}, осталось врагов: ${this.enemyManager.enemies.length}, спавн анимаций: ${this.enemyManager.spawnAnimations.length}`);
-
-        if (this.enemiesDestroyed >= TOTAL_ENEMIES_PER_LEVEL &&
+        if ((this.playerEnteredLevel || this.level === 1) &&
+            this.enemiesDestroyed >= TOTAL_ENEMIES_PER_LEVEL &&
             this.enemyManager.enemies.length === 0 &&
             this.enemyManager.spawnAnimations.length === 0 &&
             !this.levelComplete) {
@@ -1620,17 +1876,25 @@ class Game {
         this.levelComplete = true;
         this.levelCompleteTimer = 0;
 
-        // Сразу показываем завершение уровня
         setTimeout(() => {
             console.log("🎯 Запускаем расчет лидера и показ статистики");
+
+            // ГАРАНТИРУЕМ расчет лидера перед показом
             this.calculateLevelLeader();
+
+            // Если лидер не найден, пробуем найти почетного лидера
+            if (!this.levelLeader) {
+                console.log("🔄 Лидер не найден, ищем почетного...");
+                this.findHonoraryLeader();
+            }
+
             this.showLevelCompleteStats = true;
             this.showLevelComplete();
-        }, 1000); // Уменьшил задержку для тестирования
+        }, 1000);
             }
     }
 
-    // НОВЫЙ МЕТОД: Сохранение статистики врага в localStorage
+    // ОБНОВЛЯЕМ метод saveEnemyStatsToStorage:
     saveEnemyStatsToStorage(enemy) {
         if (!enemy || !enemy.username) return;
 
@@ -1646,7 +1910,7 @@ class Game {
             };
 
             localStorage.setItem(storageKey, JSON.stringify(levelStats));
-            //console.log(`💾 Сохранена статистика ${enemy.username} для уровня ${this.level}`);
+            console.log(`💾 Сохранена статистика ${enemy.username} для уровня ${this.level}:`, enemy.levelStats);
         } catch (error) {
             console.error('Ошибка сохранения статистики:', error);
         }
@@ -1676,39 +1940,85 @@ class Game {
 
     // ОБНОВЛЯЕМ метод calculateLevelLeader - используем localStorage
     calculateLevelLeader() {
-        console.log("🔍 Начинаем расчет лидера уровня из localStorage...");
+        console.log("🔍 Поиск лидера из ВСЕХ врагов раунда...");
+        const allEnemies = this.getAllRoundEnemies();
+        console.log(`📊 Всего врагов в раунде: ${allEnemies.length}`);
 
-        let bestEnemy = null;
-        let bestScore = -1;
+        let leader = null;
+        let maxScore = -1;
 
-        // Загружаем статистику из localStorage
-        const levelStats = this.loadLevelStatsFromStorage();
-        console.log(`📊 Загружено записей из localStorage: ${Object.keys(levelStats).length}`);
+        // СНАЧАЛА ИЩЕМ РАЗРУШИТЕЛЯ БАЗЫ - ОН АВТОМАТИЧЕСКИ ЛИДЕР
+        allEnemies.forEach((enemyData) => {
+            const stats = enemyData.stats;
 
-        // Ищем врага с максимальным счетом
-        Object.entries(levelStats).forEach(([enemyName, data]) => {
-            const stats = data.stats;
-            console.log(`📈 ${enemyName}: ${stats.totalScore} очков (выстрелы: ${stats.shots}, стены: ${stats.wallsDestroyed}, убийства: ${stats.playerKills}, база: ${stats.baseDestroyed})`);
-
-            if (stats.totalScore > bestScore) {
-                bestScore = stats.totalScore;
-                bestEnemy = {
+            if (stats.baseDestroyed) {
+                console.log(`💥 НАЙДЕН РАЗРУШИТЕЛЬ БАЗЫ: ${enemyData.username}`);
+                leader = {
                     enemy: {
-                        username: enemyName,
-                        enemyType: data.enemyType
+                        username: enemyData.username,
+                        enemyType: enemyData.enemyType
                     },
                     stats: stats
                 };
-                console.log(`🎯 Новый лидер: ${enemyName}`);
+                maxScore = stats.totalScore;
+                return; // Прерываем цикл - нашли разрушителя базы
             }
         });
 
-        this.levelLeader = bestEnemy;
+        // Если не нашли разрушителя базы, ищем по максимальному счету
+        if (!leader) {
+            allEnemies.forEach((enemyData) => {
+                const stats = enemyData.stats;
+                const hasActivity = stats.shots > 0 || stats.wallsDestroyed > 0 || stats.playerKills > 0 || stats.baseDestroyed;
+
+                console.log(`🎯 ${enemyData.username}: ${stats.totalScore} очков, активность: ${hasActivity}`);
+
+                if (stats.totalScore > maxScore && hasActivity) {
+                    maxScore = stats.totalScore;
+                    leader = {
+                        enemy: {
+                            username: enemyData.username,
+                            enemyType: enemyData.enemyType
+                        },
+                        stats: stats
+                    };
+                }
+            });
+        }
+
+        // Резервный выбор если лидер не найден
+        if (!leader && allEnemies.length > 0) {
+            const activeEnemies = allEnemies.filter(e => e.stats.shots > 0 || e.stats.wallsDestroyed > 0);
+            if (activeEnemies.length > 0) {
+                const randomEnemy = activeEnemies[Math.floor(Math.random() * activeEnemies.length)];
+                leader = {
+                    enemy: {
+                        username: randomEnemy.username,
+                        enemyType: randomEnemy.enemyType
+                    },
+                    stats: randomEnemy.stats
+                };
+                console.log(`🎲 Выбран случайный активный лидер: ${randomEnemy.username}`);
+            } else {
+                const randomEnemy = allEnemies[Math.floor(Math.random() * allEnemies.length)];
+                leader = {
+                    enemy: {
+                        username: randomEnemy.username,
+                        enemyType: randomEnemy.enemyType
+                    },
+                    stats: randomEnemy.stats
+                };
+                console.log(`😴 Все враги пассивны, выбран случайный: ${randomEnemy.username}`);
+            }
+        }
+
+        this.levelLeader = leader;
 
         if (this.levelLeader) {
-            console.log(`🏆 Лидер уровня: ${this.levelLeader.enemy.username} с ${this.levelLeader.stats.totalScore} очками`);
+            console.log(`🏆 ОКОНЧАТЕЛЬНЫЙ ЛИДЕР: ${this.levelLeader.enemy.username} (${this.levelLeader.stats.totalScore} очков)`);
+            console.log(`📊 Статистика лидера: выстрелы=${this.levelLeader.stats.shots}, стены=${this.levelLeader.stats.wallsDestroyed}, убийства=${this.levelLeader.stats.playerKills}, база=${this.levelLeader.stats.baseDestroyed}`);
         } else {
-            console.log("❌ Лидер не найден в localStorage");
+            console.log("❌ Лидер не найден - нет врагов в раунде");
         }
     }
 
@@ -1748,51 +2058,81 @@ class Game {
     showLevelComplete() {
         console.log("🖥️ Показываем экран завершения уровня");
         this.showLevelCompleteScreen = true;
-        const levelCompleteScreen = document.getElementById('levelComplete');
 
-        if (!levelCompleteScreen) {
+        const levelCompleteElement = document.getElementById("levelComplete");
+        if (levelCompleteElement) {
+            document.getElementById("destroyedTanks").textContent = this.enemiesDestroyed;
+            document.getElementById("levelScore").textContent = this.score;
+
+            // УБЕДИТЕСЬ, что лидер рассчитан ПЕРЕД показом статистики
+            if (!this.levelLeader) {
+                console.log("🔄 Пересчитываем лидера перед показом экрана...");
+                this.calculateLevelLeader();
+            }
+
+            this.showLevelLeaderStats();
+            levelCompleteElement.style.display = "block";
+
+            if (this.soundManager) {
+                this.soundManager.stopLoop("engineIdle");
+            }
+
+            console.log("✅ Экран завершения уровня показан");
+        } else {
             console.error("❌ Элемент levelComplete не найден!");
-            return;
         }
-
-        // Обычная информация
-        document.getElementById('destroyedTanks').textContent = this.enemiesDestroyed;
-        document.getElementById('levelScore').textContent = this.score;
-
-        // Показываем статистику лидера
-        this.showLevelLeaderStats();
-
-        levelCompleteScreen.style.display = 'block';
-
-        // ИСПРАВЛЕНИЕ: Останавливаем только звук холостого хода
-        if (this.soundManager) {
-            this.soundManager.stopLoop('engineIdle');
-            // Звук движения остаётся, если игрок двигается
-        }
-
-        console.log("✅ Экран завершения уровня показан");
     }
 
     // ОБНОВЛЯЕМ метод showLevelLeaderStats - упрощенная версия
     showLevelLeaderStats() {
-        const leaderContent = document.getElementById('leaderContent');
-        const levelLeaderStats = document.getElementById('levelLeaderStats');
+        const leaderContent = document.getElementById("leaderContent");
+        const levelLeaderStats = document.getElementById("levelLeaderStats");
 
-        if (this.levelLeader && leaderContent) {
-            leaderContent.innerHTML = this.generateLeaderStatsHTML(this.levelLeader);
-            levelLeaderStats.style.display = 'block';
-            console.log(`✅ Показан лидер: ${this.levelLeader.enemy.username}`);
+        // ИСПОЛЬЗУЕМ ТУ ЖЕ ЛОГИКУ, ЧТО И В showGameOverLeaderStats
+        console.log("🔍 showLevelLeaderStats - НАЧАЛО");
+        console.log("📋 Параметры:");
+        console.log("- leaderContent:", leaderContent);
+        console.log("- leaderStats:", levelLeaderStats);
+        console.log("- this.levelLeader:", this.levelLeader);
+
+        if (!leaderContent) {
+            console.error("❌ leaderContent не найден!");
+            return;
+        }
+
+        let htmlContent = "";
+
+        if (this.levelLeader) {
+            console.log("🎯 Есть лидер, генерируем HTML...");
+            // ИСПОЛЬЗУЕМ ТУ ЖЕ ФУНКЦИЮ, ЧТО И ДЛЯ GAME OVER
+            htmlContent = this.generateGameOverLeaderStatsHTML(this.levelLeader);
         } else {
-            // Простое сообщение если лидера нет
-            leaderContent.innerHTML = `
-            <div style="text-align: center; color: #888; padding: 20px;">
-            <p>Ни один противник не проявил активности</p>
-            <p>🥱 Все враги были пассивны</p>
+            console.log("❌ Лидера нет, показываем информативное сообщение");
+            htmlContent = `
+            <div style="text-align: center; color: #bdc3c7; padding: 20px;">
+            <p>Все противники были уничтожены слишком быстро</p>
+            <p>⚡ Никто не успел проявить активность</p>
+            <p style="font-size: 12px; margin-top: 10px;">
+            В этом раунде было создано врагов: ${this.currentRoundEnemies.size}
+            </p>
             </div>
             `;
-            levelLeaderStats.style.display = 'block';
-            console.log("ℹ️ Показано сообщение об отсутствии активности");
         }
+
+        console.log("📝 Записываем HTML в leaderContent...");
+        console.log("HTML content:", htmlContent);
+        leaderContent.innerHTML = htmlContent;
+
+        console.log("✅ HTML записан. Проверяем результат:");
+        console.log("- leaderContent.innerHTML длина:", leaderContent.innerHTML.length);
+        console.log("- leaderContent.children:", leaderContent.children.length);
+
+        if (levelLeaderStats) {
+            levelLeaderStats.style.display = "block";
+            console.log("🎪 levelLeaderStats.display установлен в 'block'");
+        }
+
+        console.log("🔍 showLevelLeaderStats - ЗАВЕРШЕНИЕ");
     }
 
     // НОВЫЙ МЕТОД: Создание UI для статистики лидера
@@ -1824,48 +2164,10 @@ class Game {
         this.showLevelLeaderStats(); // Показываем статистику если есть
     }
 
-    // ОБНОВЛЯЕМ метод generateLeaderStatsHTML для работы с данными из localStorage
-    generateLeaderStatsHTML(leader) {
-        const enemyTypeIcons = {
-            'BASIC': '🔴',
-            'FAST': '🟡',
-            'HEAVY': '🟣',
-            'SNIPER': '🟢'
-        };
-
-        const icon = enemyTypeIcons[leader.enemy.enemyType] || '⚫';
-
-        return `
-        <div class="leader-tank-info">
-        <div class="tank-icon-large">${icon}</div>
-        <div class="tank-name">${leader.enemy.username}</div>
-        <div class="total-score">Общий счет: ${leader.stats.totalScore}</div>
-        </div>
-        <div class="leader-stats-details">
-        <div class="stat-row">
-        <span class="stat-label">Выстрелов:</span>
-        <span class="stat-value">${leader.stats.shots}</span>
-        </div>
-        <div class="stat-row">
-        <span class="stat-label">Разрушенных стен:</span>
-        <span class="stat-value">${leader.stats.wallsDestroyed}</span>
-        </div>
-        <div class="stat-row">
-        <span class="stat-label">Убийств игрока:</span>
-        <span class="stat-value">${leader.stats.playerKills}</span>
-        </div>
-        <div class="stat-row">
-        <span class="stat-label">Разрушений базы:</span>
-        <span class="stat-value">${leader.stats.baseDestroyed ? '1' : '0'}</span>
-        </div>
-        </div>
-        `;
-    }
-
 
     // В методе closeLevelStats ОБНОВЛЯЕМ управление звуками:
     closeLevelStats() {
-        console.log("🚪 Закрываем статистику и создаем телепорт");
+        console.log("🚪 Закрываем статистику...");
 
         // Останавливаем обратный отсчёт если он идет
         if (this.countdownInterval) {
@@ -1876,13 +2178,17 @@ class Game {
         this.showLevelCompleteStats = false;
         this.showLevelCompleteScreen = false;
 
+        // Скрываем оба экрана
         const levelCompleteScreen = document.getElementById('levelComplete');
-        if (levelCompleteScreen) {
-            levelCompleteScreen.style.display = 'none';
-        }
+        const gameOverScreen = document.getElementById('gameOver');
 
-        // Создаем телепорт выхода
-        this.createExitTeleport();
+        if (levelCompleteScreen) levelCompleteScreen.style.display = 'none';
+        if (gameOverScreen) gameOverScreen.style.display = 'none';
+
+        // Создаем телепорт выхода (только для завершения уровня)
+        if (!this.gameOver) {
+            this.createExitTeleport();
+        }
     }
 
     // НОВЫЙ МЕТОД: Проверка входа в телепорт
@@ -1903,9 +2209,7 @@ class Game {
             this.exitTeleport.active = false;
 
             // Переходим на следующий уровень с сохранением координат
-            setTimeout(() => {
-                this.nextLevel(exitX, exitY);
-            }, 500);
+            this.nextLevel(exitX, exitY);
 
             return true;
         }
@@ -2034,14 +2338,261 @@ class Game {
         console.log("🚪 Проход закрыт");
     }
 
+    // ОБНОВЛЯЕМ showGameOver - добавляем вызов принудительного метода:
     showGameOver() {
+        console.log("🎮 ===== ЗАПУСК showGameOver =====");
+
         this.showGameOverScreen = true;
         const gameOverScreen = document.getElementById('gameOver');
+
+        console.log("🔍 Поиск элементов DOM:");
+        console.log("- gameOverScreen найден:", !!gameOverScreen);
+
+        // Основная информация
         document.getElementById('finalScore').textContent = this.score;
         document.getElementById('finalLevel').textContent = this.level;
+
+        // Пересчитываем лидера
+        this.calculateLevelLeader();
+
+        // Если лидера нет (игрок сам уничтожил базу), создаем "почетного лидера"
+        if (!this.levelLeader) {
+            this.findHonoraryLeader();
+        }
+
+        // Показываем статистику в Game Over
+        this.showGameOverLeaderStats();
+
+        // ПРИНУДИТЕЛЬНО ПОКАЗЫВАЕМ СТАТИСТИКУ
+        setTimeout(() => {
+            this.forceShowGameOverStats();
+        }, 100);
+
         gameOverScreen.style.display = 'block';
-        this.soundManager.stopLoop('engineIdle');
-        this.soundManager.stopLoop('engineMoving');
+
+        // Останавливаем звуки
+        if (this.soundManager) {
+            this.soundManager.stopLoop('engineIdle');
+            this.soundManager.stopLoop('engineMoving');
+        }
+
+        console.log("🎮 ===== ЗАВЕРШЕНИЕ showGameOver =====");
+    }
+
+    // ДОБАВИМ ВРЕМЕННЫЙ МЕТОД ДЛЯ ПРОВЕРКИ И ПРИНУДИТЕЛЬНОГО ПОКАЗА:
+    forceShowGameOverStats() {
+        const leaderStats = document.getElementById('gameOverLeaderStats');
+        if (!leaderStats) {
+            console.error("❌ gameOverLeaderStats не найден!");
+            return;
+        }
+
+        console.log("🔧 ПРИНУДИТЕЛЬНЫЙ ПОКАЗ ЭЛЕМЕНТА:");
+
+        // Полностью сбрасываем стили
+        leaderStats.style.cssText = `
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        position: relative !important;
+        z-index: 1000 !important;
+        `;
+
+        // Также пробуем добавить класс
+        leaderStats.classList.add('force-visible');
+
+        console.log("✅ Принудительные стили применены");
+
+        // Проверяем результат
+        setTimeout(() => {
+            const computedStyle = window.getComputedStyle(leaderStats);
+            console.log("📋 РЕЗУЛЬТАТ ПРИНУДИТЕЛЬНОГО ПОКАЗА:");
+            console.log("- display:", computedStyle.display);
+            console.log("- visibility:", computedStyle.visibility);
+            console.log("- opacity:", computedStyle.opacity);
+            console.log("- height:", computedStyle.height);
+        }, 50);
+    }
+
+    // СОЗДАЕМ ОТДЕЛЬНЫЙ HTML ДЛЯ GAME OVER
+    // В методе generateGameOverLeaderStatsHTML ОБНОВИТЕ часть с обычным лидером:
+    generateGameOverLeaderStatsHTML(leader) {
+        if (console.log("🔍 generateGameOverLeaderStatsHTML вызван с:", leader), !leader)
+            return console.error("❌ leader is null или undefined!"), "<div>Ошибка: лидер не определён</div>";
+        if (!leader.enemy || !leader.stats)
+            return console.error("❌ Неправильная структура leader:", leader), "<div>Ошибка: неправильная структура данных лидера</div>";
+
+        const tankIcon = {BASIC:"🔴", FAST:"🟡", HEAVY:"🟣", SNIPER:"🟢"}[leader.enemy.enemyType] || "⚫";
+
+        if (console.log("✅ Иконка выбрана:", tankIcon), leader.stats.baseDestroyed) {
+            console.log("💥 Отрисовываем разрушителя базы");
+            const html = `
+            <div class="leader-tank-info">
+            <div class="tank-icon-large">${tankIcon}</div>
+            <div class="tank-name">${leader.enemy.username}</div>
+            <div class="total-score" style="color: #ff4444;">💥 РАЗРУШИТЕЛЬ БАЗЫ!</div>
+            </div>
+            <div class="leader-stats-details">
+            <div class="stat-row">
+            <span class="stat-label">Выстрелов:</span>
+            <span class="stat-value">${leader.stats.shots}</span>
+            </div>
+            <div class="stat-row">
+            <span class="stat-label">Разрушенных стен:</span>
+            <span class="stat-value">${leader.stats.wallsDestroyed}</span>
+            </div>
+            <div class="stat-row">
+            <span class="stat-label">Убийств игрока:</span>
+            <span class="stat-value">${leader.stats.playerKills}</span>
+            </div>
+            <div class="stat-row">
+            <span class="stat-label">Достижение:</span>
+            <span class="stat-value" style="color: #ff4444;">💀 Уничтожил вашу базу</span>
+            </div>
+            </div>
+            `;
+            return console.log("✅ HTML разрушителя базы сгенерирован"), html;
+        }
+
+        console.log("🎯 Отрисовываем обычного лидера");
+        const html = `
+        <div class="leader-tank-info">
+        <div class="tank-icon-large">${tankIcon}</div>
+        <div class="tank-name">${leader.enemy.username}</div>
+        <div class="total-score">Общий счет: ${leader.stats.totalScore}</div>
+        </div>
+        <div class="leader-stats-details">
+        <div class="stat-row">
+        <span class="stat-label">Выстрелов:</span>
+        <span class="stat-value">${leader.stats.shots}</span>
+        </div>
+        <div class="stat-row">
+        <span class="stat-label">Разрушенных стен:</span>
+        <span class="stat-value">${leader.stats.wallsDestroyed}</span>
+        </div>
+        <div class="stat-row">
+        <span class="stat-label">Убийств игрока:</span>
+        <span class="stat-value">${leader.stats.playerKills}</span>
+        </div>
+        <!-- ДОБАВЛЯЕМ СТРОКУ ПРО РАЗРУШЕНИЕ БАЗЫ ДАЖЕ ДЛЯ ОБЫЧНОГО ЛИДЕРА -->
+        <div class="stat-row">
+        <span class="stat-label">Разрушений базы:</span>
+        <span class="stat-value">${leader.stats.baseDestroyed ? "1 ✅" : "0"}</span>
+        </div>
+        </div>
+        `;
+        return console.log("✅ HTML обычного лидера сгенерирован"), html;
+    }
+
+    // ОБНОВЛЯЕМ метод findHonoraryLeader:
+    findHonoraryLeader() {
+        console.log("🏅 Ищем почетного лидера среди текущих врагов...");
+
+        let bestEnemy = null;
+        let bestScore = -1;
+
+        // Проверяем текущих врагов на поле
+        this.enemyManager.enemies.forEach(enemy => {
+            if (!enemy.isDestroyed && enemy.levelStats) {
+                const score = enemy.levelStats.totalScore;
+                console.log(`🎯 ${enemy.username}: ${score} очков (выстрелы: ${enemy.levelStats.shots}, стены: ${enemy.levelStats.wallsDestroyed})`);
+
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestEnemy = {
+                        enemy: {
+                            username: enemy.username,
+                            enemyType: enemy.enemyType
+                        },
+                        stats: enemy.levelStats
+                    };
+                }
+            }
+        });
+
+        // Если нашли врага с активностью
+        if (bestEnemy && bestScore > 0) {
+            this.levelLeader = bestEnemy;
+            console.log(`🏅 Почетный лидер: ${bestEnemy.enemy.username} с ${bestScore} очками`);
+        } else if (this.enemyManager.enemies.length > 0) {
+            // Если все враги с нулевой активностью, выбираем случайного
+            const activeEnemies = this.enemyManager.enemies.filter(enemy => !enemy.isDestroyed);
+            if (activeEnemies.length > 0) {
+                const randomEnemy = activeEnemies[Math.floor(Math.random() * activeEnemies.length)];
+                this.levelLeader = {
+                    enemy: {
+                        username: randomEnemy.username,
+                        enemyType: randomEnemy.enemyType
+                    },
+                    stats: {
+                        shots: 0,
+                        wallsDestroyed: 0,
+                        playerKills: 0,
+                        baseDestroyed: false,
+                        totalScore: 0
+                    }
+                };
+                console.log(`🎲 Случайный лидер: ${randomEnemy.username} (все были пассивны)`);
+            }
+        } else {
+            console.log("❌ Нет врагов для выбора почетного лидера");
+            this.levelLeader = null;
+        }
+    }
+
+    // ДОБАВЛЯЕМ отдельный метод для Game Over (простой вариант)
+    showGameOverLeaderStats() {
+        console.log("🔍 showGameOverLeaderStats - НАЧАЛО");
+
+        const leaderContent = document.getElementById('gameOverLeaderContent');
+        const leaderStats = document.getElementById('gameOverLeaderStats');
+
+        console.log("📋 Параметры:");
+        console.log("- leaderContent:", leaderContent);
+        console.log("- leaderStats:", leaderStats);
+        console.log("- this.levelLeader:", this.levelLeader);
+
+        if (!leaderContent) {
+            console.error("❌ leaderContent не найден!");
+            return;
+        }
+
+        if (!leaderStats) {
+            console.error("❌ leaderStats не найден!");
+            return;
+        }
+
+        let htmlContent = "";
+
+        if (this.levelLeader) {
+            console.log("🎯 Есть лидер, генерируем HTML...");
+            htmlContent = this.generateGameOverLeaderStatsHTML(this.levelLeader);
+        } else {
+            console.log("❌ Лидера нет, показываем заглушку");
+            htmlContent = `
+            <div style="text-align: center; color: #bdc3c7; padding: 20px;">
+            <p>Ни один противник не проявил активности</p>
+            <p>😴 Все враги были пассивны в этом раунде</p>
+            </div>
+            `;
+        }
+
+        // ПРЯМАЯ ЗАПИСЬ В HTML
+        console.log("📝 Записываем HTML в leaderContent...");
+        console.log("HTML content:", htmlContent);
+
+        leaderContent.innerHTML = htmlContent;
+
+        // ПРОВЕРЯЕМ РЕЗУЛЬТАТ
+        console.log("✅ HTML записан. Проверяем результат:");
+        console.log("- leaderContent.innerHTML длина:", leaderContent.innerHTML.length);
+        console.log("- leaderContent.children:", leaderContent.children.length);
+
+        // ПОКАЗЫВАЕМ БЛОК
+        leaderStats.style.display = 'block';
+        console.log("🎪 leaderStats.display установлен в 'block'");
+
+        console.log("🔍 showGameOverLeaderStats - ЗАВЕРШЕНИЕ");
     }
 
     // ОБНОВЛЯЕМ метод nextLevel
@@ -2057,6 +2608,10 @@ class Game {
         this.savePlayerProgress();
 
         console.log(`➡️ Переход на уровень ${this.level + 1}`);
+
+        // ОЧИЩАЕМ ТРЕКЕР ТОЛЬКО ЗДЕСЬ, после расчета лидера
+        this.currentRoundEnemies.clear();
+        console.log("🗑️ Трекер раунда очищен при переходе на новый уровень");
 
         // Сохраняем координаты выхода для отладки
         if (exitX !== null && exitY !== null) {
@@ -2165,23 +2720,86 @@ class Game {
         this.player.activateShield(3000);
     }
 
-    // ОБНОВЛЯЕМ метод restartGame
+    // ОБНОВЛЯЕМ метод restartGame:
     restartGame() {
         if (confirm('Начать новую игру? Весь прогресс будет сброшен.')) {
+            try {
+                // ОЧИЩАЕМ ВСЮ СТАТИСТИКУ ПРЕДЫДУЩЕЙ ИГРЫ
+                this.clearAllLevelStats();
+
+                // Сбрасываем лидера
+                this.levelLeader = null;
+
+                // СКРЫВАЕМ ВСЕ ЭКРАНЫ КОРРЕКТНО
+                const levelComplete = document.getElementById('levelComplete');
+                const gameOver = document.getElementById('gameOver');
+
+                if (levelComplete) levelComplete.style.display = 'none';
+                if (gameOver) gameOver.style.display = 'none';
+
+                // Также скрываем статистические блоки отдельно
+                const levelLeaderStats = document.getElementById('levelLeaderStats');
+                const gameOverLeaderStats = document.getElementById('gameOverLeaderStats');
+
+                if (levelLeaderStats) levelLeaderStats.style.display = 'none';
+                if (gameOverLeaderStats) gameOverLeaderStats.style.display = 'none';
+
+            } catch (error) {
+                console.log("⚠️ Ошибка при скрытии элементов:", error);
+            }
+
+            // Сброс состояния игры
             this.resetPlayerProgress();
             this.level = 1;
             this.score = 0;
             this.lives = 3;
+            this.gameOver = false;
+            this.baseDestroyed = false;
+            this.showGameOverScreen = false;
+            this.levelComplete = false;
+            this.showLevelCompleteScreen = false;
 
-            // ИСПРАВЛЕНИЕ: Останавливаем только нужные звуки
+            // ✅ ОЧИЩАЕМ ТРЕКЕР
+            this.clearRoundTracker();
+
+            // Остановка звуков
             if (this.soundManager) {
                 this.soundManager.stopLoop('engineIdle');
                 this.soundManager.stopLoop('engineMoving');
-                // Другие звуки (выстрелы, взрывы) остаются
             }
 
+            // Перезапуск игры
             this.initLevel();
+
+            console.log("🔄 Игра перезапущена, вся статистика очищена");
         }
+    }
+
+    // ДОБАВЛЯЕМ новый метод для очистки всей статистики:
+    clearAllLevelStats() {
+        console.log("🗑️ Очищаем всю статистику предыдущей игры...");
+
+        // Очищаем статистику всех уровней
+        for (let i = 1; i <= 10; i++) {
+            const storageKey = `tankGame_level_${i}_stats`;
+            try {
+                localStorage.removeItem(storageKey);
+            } catch (error) {
+                console.error(`Ошибка очистки уровня ${i}:`, error);
+            }
+        }
+
+        // Очищаем лидеров уровней
+        for (let i = 1; i <= 10; i++) {
+            const levelKey = `level_${i}_leader`;
+            try {
+                localStorage.removeItem(levelKey);
+            } catch (error) {
+                console.error(`Ошибка очистки лидера уровня ${i}:`, error);
+            }
+        }
+
+        console.log("✅ Вся статистика предыдущей игры очищена");
     }
 
     updateUI() {

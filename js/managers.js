@@ -35,6 +35,9 @@ class EnemyManager {
         this.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
         this.showSpawnNotification();
 
+        // ✅ ИСПРАВЛЕНИЕ: УБИРАЕМ создание врага здесь
+        // Только планируем спавн, реальное создание будет в другом месте
+
         this.game.enemiesToSpawn--;
         this.game.updateUI();
 
@@ -42,15 +45,26 @@ class EnemyManager {
     }
 
     // ОБНОВЛЯЕМ метод completeSpawnAnimation
-    completeSpawnAnimation(spawnPoint) {
+    completeSpawnAnimation(position) {
         const enemyType = this.getRandomEnemyType();
-        const uniqueName = this.generateUniqueEnemyName(enemyType);
+        const username = this.generateUniqueEnemyName(enemyType);
+        const enemy = new Tank(position.x, position.y, "enemy", this.game.level, enemyType);
 
-        const enemy = new Tank(spawnPoint.x, spawnPoint.y, 'enemy', this.game.level, enemyType);
         enemy.direction = DIRECTIONS.DOWN;
-        enemy.username = uniqueName;
+        enemy.username = username;
 
-        // Замораживаем новый танк если активно остановка времени
+        // РЕГИСТРИРУЕМ ВРАГА В ТРЕКЕРЕ РАУНДА
+        if (this.game && this.game.currentRoundEnemies) {
+            this.game.currentRoundEnemies.set(username, {
+                enemy: enemy,
+                spawnTime: Date.now(),
+                                              destroyed: false,
+                                              destroyTime: null,
+                                              finalStats: null
+            });
+            console.log(`📝 Зарегистрирован враг в трекере: ${username}`);
+        }
+
         if (this.game.timeStopActive) {
             const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
             if (remainingTime > 0) {
@@ -59,9 +73,7 @@ class EnemyManager {
         }
 
         this.enemies.push(enemy);
-
-        // НОВОЕ: Сохраняем ссылку для статистики
-        console.log(`🎯 Создан враг ${uniqueName} со статистикой`);
+        console.log(`🎯 Создан враг ${username} со статистикой`);
     }
 
     getRandomEnemyType() {
@@ -205,13 +217,11 @@ class EnemyManager {
     clear() {
         this.enemies = [];
         this.spawnAnimations = [];
-        if (this.usedEnemyNames) {
-            this.usedEnemyNames.clear();
-        }
+        this.usedEnemyNames.clear();
         this.currentSpawnIndex = 0;
-
-        // НОВОЕ: Очищаем статистику
+        this.lastRespawnTime = Date.now();
         this.destroyedEnemiesStats = [];
+        console.log("🧹 EnemyManager очищен");
     }
 
 }

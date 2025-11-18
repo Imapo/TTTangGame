@@ -6,8 +6,8 @@ const CANVAS_WIDTH = 832;
 const CANVAS_HEIGHT = 832;
 const FPS = 60;
 const FRAME_TIME = 1000 / FPS;
-const MAX_ENEMIES_ON_SCREEN = 2;
-const TOTAL_ENEMIES_PER_LEVEL = 20;
+const MAX_ENEMIES_ON_SCREEN = 1;
+const TOTAL_ENEMIES_PER_LEVEL = 10;
 const RESPAWN_DELAY = 3000;
 const SPAWN_ANIMATION_DURATION = 3000;
 const PLAYER_SHIELD_DURATION = 5000;
@@ -166,7 +166,7 @@ const ENEMY_TYPES = {
         speed: 0.22,  // БЫЛО: 0.3 - УМЕНЬШЕНО
         health: 1,
         color: '#00FF00',
-        bulletSpeed: 7,
+        bulletSpeed: 15,
         reloadTime: 80
     }
 };
@@ -266,12 +266,12 @@ const DEBUG_COLORS = {
 
 // === СИСТЕМА СЛЕДОВ ГУСЕНИЦ И ПАМЯТИ ПУТИ ===
 const TRACK_SYSTEM = {
-    TRACK_LIFETIME: 180,        // Увеличим время жизни (3 секунды при 60 FPS)
-    TRACK_FADE_TIME: 60,        // Время затухания (1 секунда)
-    TRACK_SPACING: 6,           // Уменьшим расстояние между следами
+    TRACK_LIFETIME: 600,
+    TRACK_FADE_TIME: 60,
+    TRACK_SPACING: 10, // УВЕЛИЧИВАЕМ расстояние между следами (было 6)
     MEMORY_GRID_SIZE: 16,
     MEMORY_DECAY_TIME: 1000,
-    SHOW_TRACKS: false          // Добавим переключатель
+    SHOW_TRACKS: false
 };
 
 // === СИСТЕМА ВИЗУАЛИЗАЦИИ СЕТКИ ===

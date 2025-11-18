@@ -110,13 +110,15 @@ class Tank {
             };
         }
 
+        // Свойства для проблескового маячка
+        this.beaconRotation = 0;
+        this.beaconFlashTimer = 0;
+
         // НОВОЕ: Система следов и памяти пути (только для врагов с базовым ИИ)
-        if (type === 'enemy') {
-            this.tracks = []; // Массив следов гусениц
-            this.lastTrackPos = new Vector2(x, y);
-            this.pathMemory = new Map(); // Карта запомненных позиций
-            this.memoryTimer = 0;
-        }
+        this.tracks = []; // Массив следов гусениц
+        this.lastTrackPos = new Vector2(x, y);
+        this.pathMemory = new Map(); // Карта запомненных позиций
+        this.memoryTimer = 0;
 
         // ПЕРЕИМЕНОВАЛ: защита → атака
         this.isInBaseZone = false;
@@ -135,7 +137,7 @@ class Tank {
         const baseZone = game.getZoneId(basePos.x * TILE_SIZE + TILE_SIZE/2, basePos.y * TILE_SIZE + TILE_SIZE/2);
         const currentZone = game.getZoneId(this.position.x, this.position.y);
 
-        console.log(`🎯 ${this.username} в зоне [${currentZone.x},${currentZone.y}], база в [${baseZone.x},${baseZone.y}]`);
+        //console.log(`🎯 ${this.username} в зоне [${currentZone.x},${currentZone.y}], база в [${baseZone.x},${baseZone.y}]`);
 
         // Логика направлений как ты описал
         if (currentZone.y === 7) {
@@ -168,7 +170,7 @@ class Tank {
 
     // Метод для добавления следа гусениц
     addTrack() {
-        if (this.type !== 'enemy') return;
+        if (this.type !== 'player' && this.type !== 'enemy') return;
 
         const distance = Math.sqrt(
             Math.pow(this.position.x - this.lastTrackPos.x, 2) +
@@ -183,26 +185,28 @@ class Tank {
                 direction: this.direction,
                 lifetime: TRACK_SYSTEM.TRACK_LIFETIME,
                 alpha: 1.0,
-                initialLifetime: TRACK_SYSTEM.TRACK_LIFETIME // Сохраняем начальное время
+                initialLifetime: TRACK_SYSTEM.TRACK_LIFETIME,
+                isPlayer: this.type === 'player' // Добавляем флаг игрока
             });
             this.lastTrackPos = this.position.clone();
 
             // Ограничиваем количество следов
-            if (this.tracks.length > 40) {
+            if (this.tracks.length > 20) {
                 this.tracks.shift();
             }
         }
     }
 
-    // Метод для обновления следов
+    // ОБНОВЛЯЕМ метод updateTracks для игрока:
     updateTracks() {
-        if (this.type !== 'enemy') return;
+        // Теперь работает для всех типов танков
+        if (this.type !== 'player' && this.type !== 'enemy') return;
 
         for (let i = this.tracks.length - 1; i >= 0; i--) {
             this.tracks[i].lifetime--;
 
-            // ПЛАВНОЕ ИСЧЕЗНОВЕНИЕ - без резких изменений
-            this.tracks[i].alpha = this.tracks[i].lifetime / this.tracks[i].initialLifetime;
+            // Плавное исчезновение
+            this.tracks[i].alpha = Math.pow(this.tracks[i].lifetime / this.tracks[i].initialLifetime, 1.5);
 
             // Удаляем старые следы
             if (this.tracks[i].lifetime <= 0) {
@@ -263,13 +267,16 @@ class Tank {
         return 0;
     }
 
-    // Метод для отрисовки следов гусениц
+    // ОБНОВЛЯЕМ метод drawTracks для разных цветов:
     drawTracks(ctx) {
-        if (this.type !== 'enemy' || this.tracks.length === 0) return;
+        if ((this.type !== 'player' && this.type !== 'enemy') || this.tracks.length === 0) return;
 
         ctx.save();
 
         this.tracks.forEach(track => {
+            // Пропускаем очень прозрачные следы
+            if (track.alpha < 0.1) return;
+
             ctx.save();
             ctx.translate(track.x, track.y);
 
@@ -280,40 +287,28 @@ class Tank {
             else if (track.direction === DIRECTIONS.LEFT) angle = -Math.PI / 2;
             ctx.rotate(angle);
 
-            // Рисуем след гусеницы - более реалистичный
-            ctx.globalAlpha = track.alpha * 0.4; // Постоянная прозрачность
+            // Разная прозрачность для игрока и врагов
+            const baseAlpha = track.isPlayer ? 0.5 : 0.6;
+            ctx.globalAlpha = track.alpha * baseAlpha;
 
-            // Цвет следа - темно-серый как настоящая грязь
-            ctx.fillStyle = '#333333';
+            // РАЗНЫЙ ЦВЕТ для игрока и врагов
+            if (track.isPlayer) {
+                // Следы игрока - синеватый оттенок
+                ctx.fillStyle = '#4488FF'; // Синий для игрока
+            } else {
+                // Следы врагов - серый
+                ctx.fillStyle = '#666666'; // Серый для врагов
+            }
 
-            // Две параллельные линии - гусеницы (более тонкие)
+            // Размеры следов
             const trackWidth = this.size * 0.5;
-            const trackHeight = this.size * 0.08;
+            const trackHeight = this.size * 0.06;
             const spacing = this.size * 0.25;
 
             // Левая гусеница
             ctx.fillRect(-trackWidth/2, -spacing/2, trackWidth, trackHeight);
             // Правая гусеница
             ctx.fillRect(-trackWidth/2, spacing/2 - trackHeight, trackWidth, trackHeight);
-
-            // ТЕКСТУРА СЛЕДА - добавляем неровности
-            ctx.globalAlpha = track.alpha * 0.2;
-            ctx.fillStyle = '#555555';
-
-            // Случайные пятна на следах для реалистичности
-            for (let i = 0; i < 3; i++) {
-                const spotX = -trackWidth/2 + Math.random() * trackWidth;
-                const spotY = -spacing/2 + Math.random() * trackHeight;
-                const spotSize = 2 + Math.random() * 3;
-                ctx.fillRect(spotX, spotY, spotSize, spotSize);
-            }
-
-            for (let i = 0; i < 3; i++) {
-                const spotX = -trackWidth/2 + Math.random() * trackWidth;
-                const spotY = spacing/2 - trackHeight + Math.random() * trackHeight;
-                const spotSize = 2 + Math.random() * 3;
-                ctx.fillRect(spotX, spotY, spotSize, spotSize);
-            }
 
             ctx.restore();
         });
@@ -487,10 +482,17 @@ class Tank {
         }
     }
 
+    // В классе Tank ОБНОВЛЯЕМ метод recordBaseDestroyed:
     recordBaseDestroyed() {
         if (this.type === 'enemy' && this.levelStats) {
             this.levelStats.baseDestroyed = true;
             this.calculateTotalScore();
+            console.log(`💥 ${this.username} УНИЧТОЖИЛ БАЗУ! Очки: ${this.levelStats.totalScore}`);
+
+            // НЕМЕДЛЕННО сохраняем статистику
+            if (typeof game !== 'undefined') {
+                game.saveEnemyStatsToStorage(this);
+            }
         }
     }
 
@@ -526,18 +528,6 @@ class Tank {
         } else {
             this.ai = new EnemyAI(this);
         }
-    }
-
-    // НОВЫЙ МЕТОД: Определение уровня ИИ на основе уровня игры
-    setAILevel(gameLevel) {
-        if (gameLevel <= 5) {
-            this.aiLevel = ENEMY_AI_LEVELS.BASIC;
-        } else {
-            this.aiLevel = ENEMY_AI_LEVELS.ADVANCED;
-        }
-
-        // Переинициализируем ИИ
-        this.initAI();
     }
 
     // ИСПРАВЛЯЕМ метод canSeePlayer
@@ -797,7 +787,7 @@ class Tank {
                 // Только что вошел в зону базы - ВКЛЮЧАЕМ РЕЖИМ АТАКИ!
                 this.baseAttackMode = true;
                 this.baseZoneEntryTime = Date.now();
-                console.log(`💥 ${this.username} вошел в зону базы! РЕЖИМ АТАКИ!`);
+                //console.log(`💥 ${this.username} вошел в зону базы! РЕЖИМ АТАКИ!`);
             }
 
             if (!this.isInBaseZone && wasInBaseZone) {
@@ -806,9 +796,10 @@ class Tank {
                 console.log(`💥 ${this.username} вышел из зоны базы`);
             }
 
-            // Обновляем мигание лампочки
+            // Обновляем маячок при атаке базы
             if (this.baseAttackMode) {
-                this.redLightBlink++;
+                this.beaconRotation += 0.2; // Скорость вращения
+                this.beaconFlashTimer++;
             }
         }
 
@@ -817,26 +808,23 @@ class Tank {
             this.updatePatrolState();
         }
 
-        // НОВОЕ: Обновляем систему следов и памяти
-        if (this.type === 'enemy') {
+        // ОБНОВЛЯЕМ: система следов и памяти теперь для всех
+        if (this.type === 'player' || this.type === 'enemy') {
             this.updateTracks();
             this.memoryTimer++;
 
             // Добавляем следы каждые несколько кадров
             if (this.memoryTimer % 3 === 0) {
                 this.addTrack();
-                this.rememberPosition();
+                if (this.type === 'enemy') {
+                    this.rememberPosition(); // Память пути только для врагов
+                }
             }
         }
 
         // ОБНОВЛЯЕМ ПЕРВЫМ: систему патрулирования для врагов с базовым ИИ
         if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
             this.updatePatrolState();
-        }
-
-        // ОБНОВЛЯЕМ ИИ для врагов
-        if (this.type === 'enemy' && typeof game !== 'undefined') {
-            this.setAILevel(game.level);
         }
 
         // Обновляем эффект заморозки
@@ -1299,8 +1287,30 @@ class Tank {
         const bulletX = this.position.x + offset.x;
         const bulletY = this.position.y + offset.y;
 
-        const bullet = new Bullet(bulletX, bulletY, direction, this.type, this,
-                                  this.hasAutoAim, nearestEnemy, this.bulletPower);
+        // ОПРЕДЕЛЯЕМ СКОРОСТЬ ПУЛИ В ЗАВИСИМОСТИ ОТ ТИПА
+        let bulletSpeed;
+        if (this.type === 'player') {
+            // Для игрока используем стандартную скорость или можно добавить улучшение
+            bulletSpeed = 7; // или this.upgrade.bulletSpeed если есть такое улучшение
+        } else {
+            // Для врагов используем скорость из ENEMY_TYPES
+            bulletSpeed = ENEMY_TYPES[this.enemyType].bulletSpeed;
+        }
+
+        // ПЕРЕДАЕМ СКОРОСТЬ ПУЛИ В КОНСТРУКТОР
+        const bullet = new Bullet(
+            bulletX,
+            bulletY,
+            direction,
+            this.type,
+            this,
+            this.hasAutoAim,
+            nearestEnemy,
+            this.bulletPower,
+            bulletSpeed  // ДОБАВЛЕНО: передаем скорость пули
+        );
+
+        console.log(`🔫 Bullet created for ${this.type}, speed param: ${bulletSpeed}`);
 
         if (this.type === 'enemy' && typeof game !== 'undefined') {
             game.soundManager.playEnemyShot(this.enemyType);
@@ -1401,32 +1411,11 @@ class Tank {
         // Отрисовка башни - может поворачиваться независимо при осмотре
         this.drawTurret(ctx, this.patrolState === 'LOOKING_AROUND' ? this.lookAroundDirection : this.direction);
 
-        // НОВОЕ: Мигающая красная лампочка при защите базы
-        // В методе draw добавь более заметную индикацию:
-        if (this.baseAttackMode) {
-            const blinkVisible = Math.floor(this.redLightBlink / 8) % 2 === 0;
-            if (blinkVisible) {
-                // Большая красная лампочка АТАКИ
-                ctx.fillStyle = '#FF0000';
-                ctx.beginPath();
-                ctx.arc(this.size/2 - 8, -this.size/2 + 8, 6, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Яркое свечение
-                ctx.shadowColor = '#FF0000';
-                ctx.shadowBlur = 15;
-                ctx.fill();
-                ctx.shadowBlur = 0;
-
-                // Текст "АТАКА" вместо "ЗАЩИТА"
-                ctx.fillStyle = '#FF0000';
-                ctx.font = 'bold 10px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('АТАКА', 0, -this.size/2 - 10);
-            }
-        }
-
         ctx.restore();
+
+        if (this.baseAttackMode) {
+            this.drawBeacon(ctx);
+        }
 
         // Рисуем щит поверх танка
         if (this.shield) {
@@ -1473,55 +1462,70 @@ class Tank {
         }
     }
 
-    // ОБНОВЛЯЕМ метод отрисовки башни
-    drawTurret(ctx, direction) {
-        const turretRadius = this.size / 3;
-
-        // Поворачиваем башню в нужном направлении
-        let turretAngle = 0;
-        if (direction === DIRECTIONS.RIGHT) turretAngle = Math.PI / 2;
-        else if (direction === DIRECTIONS.DOWN) turretAngle = Math.PI;
-        else if (direction === DIRECTIONS.LEFT) turretAngle = -Math.PI / 2;
-
+    // НОВЫЙ МЕТОД: Отрисовка проблескового маячка
+    drawBeacon(ctx) {
         ctx.save();
-        ctx.rotate(turretAngle);
+        ctx.translate(this.position.x, this.position.y);
 
-        // Основная башня
-        ctx.fillStyle = this.type === 'player' ? this.getDarkColor(this.color) : '#AA3333';
-        ctx.beginPath();
-        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
-        ctx.fill();
+        // Вращение маячка
+        ctx.rotate(this.beaconRotation);
 
-        // Обводка башни
-        ctx.strokeStyle = '#000';
+        const flashVisible = Math.floor(this.beaconFlashTimer / 8) % 2 === 0;
+
+        if (flashVisible) {
+            // Основание маячка
+            ctx.fillStyle = '#FF0000';
+            ctx.beginPath();
+            ctx.arc(0, 0, 8, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Яркое свечение
+            ctx.shadowColor = '#FF0000';
+            ctx.shadowBlur = 15;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Полоски на маячке (для эффекта вращения)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(-6, -1, 12, 2);
+            ctx.fillRect(-1, -6, 2, 12);
+
+            // Внешнее кольцо
+            ctx.strokeStyle = '#FF4444';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 10, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Вспомогательные элементы (всегда видны)
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
         ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, 0, Math.PI * 2);
         ctx.stroke();
 
-        // Детали на башне (люк)
-        ctx.fillStyle = '#2C3E50';
-        ctx.beginPath();
-        ctx.arc(0, 0, turretRadius / 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Блики на башне для объема
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.beginPath();
-        ctx.arc(-turretRadius/3, -turretRadius/3, turretRadius/4, 0, Math.PI * 2);
-        ctx.fill();
-
         ctx.restore();
 
-        // Дуло (рисуем в направлении башни)
-        ctx.save();
-        ctx.rotate(turretAngle);
+        // Дополнительный эффект - пульсирующий круг вокруг танка
+        if (flashVisible) {
+            ctx.save();
+            ctx.translate(this.position.x, this.position.y);
 
-        const barrelWidth = this.size * (this.type === 'player' ? 0.15 + (this.playerLevel * 0.015) : 0.2);
-        const barrelLength = this.size * 0.8;
+            const pulse = (Math.sin(this.beaconFlashTimer * 0.2) + 1) * 0.1;
 
-        ctx.fillStyle = '#333';
-        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+            // Пульсирующее свечение
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size * 1.2);
+            gradient.addColorStop(0, 'rgba(255, 0, 0, 0.3)');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
 
-        ctx.restore();
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.size * 1.2 * (0.8 + pulse * 0.2), 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
     }
 
     // ОБНОВЛЯЕМ метод drawPatrolEffects:
@@ -1543,15 +1547,6 @@ class Tank {
                 break;
 
             case 'STOPPED':
-                // Мигающий красный круг при остановке
-                const blink = Math.floor(Date.now() / 500) % 2 === 0;
-                if (blink) {
-                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, this.size * 0.6, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
                 break;
 
             case 'MOVING':

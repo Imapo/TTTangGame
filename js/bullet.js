@@ -1,10 +1,10 @@
 // === КЛАСС ПУЛИ ===
 class Bullet {
-    constructor(x, y, direction, ownerType, shooter, hasAutoAim = false, target = null, power = 1) {
+    constructor(x, y, direction, ownerType, shooter, hasAutoAim = false, target = null, power = 1, speed = 1) {
         this.position = new Vector2(x, y);
         this.direction = direction;
         this.currentDirection = new Vector2(direction.x, direction.y);
-        this.speed = 7;
+        this.speed = speed; // ИСПРАВЛЕНО: Используем переданную скорость
         this.size = 4;
         this.active = true;
         this.owner = ownerType;
@@ -13,7 +13,7 @@ class Bullet {
         this.target = target;
         this.turnRate = 0.1;
 
-        // НОВОЕ: Мощность пули (для игрока)
+        // Мощность пули (для игрока)
         this.power = power;
 
         // Таймер задержки автонаведения
@@ -22,11 +22,11 @@ class Bullet {
         this.autoAimActive = false;
 
         this.trail = [];
-        this.maxTrailLength = 5;
+        this.maxTrailLength = 8 + Math.floor(this.speed / 2); // Зависит от скорости
     }
 
     update() {
-        // НОВОЕ: Обновляем таймер автонаведения
+        // Обновляем таймер автонаведения
         if (this.hasAutoAim && this.target && !this.target.isDestroyed && !this.autoAimActive) {
             this.autoAimTimer += 16; // Фиксированный шаг времени (примерно 60 FPS)
             if (this.autoAimTimer >= this.autoAimDelay) {
@@ -45,6 +45,12 @@ class Bullet {
         const directionVector = this.autoAimActive ? this.currentDirection :
         new Vector2(this.direction.x, this.direction.y);
         this.position = this.position.add(directionVector.multiply(this.speed));
+
+        // ОБНОВЛЯЕМ ТРЕЙЛ ДЛЯ ВИЗУАЛИЗАЦИИ СКОРОСТИ
+        this.trail.push({ x: this.position.x, y: this.position.y });
+        if (this.trail.length > this.maxTrailLength) {
+            this.trail.shift();
+        }
 
         // Проверка границ
         if (this.position.x < TILE_SIZE || this.position.x > CANVAS_WIDTH - TILE_SIZE ||
@@ -69,7 +75,7 @@ class Bullet {
         }
     }
 
-    // НОВЫЙ МЕТОД: Обновление автонаведения для пули
+    // МЕТОД: Обновление автонаведения для пули
     updateAutoAim() {
         const dx = this.target.position.x - this.position.x;
         const dy = this.target.position.y - this.position.y;
@@ -103,12 +109,41 @@ class Bullet {
         }
     }
 
-    // ОБНОВЛЯЕМ метод draw для отображения мощности пули
+    // Метод draw для отображения мощности пули
     draw(ctx) {
+        // ОТРИСОВКА ТРЕЙЛА (чем длиннее трейл - тем выше скорость)
+        if (this.trail.length > 1) {
+            ctx.strokeStyle = this.owner === 'player' ? 'rgba(255,255,0,0.3)' : 'rgba(255,0,0,0.3)';
+            ctx.lineWidth = this.size / 2;
+            ctx.beginPath();
+            ctx.moveTo(this.trail[0].x, this.trail[0].y);
+            for (let i = 1; i < this.trail.length; i++) {
+                ctx.lineTo(this.trail[i].x, this.trail[i].y);
+            }
+            ctx.stroke();
+        }
         // Размер пули зависит от мощности
         const bulletSize = this.size + (this.power - 1) * 2;
 
-        ctx.fillStyle = this.owner === 'player' ? '#FFFF00' : '#FF4444';
+        // ЦВЕТ ПУЛИ В ЗАВИСИМОСТИ ОТ СКОРОСТИ
+        if (this.owner === 'player') {
+            ctx.fillStyle = '#FFFFFF'; // желтый - игрок
+        } else {
+            // Для врагов - разный цвет в зависимости от скорости
+            if (this.speed >= 8) {
+                ctx.fillStyle = '#00FFFF'; // голубой - очень быстрые
+            } else if (this.speed >= 6) {
+                ctx.fillStyle = '#FF4444'; // красный - быстрые
+            } else if (this.speed >= 4) {
+                ctx.fillStyle = '#FF8800'; // оранжевый - средние
+            } else {
+                ctx.fillStyle = '#880000'; // темно-красный - медленные
+            }
+        }
+
+        ctx.beginPath();
+        ctx.arc(this.position.x, this.position.y, bulletSize / 2, 0, Math.PI * 2);
+        ctx.fill();
         ctx.beginPath();
         ctx.arc(this.position.x, this.position.y, bulletSize / 2, 0, Math.PI * 2);
         ctx.fill();
@@ -131,7 +166,7 @@ class Bullet {
             ctx.stroke();
         }
 
-        // НОВОЕ: Индикатор мощности для сильных пуль
+        // Индикатор мощности для сильных пуль
         if (this.power > 1) {
             ctx.strokeStyle = '#FFA500';
             ctx.lineWidth = 1;
