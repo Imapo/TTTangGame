@@ -1,4 +1,4 @@
-// КЛАСС ТЕЛЕПОРТА
+// КЛАСС ТЕЛЕПОРТА (ОПТИМИЗИРОВАННЫЙ)
 
 class Teleport {
     constructor(x, y, type = 'exit') {
@@ -14,45 +14,57 @@ class Teleport {
         this.closing = false;
         this.closeStartTime = 0;
 
+        // Кэширование цветов и вычислений
+        this.colors = this.type === 'exit' ?
+        { outer: '76, 175, 80', main: '76, 175, 80', core: '#4CAF50', dark: '#2E7D32' } :
+        { outer: '33, 150, 243', main: '33, 150, 243', core: '#2196F3', dark: '#1565C0' };
+
+        // Предварительные вычисления
+        this.particleCount = 12;
+        this.angleStep = (Math.PI * 2) / this.particleCount;
+
         // Частицы для эффекта
-        this.particles = [];
-        this.initParticles();
+        this.particles = this.initParticles();
     }
 
     // Инициализация частиц
     initParticles() {
-        this.particles = [];
-        const particleCount = 12;
+        const particles = [];
+        const baseRadius = this.radius * 0.7;
 
-        for (let i = 0; i < particleCount; i++) {
-            this.particles.push({
-                angle: (i / particleCount) * Math.PI * 2,
-                                radius: this.radius * 0.7,
-                                size: 3 + Math.random() * 3,
-                                speed: 0.5 + Math.random() * 0.5
+        for (let i = 0; i < this.particleCount; i++) {
+            particles.push({
+                angle: i * this.angleStep,
+                radius: baseRadius,
+                size: 3 + Math.random() * 3,
+                           speed: 0.5 + Math.random() * 0.5
             });
         }
+        return particles;
     }
 
     update() {
+        const currentTime = Date.now();
+
         if (this.closing) {
             // Анимация схлопывания
-            const elapsed = Date.now() - this.closeStartTime;
-            this.animationProgress = 1 - Math.min(elapsed / this.animationDuration, 1);
+            const elapsed = currentTime - this.closeStartTime;
+            this.animationProgress = Math.max(0, 1 - elapsed / this.animationDuration);
 
             if (this.animationProgress <= 0) {
                 this.active = false;
+                return;
             }
         } else {
-            // Пульсирующая анимация
-            const elapsed = Date.now() - this.startTime;
-            this.animationProgress = Math.sin((elapsed / 300) % (2 * Math.PI)) * 0.2 + 0.8;
+            // Пульсирующая анимация (оптимизированная формула)
+            const elapsed = (currentTime - this.startTime) / 300;
+            this.animationProgress = Math.sin(elapsed) * 0.2 + 0.8;
         }
 
-        // Обновляем частицы
-        this.particles.forEach(particle => {
-            particle.angle += particle.speed * 0.02;
-        });
+        // Обновляем частицы (оптимизированный цикл)
+        for (let i = 0; i < this.particles.length; i++) {
+            this.particles[i].angle += this.particles[i].speed * 0.02;
+        }
     }
 
     draw(ctx) {
@@ -61,97 +73,117 @@ class Teleport {
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        // Внешнее свечение
-        const outerGradient = ctx.createRadialGradient(0, 0, this.radius * 0.5, 0, 0, this.radius * 1.5);
-        if (this.type === 'exit') {
-            outerGradient.addColorStop(0, 'rgba(76, 175, 80, 0.3)');
-            outerGradient.addColorStop(1, 'rgba(76, 175, 80, 0)');
-        } else {
-            outerGradient.addColorStop(0, 'rgba(33, 150, 243, 0.3)');
-            outerGradient.addColorStop(1, 'rgba(33, 150, 243, 0)');
-        }
+        const progress = this.animationProgress;
+        const scaledRadius = this.radius * progress;
 
-        ctx.fillStyle = outerGradient;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 1.5 * this.animationProgress, 0, Math.PI * 2);
-        ctx.fill();
+        // Внешнее свечение
+        this.drawOuterGlow(ctx, scaledRadius);
 
         // Основной круг телепорта
-        const mainGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius);
-
-        if (this.type === 'exit') {
-            mainGradient.addColorStop(0, 'rgba(76, 175, 80, 0.9)');
-            mainGradient.addColorStop(0.6, 'rgba(76, 175, 80, 0.4)');
-            mainGradient.addColorStop(1, 'rgba(76, 175, 80, 0.1)');
-        } else {
-            mainGradient.addColorStop(0, 'rgba(33, 150, 243, 0.9)');
-            mainGradient.addColorStop(0.6, 'rgba(33, 150, 243, 0.4)');
-            mainGradient.addColorStop(1, 'rgba(33, 150, 243, 0.1)');
-        }
-
-        ctx.fillStyle = mainGradient;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * this.animationProgress, 0, Math.PI * 2);
-        ctx.fill();
+        this.drawMainCircle(ctx, scaledRadius);
 
         // Вращающиеся частицы
-        this.particles.forEach(particle => {
-            const x = Math.cos(particle.angle) * particle.radius * this.animationProgress;
-            const y = Math.sin(particle.angle) * particle.radius * this.animationProgress;
-
-            // Градиент для частиц
-            const particleGradient = ctx.createRadialGradient(x, y, 0, x, y, particle.size);
-            particleGradient.addColorStop(0, '#FFFFFF');
-            particleGradient.addColorStop(1, this.type === 'exit' ? '#4CAF50' : '#2196F3');
-
-            ctx.fillStyle = particleGradient;
-            ctx.beginPath();
-            ctx.arc(x, y, particle.size * this.animationProgress, 0, Math.PI * 2);
-            ctx.fill();
-        });
+        this.drawParticles(ctx, progress);
 
         // Внутреннее кольцо
-        ctx.strokeStyle = this.type === 'exit' ? '#4CAF50' : '#2196F3';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 0.4 * this.animationProgress, 0, Math.PI * 2);
-        ctx.stroke();
+        this.drawInnerRing(ctx, scaledRadius);
 
         // Центральное ядро
-        const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 8);
-        coreGradient.addColorStop(0, '#FFFFFF');
-        coreGradient.addColorStop(0.7, this.type === 'exit' ? '#4CAF50' : '#2196F3');
-        coreGradient.addColorStop(1, this.type === 'exit' ? '#2E7D32' : '#1565C0');
-
-        ctx.fillStyle = coreGradient;
-        ctx.beginPath();
-        ctx.arc(0, 0, 8 * this.animationProgress, 0, Math.PI * 2);
-        ctx.fill();
+        this.drawCore(ctx, progress);
 
         // Эффект искр в центре
+        this.drawSparks(ctx);
+
+        // Текст под телепортом
+        this.drawLabel(ctx);
+
+        ctx.restore();
+    }
+
+    drawOuterGlow(ctx, radius) {
+        const gradient = ctx.createRadialGradient(0, 0, radius * 0.33, 0, 0, radius * 1.5);
+        gradient.addColorStop(0, `rgba(${this.colors.outer}, 0.3)`);
+        gradient.addColorStop(1, `rgba(${this.colors.outer}, 0)`);
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    drawMainCircle(ctx, radius) {
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+        gradient.addColorStop(0, `rgba(${this.colors.main}, 0.9)`);
+        gradient.addColorStop(0.6, `rgba(${this.colors.main}, 0.4)`);
+        gradient.addColorStop(1, `rgba(${this.colors.main}, 0.1)`);
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    drawParticles(ctx, progress) {
+        for (let i = 0; i < this.particles.length; i++) {
+            const p = this.particles[i];
+            const x = Math.cos(p.angle) * p.radius * progress;
+            const y = Math.sin(p.angle) * p.radius * progress;
+
+            const gradient = ctx.createRadialGradient(x, y, 0, x, y, p.size);
+            gradient.addColorStop(0, '#FFFFFF');
+            gradient.addColorStop(1, this.colors.core);
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(x, y, p.size * progress, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    drawInnerRing(ctx, radius) {
+        ctx.strokeStyle = this.colors.core;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    drawCore(ctx, progress) {
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 8);
+        gradient.addColorStop(0, '#FFFFFF');
+        gradient.addColorStop(0.7, this.colors.core);
+        gradient.addColorStop(1, this.colors.dark);
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8 * progress, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    drawSparks(ctx) {
         const sparkTime = Date.now() / 100;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 1;
+
         for (let i = 0; i < 3; i++) {
             const sparkAngle = sparkTime + (i / 3) * Math.PI * 2;
             const sparkLength = 5 + Math.sin(sparkTime * 2) * 3;
             const sparkX = Math.cos(sparkAngle) * sparkLength;
             const sparkY = Math.sin(sparkAngle) * sparkLength;
 
-            ctx.strokeStyle = '#FFFFFF';
-            ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, 0);
             ctx.lineTo(sparkX, sparkY);
             ctx.stroke();
         }
+    }
 
-        // Текст под телепортом
+    drawLabel(ctx) {
         ctx.fillStyle = '#FFFFFF';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText(this.type === 'exit' ? 'ВЫХОД' : 'ВХОД', 0, this.radius + 10);
-
-        ctx.restore();
     }
 
     getBounds() {
@@ -176,34 +208,31 @@ class Teleport {
         const playerBounds = player.getBounds();
         const teleportBounds = this.getBounds();
 
-        // Проверка пересечения прямоугольников
-        const collision = (
-            playerBounds.x < teleportBounds.x + teleportBounds.width &&
+        // Проверка пересечения прямоугольников (AABB)
+        if (!(playerBounds.x < teleportBounds.x + teleportBounds.width &&
             playerBounds.x + playerBounds.width > teleportBounds.x &&
             playerBounds.y < teleportBounds.y + teleportBounds.height &&
-            playerBounds.y + playerBounds.height > teleportBounds.y
-        );
+            playerBounds.y + playerBounds.height > teleportBounds.y)) {
+            return false;
+            }
 
-        if (collision) {
             // Дополнительная проверка расстояния до центра
             const dx = player.position.x - this.position.x;
-            const dy = player.position.y - this.position.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            return distance < this.radius * 0.8;
-        }
+        const dy = player.position.y - this.position.y;
+        const distanceSquared = dx * dx + dy * dy;
 
-        return false;
+        return distanceSquared < (this.radius * 0.8) ** 2;
     }
 
     // Метод для активации эффекта при использовании
     activate() {
         // Создаем вспышку
-        if (window.game && window.game.effectManager) {
+        if (window.game?.effectManager) {
             window.game.effectManager.addExplosion(
                 this.position.x,
                 this.position.y,
                 'teleport',
-                this.type === 'exit' ? '#4CAF50' : '#2196F3'
+                this.colors.core
             );
         }
     }

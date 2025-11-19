@@ -4,7 +4,7 @@ class Bullet {
         this.position = new Vector2(x, y);
         this.direction = direction;
         this.currentDirection = new Vector2(direction.x, direction.y);
-        this.speed = speed; // ИСПРАВЛЕНО: Используем переданную скорость
+        this.speed = speed;
         this.size = 4;
         this.active = true;
         this.owner = ownerType;
@@ -12,41 +12,39 @@ class Bullet {
         this.hasAutoAim = hasAutoAim;
         this.target = target;
         this.turnRate = 0.1;
-
-        // Мощность пули (для игрока)
         this.power = power;
 
-        // Таймер задержки автонаведения
+        // Автонаведение
         this.autoAimDelay = 100;
         this.autoAimTimer = 0;
         this.autoAimActive = false;
 
+        // Трейл
         this.trail = [];
-        this.maxTrailLength = 8 + Math.floor(this.speed / 2); // Зависит от скорости
+        this.maxTrailLength = 8 + Math.floor(this.speed / 2);
     }
 
     update() {
-        // Обновляем таймер автонаведения
+        // Обновление автонаведения
         if (this.hasAutoAim && this.target && !this.target.isDestroyed && !this.autoAimActive) {
-            this.autoAimTimer += 16; // Фиксированный шаг времени (примерно 60 FPS)
+            this.autoAimTimer += 16;
             if (this.autoAimTimer >= this.autoAimDelay) {
-                this.autoAimActive = true; // Активируем автонаведение после задержки
-                this.adjustDirectionToTarget(); // Начальная корректировка направления
+                this.autoAimActive = true;
+                this.adjustDirectionToTarget();
             }
         }
 
-        // Автонаведение для пули - только после задержки
+        // Автонаведение после задержки
         if (this.autoAimActive && this.target && !this.target.isDestroyed) {
             this.updateAutoAim();
         }
 
-        // Используем currentDirection для движения (если автонаведение активно)
-        // Или обычное direction, если автонаведение еще не началось
+        // Движение
         const directionVector = this.autoAimActive ? this.currentDirection :
         new Vector2(this.direction.x, this.direction.y);
         this.position = this.position.add(directionVector.multiply(this.speed));
 
-        // ОБНОВЛЯЕМ ТРЕЙЛ ДЛЯ ВИЗУАЛИЗАЦИИ СКОРОСТИ
+        // Обновление трейла
         this.trail.push({ x: this.position.x, y: this.position.y });
         if (this.trail.length > this.maxTrailLength) {
             this.trail.shift();
@@ -65,7 +63,6 @@ class Bullet {
         const dx = this.target.position.x - this.position.x;
         const dy = this.target.position.y - this.position.y;
 
-        // Определяем направление к цели
         if (Math.abs(dx) > Math.abs(dy)) {
             this.direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
             this.currentDirection = new Vector2(dx > 0 ? 1 : -1, 0);
@@ -75,33 +72,26 @@ class Bullet {
         }
     }
 
-    // МЕТОД: Обновление автонаведения для пули
     updateAutoAim() {
         const dx = this.target.position.x - this.position.x;
         const dy = this.target.position.y - this.position.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance < 10) return; // Слишком близко - не корректируем
-
-        // Целевое направление
-        const targetDirection = new Vector2(dx / distance, dy / distance);
+        if (distance < 10) return;
 
         // Плавный поворот к цели
+        const targetDirection = new Vector2(dx / distance, dy / distance);
         this.currentDirection.x += (targetDirection.x - this.currentDirection.x) * this.turnRate;
         this.currentDirection.y += (targetDirection.y - this.currentDirection.y) * this.turnRate;
 
-        // Нормализуем направление
-        const currentLength = Math.sqrt(
-            this.currentDirection.x * this.currentDirection.x +
-            this.currentDirection.y * this.currentDirection.y
-        );
-
+        // Нормализация
+        const currentLength = Math.sqrt(this.currentDirection.x ** 2 + this.currentDirection.y ** 2);
         if (currentLength > 0) {
             this.currentDirection.x /= currentLength;
             this.currentDirection.y /= currentLength;
         }
 
-        // Обновляем основное направление для визуализации
+        // Обновление основного направления
         if (Math.abs(this.currentDirection.x) > Math.abs(this.currentDirection.y)) {
             this.direction = this.currentDirection.x > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
         } else {
@@ -109,9 +99,8 @@ class Bullet {
         }
     }
 
-    // Метод draw для отображения мощности пули
     draw(ctx) {
-        // ОТРИСОВКА ТРЕЙЛА (чем длиннее трейл - тем выше скорость)
+        // Отрисовка трейла
         if (this.trail.length > 1) {
             ctx.strokeStyle = this.owner === 'player' ? 'rgba(255,255,0,0.3)' : 'rgba(255,0,0,0.3)';
             ctx.lineWidth = this.size / 2;
@@ -122,28 +111,11 @@ class Bullet {
             }
             ctx.stroke();
         }
-        // Размер пули зависит от мощности
+
+        // Основная пуля
         const bulletSize = this.size + (this.power - 1) * 2;
+        ctx.fillStyle = this.getBulletColor();
 
-        // ЦВЕТ ПУЛИ В ЗАВИСИМОСТИ ОТ СКОРОСТИ
-        if (this.owner === 'player') {
-            ctx.fillStyle = '#FFFFFF'; // желтый - игрок
-        } else {
-            // Для врагов - разный цвет в зависимости от скорости
-            if (this.speed >= 8) {
-                ctx.fillStyle = '#00FFFF'; // голубой - очень быстрые
-            } else if (this.speed >= 6) {
-                ctx.fillStyle = '#FF4444'; // красный - быстрые
-            } else if (this.speed >= 4) {
-                ctx.fillStyle = '#FF8800'; // оранжевый - средние
-            } else {
-                ctx.fillStyle = '#880000'; // темно-красный - медленные
-            }
-        }
-
-        ctx.beginPath();
-        ctx.arc(this.position.x, this.position.y, bulletSize / 2, 0, Math.PI * 2);
-        ctx.fill();
         ctx.beginPath();
         ctx.arc(this.position.x, this.position.y, bulletSize / 2, 0, Math.PI * 2);
         ctx.fill();
@@ -152,6 +124,21 @@ class Bullet {
         ctx.lineWidth = 1;
         ctx.stroke();
 
+        // Индикаторы
+        this.drawIndicators(ctx, bulletSize);
+    }
+
+    getBulletColor() {
+        if (this.owner === 'player') return '#FFFFFF';
+
+        // Цвет вражеской пули в зависимости от скорости
+        if (this.speed >= 8) return '#00FFFF';
+        if (this.speed >= 6) return '#FF4444';
+        if (this.speed >= 4) return '#FF8800';
+        return '#880000';
+    }
+
+    drawIndicators(ctx, bulletSize) {
         // Индикатор автонаведения
         if (this.hasAutoAim) {
             if (this.autoAimActive) {
@@ -166,7 +153,7 @@ class Bullet {
             ctx.stroke();
         }
 
-        // Индикатор мощности для сильных пуль
+        // Индикатор мощности
         if (this.power > 1) {
             ctx.strokeStyle = '#FFA500';
             ctx.lineWidth = 1;
@@ -177,9 +164,10 @@ class Bullet {
     }
 
     getBounds() {
+        const halfSize = this.size / 2;
         return new Rectangle(
-            this.position.x - this.size/2,
-            this.position.y - this.size/2,
+            this.position.x - halfSize,
+            this.position.y - halfSize,
             this.size,
             this.size
         );

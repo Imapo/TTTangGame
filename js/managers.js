@@ -4,11 +4,9 @@ class EnemyManager {
         this.game = game;
         this.enemies = [];
         this.spawnAnimations = [];
-        this.usedEnemyNames = new Set(); // Убедитесь что эта строка есть
+        this.usedEnemyNames = new Set();
         this.currentSpawnIndex = 0;
         this.lastRespawnTime = Date.now();
-
-        // НОВОЕ: Храним статистику уничтоженных врагов
         this.destroyedEnemiesStats = [];
     }
 
@@ -16,9 +14,7 @@ class EnemyManager {
         const notification = document.getElementById('spawnNotification');
         if (notification) {
             notification.style.display = 'block';
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, 2000);
+            setTimeout(() => notification.style.display = 'none', 2000);
         }
     }
 
@@ -34,17 +30,12 @@ class EnemyManager {
         const spawnPoint = this.getNextSpawnPoint();
         this.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
         this.showSpawnNotification();
-
-        // ✅ ИСПРАВЛЕНИЕ: УБИРАЕМ создание врага здесь
-        // Только планируем спавн, реальное создание будет в другом месте
-
         this.game.enemiesToSpawn--;
         this.game.updateUI();
 
         return spawnPoint;
     }
 
-    // ОБНОВЛЯЕМ метод completeSpawnAnimation
     completeSpawnAnimation(position) {
         const enemyType = this.getRandomEnemyType();
         const username = this.generateUniqueEnemyName(enemyType);
@@ -53,8 +44,7 @@ class EnemyManager {
         enemy.direction = DIRECTIONS.DOWN;
         enemy.username = username;
 
-        // РЕГИСТРИРУЕМ ВРАГА В ТРЕКЕРЕ РАУНДА
-        if (this.game && this.game.currentRoundEnemies) {
+        if (this.game?.currentRoundEnemies) {
             this.game.currentRoundEnemies.set(username, {
                 enemy: enemy,
                 spawnTime: Date.now(),
@@ -62,18 +52,14 @@ class EnemyManager {
                                               destroyTime: null,
                                               finalStats: null
             });
-            console.log(`📝 Зарегистрирован враг в трекере: ${username}`);
         }
 
         if (this.game.timeStopActive) {
             const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
-            if (remainingTime > 0) {
-                enemy.freeze(remainingTime);
-            }
+            if (remainingTime > 0) enemy.freeze(remainingTime);
         }
 
         this.enemies.push(enemy);
-        console.log(`🎯 Создан враг ${username} со статистикой`);
     }
 
     getRandomEnemyType() {
@@ -82,9 +68,7 @@ class EnemyManager {
 
         for (const [type, config] of Object.entries(ENEMY_TYPES)) {
             cumulativeChance += config.chance;
-            if (random <= cumulativeChance) {
-                return type;
-            }
+            if (random <= cumulativeChance) return type;
         }
         return 'BASIC';
     }
@@ -104,8 +88,7 @@ class EnemyManager {
         }
 
         if (availableNames.length === 0) {
-            const uniqueName = `${names[0]} ${Date.now()}`;
-            availableNames.push(uniqueName);
+            availableNames.push(`${names[0]} ${Date.now()}`);
         }
 
         const selectedName = availableNames[Math.floor(Math.random() * availableNames.length)];
@@ -113,59 +96,37 @@ class EnemyManager {
         return selectedName;
     }
 
-    // ОБНОВЛЯЕМ метод update - сохраняем статистику уничтоженных врагов
     update() {
         const allTanks = [this.game.player, ...this.enemies];
         const allFragments = this.game.getAllFragments();
 
-        // Обновляем существующих врагов
         this.enemies.forEach(enemy => {
             enemy.update();
             enemy.updateEnemyAI(this.game.map, allTanks, allFragments, this.game.player);
         });
 
-        // НОВОЕ: Сохраняем статистику перед удалением уничтоженных врагов
-        const destroyedEnemies = this.enemies.filter(enemy => enemy.isDestroyed);
-        destroyedEnemies.forEach(enemy => {
-            if (enemy.levelStats && enemy.levelStats.totalScore > 0) {
-                console.log(`💾 Сохраняем статистику уничтоженного врага ${enemy.username}:`, enemy.levelStats);
+        // Сохраняем статистику уничтоженных врагов
+        this.enemies.filter(enemy => enemy.isDestroyed).forEach(enemy => {
+            if (enemy.levelStats?.totalScore > 0) {
                 this.destroyedEnemiesStats.push({
                     enemy: enemy,
-                    stats: {...enemy.levelStats} // копируем объект
+                    stats: {...enemy.levelStats}
                 });
             }
         });
 
-        // Удаляем уничтоженных врагов
         this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
-
-        // Обрабатываем столкновения между танками
         this.handleTankCollisions(allTanks);
     }
 
-    // НОВЫЙ МЕТОД: Получить всю статистику уровня (включая уничтоженных врагов)
     getAllEnemiesStats() {
-        const allStats = [];
+        const currentStats = this.enemies
+        .filter(enemy => enemy.levelStats)
+        .map(enemy => ({ enemy, stats: enemy.levelStats }));
 
-        // Добавляем текущих живых врагов
-        this.enemies.forEach(enemy => {
-            if (enemy.levelStats) {
-                allStats.push({
-                    enemy: enemy,
-                    stats: enemy.levelStats
-                });
-            }
-        });
-
-        // Добавляем уничтоженных врагов
-        allStats.push(...this.destroyedEnemiesStats);
-
-        console.log(`📊 Всего записей статистики: ${allStats.length} (${this.enemies.length} живых + ${this.destroyedEnemiesStats.length} уничтоженных)`);
-
-        return allStats;
+        return [...currentStats, ...this.destroyedEnemiesStats];
     }
 
-    // НОВЫЙ МЕТОД: Очистка статистики при новом уровне
     clearStats() {
         this.destroyedEnemiesStats = [];
     }
@@ -174,46 +135,42 @@ class EnemyManager {
         for (let i = 0; i < this.enemies.length; i++) {
             for (let j = i + 1; j < this.enemies.length; j++) {
                 if (this.enemies[i].getBounds().intersects(this.enemies[j].getBounds())) {
-                    this.enemies[i].resolveTankCollision(this.enemies[j]);
+                    this.enemies[i].resolveTankCollision?.(this.enemies[j]);
                 }
             }
 
-            if (!this.game.player.isDestroyed && this.enemies[i].getBounds().intersects(this.game.player.getBounds())) {
-                this.enemies[i].resolveTankCollision(this.game.player);
-            }
+            if (!this.game.player.isDestroyed &&
+                this.enemies[i].getBounds().intersects(this.game.player.getBounds())) {
+                this.enemies[i].resolveTankCollision?.(this.game.player);
+                }
         }
     }
 
     updateRespawns() {
-        const completedAnimations = [];
-        this.spawnAnimations.forEach((animation, index) => {
+        // Удаляем завершенные анимации и создаем врагов
+        this.spawnAnimations = this.spawnAnimations.filter((animation, index) => {
             animation.update(this.game.deltaTime);
             if (!animation.active) {
-                completedAnimations.push(index);
+                this.completeSpawnAnimation(animation.position);
+                return false;
             }
+            return true;
         });
 
-        completedAnimations.reverse().forEach(index => {
-            const spawnPoint = this.spawnAnimations[index].position;
-            this.completeSpawnAnimation(spawnPoint);
-            this.spawnAnimations.splice(index, 1);
-        });
-
+        // Спавним новых врагов при необходимости
         const totalEnemiesOnScreen = this.enemies.length + this.spawnAnimations.length;
-        if (totalEnemiesOnScreen < MAX_ENEMIES_ON_SCREEN &&
-            this.game.enemiesToSpawn > 0 &&
-            !this.game.levelComplete &&
-            !this.game.baseDestroyed) {
+        const canSpawn = totalEnemiesOnScreen < MAX_ENEMIES_ON_SCREEN &&
+        this.game.enemiesToSpawn > 0 &&
+        !this.game.levelComplete &&
+        !this.game.baseDestroyed &&
+        (Date.now() - this.lastRespawnTime >= RESPAWN_DELAY);
 
-            const timeSinceLastRespawn = Date.now() - this.lastRespawnTime;
-        if (timeSinceLastRespawn >= RESPAWN_DELAY) {
+        if (canSpawn) {
             this.spawnEnemy();
             this.lastRespawnTime = Date.now();
         }
-            }
     }
 
-    // ОБНОВЛЯЕМ метод clear
     clear() {
         this.enemies = [];
         this.spawnAnimations = [];
@@ -221,9 +178,7 @@ class EnemyManager {
         this.currentSpawnIndex = 0;
         this.lastRespawnTime = Date.now();
         this.destroyedEnemiesStats = [];
-        console.log("🧹 EnemyManager очищен");
     }
-
 }
 
 // === МЕНЕДЖЕР БОНУСОВ ===
@@ -238,37 +193,17 @@ class BonusManager {
 
         const position = this.findFreeBonusPosition();
         if (position) {
-            console.log(`🎁 Создаем бонус ${destroyedTank.bonusType.id} из танка ${destroyedTank.username}`);
-            // ИСПРАВЛЕНИЕ: Добавляем this.game как четвертый параметр
             this.bonuses.push(new Bonus(position.x, position.y, destroyedTank.bonusType, this.game));
         }
     }
 
-    applyTimeStopBonus() {
-        // Используем глобальную активацию остановки времени
-        this.game.activateTimeStop(this.type.duration);
-
-        // Визуальный эффект
-        this.createExplosionEffect();
-
-        // Тряска экрана
-        this.game.screenShake = 25;
-    }
-
     findFreeBonusPosition() {
-        const attempts = 30;
-
-        for (let i = 0; i < attempts; i++) {
+        for (let i = 0; i < 30; i++) {
             const x = Math.floor(Math.random() * (24 - 4) + 2) * TILE_SIZE + TILE_SIZE/2;
             const y = Math.floor(Math.random() * (24 - 8) + 4) * TILE_SIZE + TILE_SIZE/2;
 
             const position = new Vector2(x, y);
-            const bonusBounds = new Rectangle(
-                x - TILE_SIZE/2,
-                y - TILE_SIZE/2,
-                TILE_SIZE,
-                TILE_SIZE
-            );
+            const bonusBounds = new Rectangle(x - TILE_SIZE/2, y - TILE_SIZE/2, TILE_SIZE, TILE_SIZE);
 
             if (!this.game.map.checkCollision(bonusBounds) &&
                 !this.checkTankCollision(bonusBounds) &&
@@ -283,45 +218,29 @@ class BonusManager {
         if (!this.game.player.isDestroyed && bounds.intersects(this.game.player.getBounds())) {
             return true;
         }
-
-        for (const enemy of this.game.enemyManager.enemies) {
-            if (bounds.intersects(enemy.getBounds())) {
-                return true;
-            }
-        }
-        return false;
+        return this.game.enemyManager.enemies.some(enemy => bounds.intersects(enemy.getBounds()));
     }
 
     checkBonusCollision(position) {
-        for (const bonus of this.bonuses) {
+        return this.bonuses.some(bonus => {
             const distance = Math.sqrt(
                 Math.pow(bonus.position.x - position.x, 2) +
                 Math.pow(bonus.position.y - position.y, 2)
             );
-            if (distance < TILE_SIZE * 2) {
-                return true;
-            }
-        }
-        return false;
+            return distance < TILE_SIZE * 2;
+        });
     }
 
     update() {
-        for (let i = this.bonuses.length - 1; i >= 0; i--) {
-            const bonus = this.bonuses[i];
+        this.bonuses = this.bonuses.filter(bonus => {
+            if (!bonus.update()) return false;
 
-            if (!bonus.update()) {
-                this.bonuses.splice(i, 1);
-                continue;
-            }
-
-            // Проверка подбора игроком
-            if (!this.game.player.isDestroyed &&
-                bonus.getBounds().intersects(this.game.player.getBounds())) {
-                // ИСПРАВЛЕНИЕ: Убираем параметр game, так как он теперь передается в конструкторе
+            if (!this.game.player.isDestroyed && bonus.getBounds().intersects(this.game.player.getBounds())) {
                 bonus.applyBonus();
-            this.bonuses.splice(i, 1);
-                }
-        }
+                return false;
+            }
+            return true;
+        });
     }
 
     clear() {
@@ -335,7 +254,7 @@ class EffectManager {
         this.game = game;
         this.explosions = [];
         this.bulletExplosions = [];
-        this.timeWaves = []; // Добавляем массив для волн времени
+        this.timeWaves = [];
     }
 
     addExplosion(x, y, type = 'tank') {
@@ -347,52 +266,35 @@ class EffectManager {
     }
 
     addTimeWave(x, y, duration) {
-        console.log(`🌀 Создаем волну времени в (${x}, ${y})`);
         this.timeWaves.push(new TimeWave(x, y, duration));
     }
 
     update() {
-        // Обновляем взрывы
-        for (let i = this.explosions.length - 1; i >= 0; i--) {
-            this.explosions[i].update(this.game.deltaTime);
-            if (!this.explosions[i].active) {
-                this.explosions.splice(i, 1);
-            }
-        }
+        this.explosions = this.explosions.filter(explosion => {
+            explosion.update(this.game.deltaTime);
+            return explosion.active;
+        });
 
-        // Обновляем взрывы пуль
-        for (let i = this.bulletExplosions.length - 1; i >= 0; i--) {
-            this.bulletExplosions[i].update();
-            if (!this.bulletExplosions[i].active) {
-                this.bulletExplosions.splice(i, 1);
-            }
-        }
+        this.bulletExplosions = this.bulletExplosions.filter(explosion => {
+            explosion.update();
+            return explosion.active;
+        });
 
-        // Обновляем волны времени
-        for (let i = this.timeWaves.length - 1; i >= 0; i--) {
-            this.timeWaves[i].update();
-            if (!this.timeWaves[i].active) {
-                this.timeWaves.splice(i, 1);
-            }
-        }
+        this.timeWaves = this.timeWaves.filter(wave => {
+            wave.update();
+            return wave.active;
+        });
     }
 
     draw(ctx) {
-        // Затем взрывы пуль
         this.bulletExplosions.forEach(explosion => explosion.draw(ctx));
-
-        // Затем основные взрывы
         this.explosions.forEach(explosion => explosion.draw(ctx));
-
-        // ВОЛНЫ ВРЕМЕНИ РИСУЕМ ПОСЛЕДНИМИ - ПОВЕРХ ВСЕГО
-        this.timeWaves.forEach(wave => {
-            wave.draw(ctx);
-        });
+        this.timeWaves.forEach(wave => wave.draw(ctx));
     }
 
     clear() {
         this.explosions = [];
         this.bulletExplosions = [];
-        this.timeWaves = []; // Очищаем и волны времени
+        this.timeWaves = [];
     }
 }

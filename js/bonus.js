@@ -1,4 +1,4 @@
-// === СИСТЕМА БОНУСОВ ===
+// === ОПТИМИЗИРОВАННАЯ СИСТЕМА БОНУСОВ ===
 
 class Bonus {
     constructor(x, y, type, game) {
@@ -11,9 +11,24 @@ class Bonus {
         this.blinkTimer = 0;
         this.animationPhase = 0;
         this.pulsePhase = 0;
-        this.game = game; // Сохраняем ссылку на game
+        this.game = game;
 
-        console.log(`🎁 Создан бонус ${type.id} в (${Math.round(x)}, ${Math.round(y)})`);
+        // Предварительные вычисления
+        this.halfSize = this.size / 2;
+        this.bounds = new Rectangle(
+            this.position.x - this.halfSize,
+            this.position.y - this.halfSize,
+            this.size,
+            this.size
+        );
+
+        // Кэширование конфигурации отрисовки
+        this.drawConfig = {
+            borderRadius: 5,
+            fontSize: 18,
+            timerHeight: 3,
+            timerMargin: 2
+        };
     }
 
     update() {
@@ -22,7 +37,6 @@ class Bonus {
         const elapsed = Date.now() - this.spawnTime;
         if (elapsed >= this.lifetime) {
             this.active = false;
-            console.log(`⏰ Бонус ${this.type.id} исчез по времени`);
             return false;
         }
 
@@ -38,97 +52,110 @@ class Bonus {
 
         const timeLeft = this.lifetime - (Date.now() - this.spawnTime);
 
-        // Мигание перед исчезновением (последние 3 секунды)
-        const shouldDraw = timeLeft > 3000 || Math.floor(this.blinkTimer / 10) % 2 === 0;
-        if (!shouldDraw) return;
+        // Быстрая проверка мигания
+        if (timeLeft <= 3000 && Math.floor(this.blinkTimer / 10) % 2 === 0) {
+            return;
+        }
 
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        // Плавающая анимация
+        // Анимации
         const floatOffset = Math.sin(this.animationPhase) * 3;
+        const pulseScale = 1 + Math.sin(this.pulsePhase) * 0.1;
+        const scaledSize = this.size * pulseScale;
+        const scaledHalfSize = scaledSize / 2;
+
         ctx.translate(0, floatOffset);
 
-        // Пульсирующий размер
-        const pulseScale = 1 + Math.sin(this.pulsePhase) * 0.1;
-
-        // Фон бонуса (закругленный)
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-        ctx.beginPath();
-        ctx.roundRect(-this.size/2 * pulseScale, -this.size/2 * pulseScale, this.size * pulseScale, this.size * pulseScale, 5);
-        ctx.fill();
+        // Фон бонуса
+        this.drawBackground(ctx, scaledSize, scaledHalfSize);
 
         // Светящаяся рамка
-        const glowIntensity = 0.5 + Math.sin(this.pulsePhase * 2) * 0.3;
-        ctx.strokeStyle = this.type.color;
-        ctx.lineWidth = 3;
-        ctx.shadowColor = this.type.color;
-        ctx.shadowBlur = 15 * glowIntensity;
-        ctx.beginPath();
-        ctx.roundRect(-this.size/2 * pulseScale, -this.size/2 * pulseScale, this.size * pulseScale, this.size * pulseScale, 5);
-        ctx.stroke();
+        this.drawGlow(ctx, scaledSize, scaledHalfSize, pulseScale);
 
-        // Сброс тени
-        ctx.shadowBlur = 0;
+        // Символ бонуса
+        this.drawSymbol(ctx, pulseScale);
 
-        // Символ бонуса (тоже пульсирует)
-        ctx.fillStyle = this.type.color;
-        ctx.font = `bold ${Math.floor(18 * pulseScale)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(this.type.symbol, 0, 0);
-
-        // Таймер исчезновения (полоска внизу)
+        // Таймер исчезновения
         if (timeLeft < 5000) {
-            const progress = timeLeft / 5000;
-            ctx.fillStyle = progress > 0.3 ? '#FFD700' : '#FF4444';
-            ctx.fillRect(
-                -this.size/2 + 2,
-                this.size/2 - 4,
-                (this.size - 4) * progress,
-                         3
-            );
+            this.drawTimer(ctx, scaledSize, timeLeft);
         }
 
         ctx.restore();
     }
 
-    getBounds() {
-        return new Rectangle(
-            this.position.x - this.size/2,
-            this.position.y - this.size/2,
-            this.size,
-            this.size
+    drawBackground(ctx, scaledSize, scaledHalfSize) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.beginPath();
+        ctx.roundRect(-scaledHalfSize, -scaledHalfSize, scaledSize, scaledSize, this.drawConfig.borderRadius);
+        ctx.fill();
+    }
+
+    drawGlow(ctx, scaledSize, scaledHalfSize, pulseScale) {
+        const glowIntensity = 0.5 + Math.sin(this.pulsePhase * 2) * 0.3;
+
+        ctx.strokeStyle = this.type.color;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = this.type.color;
+        ctx.shadowBlur = 15 * glowIntensity;
+
+        ctx.beginPath();
+        ctx.roundRect(-scaledHalfSize, -scaledHalfSize, scaledSize, scaledSize, this.drawConfig.borderRadius);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+    }
+
+    drawSymbol(ctx, pulseScale) {
+        ctx.fillStyle = this.type.color;
+        ctx.font = `bold ${Math.floor(this.drawConfig.fontSize * pulseScale)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.type.symbol, 0, 0);
+    }
+
+    drawTimer(ctx, scaledSize, timeLeft) {
+        const progress = timeLeft / 5000;
+        ctx.fillStyle = progress > 0.3 ? '#FFD700' : '#FF4444';
+
+        const timerWidth = (scaledSize - this.drawConfig.timerMargin * 2) * progress;
+        ctx.fillRect(
+            -scaledSize/2 + this.drawConfig.timerMargin,
+            scaledSize/2 - this.drawConfig.timerHeight - 1,
+            timerWidth,
+            this.drawConfig.timerHeight
         );
     }
 
+    getBounds() {
+        // Обновляем bounds на случай изменения позиции
+        this.bounds.x = this.position.x - this.halfSize;
+        this.bounds.y = this.position.y - this.halfSize;
+        return this.bounds;
+    }
+
     applyBonus() {
-        console.log(`Подобран бонус: ${this.type.id}`);
+        if (!this.active) return;
 
-        switch(this.type.id) {
-            case 'LIFE':
-                this.applyLifeBonus();
-                break;
-            case 'SHIELD':
-                this.applyShieldBonus();
-                break;
-            case 'FORTIFY':
-                this.applyFortifyBonus();
-                break;
-            case 'AUTO_AIM':
-                this.applyAutoAimBonus();
-                break;
-            case 'TIME_STOP':
-                this.applyTimeStopBonus();
-                break;
-            default:
-                console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
+        // Используем lookup table для применения бонусов
+        const bonusActions = {
+            'LIFE': () => this.applyLifeBonus(),
+            'SHIELD': () => this.applyShieldBonus(),
+            'FORTIFY': () => this.applyFortifyBonus(),
+            'AUTO_AIM': () => this.applyAutoAimBonus(),
+            'TIME_STOP': () => this.applyTimeStopBonus()
+        };
+
+        const action = bonusActions[this.type.id];
+        if (action) {
+            action();
+        } else {
+            console.warn(`Неизвестный тип бонуса: ${this.type.id}`);
         }
 
-        // Воспроизводим звук бонуса
-        if (this.game.soundManager) {
-            this.game.soundManager.play(this.type.sound || 'bonusPickup');
-        }
+        // Воспроизводим звук
+        this.playBonusSound();
     }
 
     applyLifeBonus() {
@@ -136,18 +163,13 @@ class Bonus {
         if (this.game.updateUI) {
             this.game.updateUI();
         }
-
         this.createExplosionEffect();
     }
 
     applyShieldBonus() {
         if (!this.game.player.isDestroyed) {
-            this.game.player.activateShield(10000); // 10 секунд
-
-            // Визуальный эффект
+            this.game.player.activateShield(10000);
             this.createExplosionEffect();
-
-            // Тряска экрана
             this.game.screenShake = 15;
         }
     }
@@ -157,47 +179,47 @@ class Bonus {
             this.game.fortifyBase(this.type.duration);
         }
 
-        // Визуальный эффект вокруг базы
         const baseX = Math.floor(this.game.map.width / 2) * TILE_SIZE + TILE_SIZE/2;
         const baseY = (this.game.map.height - 2) * TILE_SIZE + TILE_SIZE/2;
 
         this.createExplosionEffect(baseX, baseY);
-
-        // Сильная тряска для важного бонуса
         this.game.screenShake = 20;
     }
 
     applyAutoAimBonus() {
         if (!this.game.player.isDestroyed) {
             this.game.player.activateAutoAim(this.type.duration);
-
-            // Визуальный эффект
             this.createExplosionEffect();
-
-            // Тряска экрана
             this.game.screenShake = 10;
         }
     }
 
     applyTimeStopBonus() {
-        this.game.activateTimeStop(); // Без параметров, используем дефолтную длительность
+        this.game.activateTimeStop();
         this.createExplosionEffect();
         this.game.screenShake = 20;
-        console.log('⏰ Подобран бонус остановки времени');
     }
 
-    createTimeWave() {
-        if (this.game.effectManager) {
-            this.game.effectManager.addTimeWave(this.position.x, this.position.y, this.type.duration);
+    playBonusSound() {
+        if (this.game.soundManager) {
+            this.game.soundManager.play(this.type.sound || 'bonusPickup');
         }
     }
 
     createExplosionEffect(x = this.position.x, y = this.position.y) {
-        // Проверяем, существует ли массив explosions и функция Explosion
-        if (this.game.explosions && typeof Explosion !== 'undefined') {
+        // Быстрая проверка доступности системы эффектов
+        if (this.game.explosions && typeof Explosion === 'function') {
             this.game.explosions.push(new Explosion(x, y, 'bonus'));
-        } else {
-            console.warn('Не удалось создать эффект взрыва: explosions массив или Explosion класс недоступны');
         }
+    }
+
+    // Метод для быстрой деактивации
+    deactivate() {
+        this.active = false;
+    }
+
+    // Метод для проверки времени жизни без полного обновления
+    isExpired() {
+        return Date.now() - this.spawnTime >= this.lifetime;
     }
 }

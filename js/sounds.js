@@ -1,103 +1,136 @@
 class SoundManager {
     constructor() {
-        this.sounds = {};
+        this.sounds = new Map();
         this.muted = false;
         this.engineLoop = null;
+
+        // Предзагрузка ключевых звуков
+        this.criticalSounds = [
+            'engineIdle', 'engineMoving', 'clockTick'
+        ];
+
         this.init();
     }
 
     init() {
-        // Загружаем все звуки БЕЗ timeStop
-        this.sounds = {
-            tankExplosion: this.createSound('sounds/tank_explosion.wav'),
-            baseExplosion: this.createSound('sounds/base_explosion.wav'),
-            bulletHit: this.createSound('sounds/bullet_hit.wav'),
-            bulletCollision: this.createSound('sounds/bullet_collision.wav'),
-            brickHit: this.createSound('sounds/brick_hit.wav'),
-            brickDestroy: this.createSound('sounds/brick_destroy.wav'),
-            enemyShot: this.createSound('sounds/enemy_shot.wav'),
-            playerShot: this.createSound('sounds/player_shot.wav'),
-            engineIdle: this.createSound('sounds/engine_idle.wav', true),
-            engineMoving: this.createSound('sounds/engine_moving.wav', true),
+        // Конфигурация звуков
+        const soundConfig = [
+            // Основные звуки
+            { name: 'tankExplosion', src: 'sounds/tank_explosion.wav', volume: 0.6 },
+            { name: 'baseExplosion', src: 'sounds/base_explosion.wav', volume: 0.7 },
+            { name: 'bulletHit', src: 'sounds/bullet_hit.wav' },
+            { name: 'bulletCollision', src: 'sounds/bullet_collision.wav' },
+            { name: 'brickHit', src: 'sounds/brick_hit.wav' },
+            { name: 'brickDestroy', src: 'sounds/brick_destroy.wav' },
+            { name: 'enemyShot', src: 'sounds/enemy_shot.wav' },
+            { name: 'playerShot', src: 'sounds/player_shot.wav' },
 
-            // Звуки для типов танков
-            fastTankShot: this.createSound('sounds/fast_tank_shot.wav'),
-            heavyTankShot: this.createSound('sounds/heavy_tank_shot.wav'),
-            sniperShot: this.createSound('sounds/sniper_tank_shot.wav'),
-            heavyTankHit: this.createSound('sounds/battle_city_bullet_armor.wav'),
+            // Звуки двигателя (loop)
+            { name: 'engineIdle', src: 'sounds/engine_idle.wav', loop: true, volume: 0.3 },
+            { name: 'engineMoving', src: 'sounds/engine_moving.wav', loop: true, volume: 0.4 },
 
-            // ЗВУКИ БОНУСОВ
-            bonusPickup: this.createSound('sounds/star_bonus.wav'),
-            lifeBonus: this.createSound('sounds/star_bonus.wav'),
+            // Звуки танков
+            { name: 'fastTankShot', src: 'sounds/fast_tank_shot.wav' },
+            { name: 'heavyTankShot', src: 'sounds/heavy_tank_shot.wav' },
+            { name: 'sniperShot', src: 'sounds/sniper_tank_shot.wav' },
+            { name: 'heavyTankHit', src: 'sounds/battle_city_bullet_armor.wav' },
 
-            // ТОЛЬКО необходимые звуки для остановки времени
-            clockTick: this.createSound('sounds/clock_tick.wav', true),
-            freezeEffect: this.createSound('sounds/freeze_effect.wav'),
-            timeResume: this.createSound('sounds/time_resume.wav')
-        };
+            // Бонусы
+            { name: 'bonusPickup', src: 'sounds/star_bonus.wav' },
+            { name: 'lifeBonus', src: 'sounds/star_bonus.wav' },
 
-        // Настройка громкости
-        this.sounds.engineIdle.volume = 0.3;
-        this.sounds.engineMoving.volume = 0.4;
-        this.sounds.tankExplosion.volume = 0.6;
-        this.sounds.baseExplosion.volume = 0.7;
+            // Время
+            { name: 'clockTick', src: 'sounds/clock_tick.wav', loop: true, volume: 0.4 },
+            { name: 'freezeEffect', src: 'sounds/freeze_effect.wav', volume: 0.9 },
+            { name: 'timeResume', src: 'sounds/time_resume.wav', volume: 0.9 }
+        ];
 
-        // Громкость для звуков остановки времени
-        this.sounds.clockTick.volume = 0.4;
-        this.sounds.freezeEffect.volume = 0.9;
-        this.sounds.timeResume.volume = 0.9;
+        // Создаем звуки по конфигурации
+        soundConfig.forEach(config => {
+            this.sounds.set(config.name, this.createSound(config));
+        });
+
+        // Предзагрузка критических звуков
+        this.preloadCriticalSounds();
     }
 
-    createSound(src, loop = false) {
-        const audio = new Audio(src);
+    createSound({ src, loop = false, volume = 1.0 }) {
+        const audio = new Audio();
+        audio.src = src;
         audio.loop = loop;
         audio.preload = 'auto';
+        audio.volume = volume;
         return audio;
     }
 
-    play(soundName) {
-        if (this.muted || !this.sounds[soundName]) return;
+    preloadCriticalSounds() {
+        this.criticalSounds.forEach(soundName => {
+            const sound = this.sounds.get(soundName);
+            if (sound) {
+                sound.load();
+            }
+        });
+    }
 
+    play(soundName) {
+        if (this.muted || !this.sounds.has(soundName)) return;
+
+        const sound = this.sounds.get(soundName);
+
+        // Для одноразовых звуков создаем клон, для loop звуков используем оригинал
+        if (!sound.loop) {
+            this.playClonedSound(sound);
+        } else {
+            this.playOriginalSound(sound);
+        }
+    }
+
+    playClonedSound(sound) {
         try {
-            const sound = this.sounds[soundName].cloneNode();
-            sound.volume = this.sounds[soundName].volume;
-            sound.play().catch(e => console.log('Audio play error:', e));
+            const clone = sound.cloneNode();
+            clone.volume = sound.volume;
+            clone.play().catch(() => {}); // Игнорируем ошибки воспроизведения
         } catch (e) {
-            console.log('Sound error:', e);
+            // Fallback: пытаемся воспроизвести оригинал
+            this.playOriginalSound(sound);
+        }
+    }
+
+    playOriginalSound(sound) {
+        try {
+            if (sound.paused) {
+                sound.currentTime = 0;
+                sound.play().catch(() => {});
+            }
+        } catch (e) {
+            // Игнорируем ошибки воспроизведения
         }
     }
 
     playLoop(soundName) {
-        if (this.muted || !this.sounds[soundName]) return;
+        if (this.muted || !this.sounds.has(soundName)) return;
 
-        try {
-            this.sounds[soundName].currentTime = 0;
-            this.sounds[soundName].play().catch(e => console.log('Audio play error:', e));
-        } catch (e) {
-            console.log('Sound error:', e);
-        }
+        const sound = this.sounds.get(soundName);
+        this.playOriginalSound(sound);
     }
 
     stopLoop(soundName) {
-        if (this.sounds[soundName]) {
-            this.sounds[soundName].pause();
-            this.sounds[soundName].currentTime = 0;
+        const sound = this.sounds.get(soundName);
+        if (sound) {
+            sound.pause();
+            sound.currentTime = 0;
         }
     }
 
-    // ПРОСТЫЕ методы для остановки времени
+    // Оптимизированные методы для остановки времени
     playTimeStop() {
         if (this.muted) return;
 
-        // Звук заморозки
         this.play('freezeEffect');
-
-        // Только тикание часов
         this.playLoop('clockTick');
     }
 
     stopTimeStop() {
-        // Останавливаем тикание
         this.stopLoop('clockTick');
     }
 
@@ -110,7 +143,7 @@ class SoundManager {
     }
 
     stopAll() {
-        Object.values(this.sounds).forEach(sound => {
+        this.sounds.forEach(sound => {
             sound.pause();
             sound.currentTime = 0;
         });
@@ -133,18 +166,19 @@ class SoundManager {
     }
 
     playEnemyShot(enemyType) {
-        switch(enemyType) {
-            case 'FAST':
-                this.play('fastTankShot');
-                break;
-            case 'HEAVY':
-                this.play('heavyTankShot');
-                break;
-            case 'SNIPER':
-                this.play('sniperShot');
-                break;
-            default:
-                this.play('enemyShot');
-        }
+        const shotSounds = {
+            'FAST': 'fastTankShot',
+            'HEAVY': 'heavyTankShot',
+            'SNIPER': 'sniperShot'
+        };
+
+        const soundName = shotSounds[enemyType] || 'enemyShot';
+        this.play(soundName);
+    }
+
+    // Очистка ресурсов
+    destroy() {
+        this.stopAll();
+        this.sounds.clear();
     }
 }

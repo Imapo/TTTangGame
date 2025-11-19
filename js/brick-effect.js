@@ -1,57 +1,55 @@
-// === КЛАСС ОСКОЛКА КИРПИЧА ===
+// === ОПТИМИЗИРОВАННЫЙ КЛАСС ОСКОЛКА КИРПИЧА ===
 class BrickFragment {
     constructor(x, y, size) {
         this.position = new Vector2(x, y);
         this.size = size;
-
-        // Случайное направление и радиус разлёта (1-15 пикселей)
-        const angle = Math.random() * Math.PI * 2;
-        const distance = 1 + Math.random() * 14; // 1-15 пикселей
-        this.velocity = new Vector2(
-            Math.cos(angle) * distance * 0.1,
-                                    Math.sin(angle) * distance * 0.1
-        );
-
-        this.rotation = Math.random() * Math.PI * 2;
-        this.rotationSpeed = (Math.random() - 0.5) * 0.05;
         this.active = true;
         this.health = 1;
-        this.color = Math.random() > 0.5 ? '#D2691E' : '#8B4513';
         this.collisionEnabled = false;
         this.creationTime = Date.now();
         this.hasStopped = false;
         this.originalPosition = new Vector2(x, y);
-        this.maxDistance = distance;
+
+        // Предварительные вычисления
+        const angle = Math.random() * Math.PI * 2;
+        this.maxDistance = 1 + Math.random() * 14;
+        this.velocity = new Vector2(
+            Math.cos(angle) * this.maxDistance * 0.1,
+                                    Math.sin(angle) * this.maxDistance * 0.1
+        );
+
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotationSpeed = (Math.random() - 0.5) * 0.05;
+        this.color = Math.random() > 0.5 ? '#D2691E' : '#8B4513';
+
+        // Кэшируем bounds для коллизии
+        this._bounds = new Rectangle(0, 0, 0, 0);
     }
 
     update(allTanks = []) {
         if (!this.hasStopped) {
-            // Проверяем, не достигли ли максимального расстояния разлёта
-            const currentDistance = Math.sqrt(
-                Math.pow(this.position.x - this.originalPosition.x, 2) +
-                Math.pow(this.position.y - this.originalPosition.y, 2)
-            );
+            // Оптимизированная проверка расстояния (без Math.sqrt)
+            const dx = this.position.x - this.originalPosition.x;
+            const dy = this.position.y - this.originalPosition.y;
+            const distanceSquared = dx * dx + dy * dy;
+            const maxDistanceSquared = this.maxDistance * this.maxDistance;
 
-            if (currentDistance >= this.maxDistance) {
-                this.hasStopped = true;
-                this.velocity = new Vector2(0, 0);
-                this.rotationSpeed = 0;
-                this.collisionEnabled = true;
+            if (distanceSquared >= maxDistanceSquared || (Date.now() - this.creationTime) > 1000) {
+                this.stopFragment();
             } else {
                 this.position = this.position.add(this.velocity);
                 this.rotation += this.rotationSpeed;
             }
-
-            const timeSinceCreation = Date.now() - this.creationTime;
-            if (timeSinceCreation > 1000) {
-                this.hasStopped = true;
-                this.velocity = new Vector2(0, 0);
-                this.rotationSpeed = 0;
-                this.collisionEnabled = true;
-            }
         } else {
             this.handleTankCollisions(allTanks);
         }
+    }
+
+    stopFragment() {
+        this.hasStopped = true;
+        this.velocity = new Vector2(0, 0);
+        this.rotationSpeed = 0;
+        this.collisionEnabled = true;
     }
 
     handleTankCollisions(allTanks) {
@@ -60,25 +58,13 @@ class BrickFragment {
         const fragmentBounds = this.getBounds();
         let collisionWithPlayer = false;
 
-        for (const tank of allTanks) {
+        for (let i = 0; i < allTanks.length; i++) {
+            const tank = allTanks[i];
             if (tank.isDestroyed) continue;
 
             const tankBounds = tank.getBounds();
             if (fragmentBounds.intersects(tankBounds)) {
-                // Вычисляем направление движения танка
-                let tankMoveX = 0, tankMoveY = 0;
-
-                if (tank.direction === DIRECTIONS.UP) tankMoveY = -tank.speed;
-                else if (tank.direction === DIRECTIONS.DOWN) tankMoveY = tank.speed;
-                else if (tank.direction === DIRECTIONS.LEFT) tankMoveX = -tank.speed;
-                else if (tank.direction === DIRECTIONS.RIGHT) tankMoveX = tank.speed;
-
-                // Осколок двигается в том же направлении, что и танк, но медленнее
-                const fragmentMoveX = tankMoveX * 0.7;
-                const fragmentMoveY = tankMoveY * 0.7;
-
-                this.position = this.position.add(new Vector2(fragmentMoveX, fragmentMoveY));
-
+                this.handleTankPush(tank);
                 if (tank.type === 'player') {
                     collisionWithPlayer = true;
                 }
@@ -86,6 +72,19 @@ class BrickFragment {
         }
 
         return collisionWithPlayer;
+    }
+
+    handleTankPush(tank) {
+        let tankMoveX = 0, tankMoveY = 0;
+
+        switch (tank.direction) {
+            case DIRECTIONS.UP: tankMoveY = -tank.speed; break;
+            case DIRECTIONS.DOWN: tankMoveY = tank.speed; break;
+            case DIRECTIONS.LEFT: tankMoveX = -tank.speed; break;
+            case DIRECTIONS.RIGHT: tankMoveX = tank.speed; break;
+        }
+
+        this.position = this.position.add(new Vector2(tankMoveX * 0.7, tankMoveY * 0.7));
     }
 
     draw(ctx) {
@@ -116,18 +115,19 @@ class BrickFragment {
 
     getBounds() {
         if (!this.collisionEnabled || !this.active) {
-            return new Rectangle(0, 0, 0, 0);
+            return this._bounds;
         }
-        return new Rectangle(
-            this.position.x - this.size/2,
-            this.position.y - this.size/2,
-            this.size,
-            this.size
-        );
+
+        this._bounds.x = this.position.x - this.size/2;
+        this._bounds.y = this.position.y - this.size/2;
+        this._bounds.width = this.size;
+        this._bounds.height = this.size;
+
+        return this._bounds;
     }
 }
 
-// === КЛАСС КИРПИЧНОГО БЛОКА С ОСКОЛКАМИ ===
+// === ОПТИМИЗИРОВАННЫЙ КЛАСС КИРПИЧНОГО БЛОКА С ОСКОЛКАМИ ===
 class BrickTile {
     constructor(x, y) {
         this.x = x;
@@ -136,6 +136,11 @@ class BrickTile {
         this.fragments = [];
         this.isDestroyed = false;
         this.cracks = this.generateCracks();
+
+        // Предварительные вычисления
+        this.tileX = x * TILE_SIZE;
+        this.tileY = y * TILE_SIZE;
+        this.bounds = new Rectangle(this.tileX, this.tileY, TILE_SIZE, TILE_SIZE);
     }
 
     generateCracks() {
@@ -155,120 +160,135 @@ class BrickTile {
     }
 
     takeDamage() {
-        // Если кирпич уже разрушен, не обрабатываем повреждение здесь
-        if (this.isDestroyed) {
-            return false;
-        }
+        if (this.isDestroyed) return false;
 
         this.health--;
 
         if (this.health <= 0) {
             this.isDestroyed = true;
             this.createFragments();
-            return true; // Возвращаем true чтобы показать что кирпич разрушен
+            return true;
         }
         return false;
     }
 
     createFragments() {
-        const tileX = this.x * TILE_SIZE;
-        const tileY = this.y * TILE_SIZE;
-
-        // Создаем 6-8 осколков
         const fragmentCount = 6 + Math.floor(Math.random() * 3);
+        const centerX = this.tileX + TILE_SIZE / 2;
+        const centerY = this.tileY + TILE_SIZE / 2;
 
         for (let i = 0; i < fragmentCount; i++) {
             const size = 6 + Math.random() * 6;
-            const startX = tileX + (Math.random() * 0.6 + 0.2) * TILE_SIZE;
-            const startY = tileY + (Math.random() * 0.6 + 0.2) * TILE_SIZE;
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * TILE_SIZE * 0.3;
+
+            const startX = centerX + Math.cos(angle) * distance;
+            const startY = centerY + Math.sin(angle) * distance;
 
             this.fragments.push(new BrickFragment(startX, startY, size));
         }
     }
 
     update(allTanks = []) {
-        this.fragments.forEach(fragment => {
+        // Обратное обновление для безопасного удаления
+        for (let i = this.fragments.length - 1; i >= 0; i--) {
+            const fragment = this.fragments[i];
             if (fragment.active) {
                 fragment.update(allTanks);
+            } else {
+                this.fragments.splice(i, 1);
             }
-        });
-
-        this.fragments = this.fragments.filter(fragment => fragment.active);
+        }
     }
 
     draw(ctx) {
-        const tileX = this.x * TILE_SIZE;
-        const tileY = this.y * TILE_SIZE;
+        const tileX = this.tileX;
+        const tileY = this.tileY;
 
         if (!this.isDestroyed) {
-            ctx.fillStyle = '#D2691E';
-            ctx.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
-
-            ctx.strokeStyle = '#8B4513';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
-
-            ctx.strokeStyle = '#A0522D';
-            ctx.beginPath();
-            ctx.moveTo(tileX, tileY + TILE_SIZE/2);
-            ctx.lineTo(tileX + TILE_SIZE, tileY + TILE_SIZE/2);
-            ctx.moveTo(tileX + TILE_SIZE/2, tileY);
-            ctx.lineTo(tileX + TILE_SIZE/2, tileY + TILE_SIZE);
-            ctx.stroke();
-
-            if (this.health === 1) {
-                ctx.strokeStyle = '#5D4037';
-                this.cracks.forEach(crack => {
-                    ctx.lineWidth = crack.width;
-                    ctx.beginPath();
-                    ctx.moveTo(
-                        tileX + crack.startX * TILE_SIZE,
-                        tileY + crack.startY * TILE_SIZE
-                    );
-                    ctx.lineTo(
-                        tileX + crack.endX * TILE_SIZE,
-                        tileY + crack.endY * TILE_SIZE
-                    );
-                    ctx.stroke();
-                });
-            }
+            this.drawIntactBrick(ctx, tileX, tileY);
         }
 
-        this.fragments.forEach(fragment => {
-            if (fragment.active) {
-                fragment.draw(ctx);
-            }
-        });
+        // Рисуем фрагменты
+        for (let i = 0; i < this.fragments.length; i++) {
+            this.fragments[i].draw(ctx);
+        }
+    }
+
+    drawIntactBrick(ctx, tileX, tileY) {
+        ctx.fillStyle = '#D2691E';
+        ctx.fillRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
+
+        ctx.strokeStyle = '#8B4513';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tileX, tileY, TILE_SIZE, TILE_SIZE);
+
+        // Рисуем крест
+        ctx.strokeStyle = '#A0522D';
+        ctx.beginPath();
+        ctx.moveTo(tileX, tileY + TILE_SIZE/2);
+        ctx.lineTo(tileX + TILE_SIZE, tileY + TILE_SIZE/2);
+        ctx.moveTo(tileX + TILE_SIZE/2, tileY);
+        ctx.lineTo(tileX + TILE_SIZE/2, tileY + TILE_SIZE);
+        ctx.stroke();
+
+        // Рисуем трещины если поврежден
+        if (this.health === 1) {
+            this.drawCracks(ctx, tileX, tileY);
+        }
+    }
+
+    drawCracks(ctx, tileX, tileY) {
+        ctx.strokeStyle = '#5D4037';
+        for (let i = 0; i < this.cracks.length; i++) {
+            const crack = this.cracks[i];
+            ctx.lineWidth = crack.width;
+            ctx.beginPath();
+            ctx.moveTo(
+                tileX + crack.startX * TILE_SIZE,
+                tileY + crack.startY * TILE_SIZE
+            );
+            ctx.lineTo(
+                tileX + crack.endX * TILE_SIZE,
+                tileY + crack.endY * TILE_SIZE
+            );
+            ctx.stroke();
+        }
     }
 
     checkBulletCollision(bullet) {
+        const bulletBounds = bullet.getBounds();
+
         if (this.isDestroyed) {
-            // Для разрушенного кирпича проверяем только осколки
-            let hitFragment = false;
-            for (let i = this.fragments.length - 1; i >= 0; i--) {
-                const fragment = this.fragments[i];
-                if (fragment.active && fragment.collisionEnabled && bullet.getBounds().intersects(fragment.getBounds())) {
-                    if (fragment.takeDamage()) {
-                        this.fragments.splice(i, 1);
-                    }
-                    hitFragment = true;
-                    break;
-                }
-            }
-            return hitFragment; // Возвращаем true если попали в осколок
+            // Проверяем столкновение с фрагментами
+            return this.checkFragmentCollision(bulletBounds);
         } else {
-            // Для целого кирпича проверяем столкновение с основным блоком
-            const brickBounds = new Rectangle(
-                this.x * TILE_SIZE,
-                this.y * TILE_SIZE,
-                TILE_SIZE,
-                TILE_SIZE
-            );
-            return bullet.getBounds().intersects(brickBounds);
+            // Проверяем столкновение с основным блоком
+            return bulletBounds.intersects(this.bounds);
         }
+    }
+
+    checkFragmentCollision(bulletBounds) {
+        for (let i = this.fragments.length - 1; i >= 0; i--) {
+            const fragment = this.fragments[i];
+            if (fragment.active && fragment.collisionEnabled &&
+                bulletBounds.intersects(fragment.getBounds())) {
+
+                if (fragment.takeDamage()) {
+                    this.fragments.splice(i, 1);
+                }
+                return true;
+                }
+        }
+        return false;
     }
 
     hasFragments() {
         return this.fragments.length > 0;
+    }
+
+    // Метод для массовой очистки фрагментов
+    clearFragments() {
+        this.fragments.length = 0;
     }
 }
