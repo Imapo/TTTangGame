@@ -54,19 +54,27 @@ class EnemyManager {
             });
         }
 
+        // 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: ЗАМОРАЖИВАЕМ НОВЫХ ВРАГОВ ПРИ АКТИВНОМ СТОП-ВРЕМЕНИ
         if (this.game.timeStopActive) {
             const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
-            if (remainingTime > 0) enemy.freeze(remainingTime);
+            if (remainingTime > 0) {
+                enemy.freeze(remainingTime);
+                console.log(`⏰ Новый враг "${username}" заморожен на ${remainingTime}мс`);
+            }
         }
 
         this.enemies.push(enemy);
+        console.log(`👾 Враг "${username}" (${enemyType}) создан`);
     }
 
     getRandomEnemyType() {
         const random = Math.random();
         let cumulativeChance = 0;
 
-        for (const [type, config] of Object.entries(ENEMY_TYPES)) {
+        // Исключаем VIEWER из случайного выбора
+        const availableTypes = Object.entries(ENEMY_TYPES).filter(([type]) => type !== 'VIEWER');
+
+        for (const [type, config] of availableTypes) {
             cumulativeChance += config.chance;
             if (random <= cumulativeChance) return type;
         }
@@ -147,9 +155,15 @@ class EnemyManager {
     }
 
     updateRespawns() {
+        const totalEnemiesOnScreen = this.enemies.length + this.spawnAnimations.length;
+
         // Удаляем завершенные анимации и создаем врагов
         this.spawnAnimations = this.spawnAnimations.filter((animation, index) => {
-            animation.update(this.game.deltaTime);
+            // Не обновляем замороженные анимации
+            if (!animation.isFrozen) {
+                animation.update(this.game.deltaTime);
+            }
+
             if (!animation.active) {
                 this.completeSpawnAnimation(animation.position);
                 return false;
@@ -157,8 +171,8 @@ class EnemyManager {
             return true;
         });
 
-        // Спавним новых врагов при необходимости
-        const totalEnemiesOnScreen = this.enemies.length + this.spawnAnimations.length;
+        // 🔥 ИСПРАВЛЕНИЕ: УБИРАЕМ ПРОВЕРКУ НА timeStopActive
+        // Враги должны спавниться даже во время стоп-времени, но сразу замораживаться
         const canSpawn = totalEnemiesOnScreen < MAX_ENEMIES_ON_SCREEN &&
         this.game.enemiesToSpawn > 0 &&
         !this.game.levelComplete &&
@@ -284,6 +298,17 @@ class EffectManager {
             wave.update();
             return wave.active;
         });
+    }
+
+    addHitEffect(x, y) {
+        // Создаем небольшой эффект искр при попадании
+        for (let i = 0; i < 5; i++) {
+            this.bulletExplosions.push(new BulletExplosion(
+                x + (Math.random() - 0.5) * 10,
+                                                           y + (Math.random() - 0.5) * 10,
+                                                           0.3
+            ));
+        }
     }
 
     draw(ctx) {

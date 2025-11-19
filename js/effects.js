@@ -369,15 +369,66 @@ class SpawnAnimation {
     constructor(x, y) {
         this.position = new Vector2(x, y);
         this.progress = 0;
-        this.duration = SPAWN_ANIMATION_DURATION;
+        this.duration = 3000; // 🔥 УВЕЛИЧИВАЕМ ДО 3 СЕКУНД (было 800)
         this.active = true;
-        this.size = TILE_SIZE - 8;
+        this.isFrozen = false;
+        this.frozenProgress = 0;
+        this.particles = [];
+        this.createParticles();
+
+        // 🔥 ДОБАВЛЯЕМ ФАЗЫ АНИМАЦИИ
+        this.phase = 'warning'; // warning → building → complete
+        this.phaseProgress = 0;
+    }
+
+    createParticles() {
+        for (let i = 0; i < 12; i++) {
+            this.particles.push({
+                angle: (i / 12) * Math.PI * 2,
+                                distance: 15 + Math.random() * 25,
+                                size: 3 + Math.random() * 4,
+                                speed: 0.8 + Math.random() * 0.4,
+                                alpha: 0.8 + Math.random() * 0.2
+            });
+        }
     }
 
     update(deltaTime) {
+        if (this.isFrozen) return;
+
         this.progress += deltaTime / this.duration;
+
+        // 🔥 ОПРЕДЕЛЯЕМ ФАЗЫ АНИМАЦИИ
+        if (this.progress < 0.4) {
+            this.phase = 'warning';    // Фаза предупреждения (0-1.2 сек)
+        } else if (this.progress < 0.8) {
+            this.phase = 'building';   // Фаза построения (1.2-2.4 сек)
+        } else {
+            this.phase = 'complete';   // Фаза завершения (2.4-3.0 сек)
+        }
+
+        this.phaseProgress = (this.progress % 0.4) / 0.4; // Прогресс внутри фазы
+
         if (this.progress >= 1) {
             this.active = false;
+            this.progress = 1;
+        }
+    }
+
+    freeze(duration) {
+        if (this.type !== 'enemy') return;
+
+        this.isFrozen = true;
+        this.freezeStartTime = Date.now();
+        this.freezeDuration = duration;
+        this.originalSpeed = this.speed;
+        this.originalCanShoot = this.canShoot;
+        this.speed = 0;
+        this.canShoot = false;
+
+        // 🔥 ВАЖНО: СОЗДАЕМ ЛЕДЯНЫЕ КРИСТАЛЛЫ ТОЛЬКО ЕСЛИ ИХ ЕЩЕ НЕТ
+        if (this.iceCrystals.length === 0) {
+            this.createIceCrystals();
         }
     }
 
@@ -387,20 +438,122 @@ class SpawnAnimation {
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        const visible = Math.floor(this.progress * 10) % 2 === 0;
+        const easeOut = 1 - Math.pow(1 - this.progress, 2);
 
-        if (visible) {
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
+        // 🔥 РАЗНЫЕ ЦВЕТА ДЛЯ РАЗНЫХ ФАЗ
+        let mainColor, accentColor, warningColor;
 
-            const growProgress = this.progress * 2;
-            if (growProgress < 1) {
-                ctx.strokeStyle = '#4CAF50';
-                ctx.lineWidth = 3;
-                ctx.setLineDash([5, 5]);
-                const currentSize = this.size * growProgress;
-                ctx.strokeRect(-currentSize/2, -currentSize/2, currentSize, currentSize);
-                ctx.setLineDash([]);
+        switch (this.phase) {
+            case 'warning':
+                // 🔴 КРАСНЫЙ - фаза предупреждения
+                mainColor = '255, 50, 50';
+                accentColor = '255, 100, 100';
+                warningColor = '255, 0, 0';
+                break;
+            case 'building':
+                // 🟡 ЖЕЛТЫЙ - фаза построения
+                mainColor = '255, 200, 50';
+                accentColor = '255, 225, 100';
+                warningColor = '255, 150, 0';
+                break;
+            case 'complete':
+                // 🟢 ЗЕЛЕНЫЙ - фаза завершения
+                mainColor = '50, 255, 50';
+                accentColor = '100, 255, 100';
+                warningColor = '0, 255, 0';
+                break;
+        }
+
+        if (this.isFrozen) {
+            mainColor = '100, 200, 255';
+            accentColor = '150, 220, 255';
+            warningColor = '200, 230, 255';
+        }
+
+        // 🔥 МЯГКИЙ ФОН С ИНДИКАТОРОМ ФАЗЫ
+        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 40);
+        gradient.addColorStop(0, `rgba(${mainColor}, 0.15)`);
+        gradient.addColorStop(0.7, `rgba(${accentColor}, 0.08)`);
+        gradient.addColorStop(1, `rgba(${mainColor}, 0)`);
+        ctx.fillStyle = gradient;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, 40, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 🔥 ПРЕРЫВИСТАЯ ОБВОДКА КАК В ОРИГИНАЛЬНЫХ ТАНКАХ
+        if (this.phase === 'warning') {
+            ctx.strokeStyle = `rgba(${warningColor}, ${0.5 + Math.sin(Date.now() * 0.02) * 0.3})`;
+            ctx.lineWidth = 3;
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            ctx.arc(0, 0, 35, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // 🔥 МЯГКИЕ ПУЛЬСИРУЮЩИЕ ЧАСТИЦЫ
+        this.particles.forEach(particle => {
+            const currentDistance = particle.distance * easeOut;
+            const x = Math.cos(particle.angle) * currentDistance;
+            const y = Math.sin(particle.angle) * currentDistance;
+
+            const pulse = Math.sin(Date.now() * 0.01 * particle.speed) * 0.3 + 0.7;
+            const currentAlpha = particle.alpha * (1 - this.progress) * pulse;
+            const currentSize = particle.size * (1 - this.progress);
+
+            ctx.fillStyle = `rgba(${accentColor}, ${currentAlpha})`;
+
+            ctx.beginPath();
+            ctx.arc(x, y, currentSize, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 🔥 ЦЕНТРАЛЬНОЕ СВЕТОВОЕ ПЯТНО С ИНДИКАТОРОМ ПРОГРЕССА
+        const centerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, 25);
+        centerGlow.addColorStop(0, `rgba(${mainColor}, 0.7)`);
+        centerGlow.addColorStop(1, `rgba(${accentColor}, 0)`);
+
+        ctx.fillStyle = centerGlow;
+        ctx.beginPath();
+        ctx.arc(0, 0, 25 * easeOut, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 🔥 ИНДИКАТОР ПРОГРЕССА В ЦЕНТРЕ (как в оригинальных Танках)
+        if (this.phase === 'building') {
+            ctx.strokeStyle = `rgba(${warningColor}, 0.8)`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, 15, -Math.PI/2, -Math.PI/2 + (this.phaseProgress * Math.PI * 2));
+            ctx.stroke();
+        }
+
+        // ✨ МЕЛКИЕ БЛЕСТКИ В ЦЕНТРЕ
+        const time = Date.now() * 0.005;
+        for (let i = 0; i < 3; i++) {
+            const sparkleAngle = time + (i * Math.PI * 2 / 3);
+            const sparkleDist = 8 + Math.sin(time * 2 + i) * 3;
+            const sparkleX = Math.cos(sparkleAngle) * sparkleDist;
+            const sparkleY = Math.sin(sparkleAngle) * sparkleDist;
+            const sparkleSize = 1.5 + Math.sin(time * 3 + i) * 0.5;
+            const sparkleAlpha = 0.7 + Math.sin(time * 4 + i) * 0.3;
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${sparkleAlpha})`;
+
+            ctx.beginPath();
+            ctx.arc(sparkleX, sparkleY, sparkleSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 🔥 ТЕКСТ ПРЕДУПРЕЖДЕНИЯ В ФАЗЕ WARNING
+        if (this.phase === 'warning') {
+            const blink = Math.floor(Date.now() / 300) % 2 === 0;
+            if (blink) {
+                ctx.fillStyle = `rgba(${warningColor}, 0.9)`;
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('!', 0, -45);
             }
         }
 

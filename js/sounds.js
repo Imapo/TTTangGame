@@ -42,7 +42,12 @@ class SoundManager {
             // Время
             { name: 'clockTick', src: 'sounds/clock_tick.wav', loop: true, volume: 0.4 },
             { name: 'freezeEffect', src: 'sounds/freeze_effect.wav', volume: 0.9 },
-            { name: 'timeResume', src: 'sounds/time_resume.wav', volume: 0.9 }
+            { name: 'timeResume', src: 'sounds/time_resume.wav', volume: 0.9 },
+
+            // Новые звуки для взаимодействий
+            { name: 'viewerTankSpawn', src: 'sounds/viewer_tank_spawn.mp3', volume: 0.6 },
+            { name: 'viewerLike', src: 'sounds/viewer_like.mp3', volume: 0.5 },
+            { name: 'viewerGift', src: 'sounds/viewer_gift.mp3', volume: 0.7 },
         ];
 
         // Создаем звуки по конфигурации

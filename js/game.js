@@ -23,6 +23,10 @@ class Game {
         this.roundEnemiesList = [];
         this.totalEnemiesSpawned = 0;
 
+        this.avatarCache = new Map(); // Кэш загруженных аватарок
+        this.avatarLoadCallbacks = new Map(); // Колбэки для ожидающих загрузки
+        this.delayedSpawns = [];
+
         this.initGameState();
         this.setupEventListeners();
         this.gameLoop(0);
@@ -80,6 +84,49 @@ class Game {
 
         this.playerStats = this.loadPlayerStats();
         this.initLevel();
+    }
+
+    // Метод для предзагрузки аватарки
+    preloadAvatar(userId, avatarUrl) {
+        if (!avatarUrl || this.avatarCache.has(userId)) return;
+
+        console.log(`🔄 Предзагрузка аватарки для ${userId}`);
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+
+        img.onload = () => {
+            console.log(`✅ Аватарка предзагружена для ${userId}`);
+            this.avatarCache.set(userId, img);
+            // Вызываем колбэки ожидающих танков
+            if (this.avatarLoadCallbacks.has(userId)) {
+                this.avatarLoadCallbacks.get(userId).forEach(callback => callback(img));
+                this.avatarLoadCallbacks.delete(userId);
+            }
+        };
+
+        img.onerror = () => {
+            console.log(`❌ Ошибка предзагрузки аватарки для ${userId}`);
+            this.avatarCache.set(userId, null); // Помечаем как неудачную загрузку
+        };
+
+        img.src = avatarUrl;
+    }
+
+    // Получить аватарку из кэша
+    getCachedAvatar(userId) {
+        return this.avatarCache.get(userId);
+    }
+
+    // Ожидание загрузки аватарки
+    waitForAvatar(userId, callback) {
+        if (this.avatarCache.has(userId)) {
+            callback(this.avatarCache.get(userId));
+        } else {
+            if (!this.avatarLoadCallbacks.has(userId)) {
+                this.avatarLoadCallbacks.set(userId, []);
+            }
+            this.avatarLoadCallbacks.get(userId).push(callback);
+        }
     }
 
     markEnemyDestroyed(enemy) {
@@ -467,6 +514,7 @@ class Game {
     initLevel() {
         this.map = new GameMap(this.level);
         this.player = new Tank(224, 750);
+        this.destroyedViewerTanks = new Set();
 
         if (this.playerLevel > 1) {
             this.player.playerLevel = this.playerLevel;
@@ -525,12 +573,26 @@ class Game {
         if (this.timeStopActive) {
             this.timeResumePlayed = false;
             const newEndTime = Date.now() + this.timeStopDuration;
+
+            // Замораживаем существующих врагов
             this.enemyManager.enemies.forEach(enemy => {
                 if (enemy.isFrozen) {
+                    // Продлеваем заморозку существующим врагам
                     enemy.freezeDuration = this.timeStopDuration;
                     enemy.freezeStartTime = Date.now();
+                } else {
+                    // Замораживаем новых врагов
+                    enemy.freeze(this.timeStopDuration);
                 }
             });
+
+            // 🔥 ЗАМОРАЖИВАЕМ АНИМАЦИИ СПАВНА (но не отменяем их!)
+            this.enemyManager.spawnAnimations.forEach(animation => {
+                if (!animation.isFrozen) {
+                    animation.freeze(this.timeStopDuration);
+                }
+            });
+
             this.timeStopStartTime = Date.now();
             return;
         }
@@ -539,7 +601,14 @@ class Game {
         this.timeStopStartTime = Date.now();
         this.timeResumePlayed = false;
 
+        // Замораживаем всех врагов
         this.enemyManager.enemies.forEach(enemy => enemy.freeze(this.timeStopDuration));
+
+        // 🔥 ЗАМОРАЖИВАЕМ АНИМАЦИИ СПАВНА
+        this.enemyManager.spawnAnimations.forEach(animation => {
+            animation.freeze(this.timeStopDuration);
+        });
+
         if (this.soundManager) this.soundManager.playTimeStop();
     }
 
@@ -587,6 +656,34 @@ class Game {
             this.checkLevelCompletion();
         }
 
+        // Обновляем всплывающие тексты
+        if (this.floatingTexts) {
+            for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+                const text = this.floatingTexts[i];
+                text.lifetime--;
+
+                // Плавное исчезание
+                text.alpha = Math.max(0, text.lifetime / 60);
+
+                // Добавляем легкое раскачивание
+                if (!text.startX) text.startX = text.x; // Сохраняем начальную позицию
+                const swing = Math.sin(Date.now() * 0.01 + i) * 2; // Легкое раскачивание
+
+                text.x = text.startX + swing;
+                text.y -= 1; // Медленное поднятие
+
+                // Увеличиваем шрифт в начале и уменьшаем в конце
+                if (!text.originalSize) text.originalSize = 16;
+                const sizeProgress = Math.sin((text.lifetime / 120) * Math.PI);
+                text.fontSize = text.originalSize * (0.8 + sizeProgress * 0.2);
+
+                if (text.lifetime <= 0) {
+                    this.floatingTexts.splice(i, 1);
+                }
+            }
+        }
+
+        // 🔥 ОБРАБОТКА ОТЛОЖЕННЫХ СПАВНОВ ПРИ ЗАВЕРШЕНИИ СТОП-ВРЕМЕНИ
         if (this.timeStopActive) {
             const elapsed = Date.now() - this.timeStopStartTime;
             const remaining = this.timeStopDuration - elapsed;
@@ -598,6 +695,15 @@ class Game {
 
             if (remaining <= 0) {
                 this.timeStopActive = false;
+                // 🔥 ВАЖНО: РАЗМОРАЖИВАЕМ ВСЕХ ВРАГОВ ПРИ ЗАВЕРШЕНИИ
+                this.enemyManager.enemies.forEach(enemy => {
+                    if (enemy.isFrozen) {
+                        enemy.isFrozen = false;
+                        enemy.speed = enemy.originalSpeed;
+                        enemy.canShoot = enemy.originalCanShoot;
+                    }
+                });
+
                 if (this.soundManager) this.soundManager.stopTimeStop();
             }
         }
@@ -676,32 +782,51 @@ class Game {
             if (bulletBounds.intersects(enemy.getBounds())) {
                 const healthBefore = enemy.health;
                 const isHeavyTank = enemy.enemyType === 'HEAVY';
+                const isViewerTank = enemy.enemyType === 'VIEWER' || enemy.isViewerTank;
                 const hadBonus = enemy.hasBonus;
                 const bonusType = enemy.bonusType;
                 const destructionResult = enemy.takeDamage();
 
-                if (destructionResult === true || destructionResult === 'bonus') {
-                    this.markEnemyDestroyed(enemy);
-                    this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
-                    this.screenShake = enemy.enemyType === 'HEAVY' ? 25 : 20;
-                    this.soundManager.play('tankExplosion');
-                    this.recordEnemyKill();
-                    this.player.addExperience(enemy.enemyType);
-                    this.playerExperience = this.player.experience;
-                    this.playerLevel = this.player.playerLevel;
-                    this.savePlayerProgress();
+                // ЗВУК ПРИ ПОПАДАНИИ В ТАНК С НЕСКОЛЬКИМИ ЖИЗНЯМИ
+                if ((isViewerTank && healthBefore > 1 && enemy.health > 0) ||
+                    (isHeavyTank && enemy.health > 0)) {
+                    this.soundManager.play('heavyTankHit');
+                this.effectManager.addHitEffect(enemy.position.x, enemy.position.y);
 
-                    if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
-                    this.enemyManager.enemies.splice(j, 1);
-                    this.enemiesDestroyed++;
-                    this.score += 100;
-                    this.updateUI();
-                } else {
-                    if (isHeavyTank && enemy.health > 0) this.soundManager.play('heavyTankHit');
-                }
+                    }
 
-                this.bullets.splice(index, 1);
-                return false;
+                    if (destructionResult === true || destructionResult === 'bonus') {
+                        // ДОБАВЛЯЕМ В СПИСОК УНИЧТОЖЕННЫХ
+                        if (isViewerTank) {
+                            if (!this.destroyedViewerTanks) this.destroyedViewerTanks = new Set();
+                            this.destroyedViewerTanks.add(enemy.userId);
+                            console.log(`🗑️ Танк зрителя ${enemy.username} добавлен в список уничтоженных`);
+                        }
+
+                        this.markEnemyDestroyed(enemy);
+                        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
+                        this.screenShake = enemy.enemyType === 'HEAVY' ? 25 : 20;
+                        this.soundManager.play('tankExplosion');
+
+                        if (isViewerTank) {
+                            this.streamManager?.sendChatMessage(`💀 Танк зрителя ${enemy.username} был уничтожен!`);
+                        } else {
+                            this.recordEnemyKill();
+                            this.player.addExperience(enemy.enemyType);
+                            this.playerExperience = this.player.experience;
+                            this.playerLevel = this.player.playerLevel;
+                            this.savePlayerProgress();
+                        }
+
+                        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
+                        this.enemyManager.enemies.splice(j, 1);
+                        this.enemiesDestroyed++;
+                        this.score += 100;
+                        this.updateUI();
+                    }
+
+                    this.bullets.splice(index, 1);
+                    return false;
             }
         }
         return true;
@@ -709,7 +834,14 @@ class Game {
 
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
         if (!this.player.isDestroyed && bulletBounds.intersects(this.player.getBounds())) {
+            const healthBefore = this.player.health;
+
             if (this.player.takeDamage()) {
+                // ЗВУК ПРИ ПОПАДАНИИ В ИГРОКА С НЕСКОЛЬКИМИ ЖИЗНЯМИ
+                if (healthBefore > 1) {
+                    this.soundManager.play('heavyTankHit');
+                }
+
                 this.effectManager.addExplosion(this.player.position.x, this.player.position.y, 'tank');
                 this.screenShake = 35;
                 this.soundManager.play('tankExplosion');
@@ -731,7 +863,15 @@ class Game {
                     this.player = new Tank(224, 750);
                     this.player.activateShield(5000);
                 }
+            } else {
+                // Игрок получил урон, но не уничтожен (остались жизни)
+                if (healthBefore > 1) {
+                    this.soundManager.play('heavyTankHit');
+                    // Визуальный эффект попадания
+                    this.effectManager.addBulletExplosion(this.player.position.x, this.player.position.y);
+                }
             }
+
             this.bullets.splice(index, 1);
             return false;
         }
@@ -1090,6 +1230,9 @@ class Game {
 
             this.levelComplete = true;
         this.levelCompleteTimer = 0;
+
+        // Сбрасываем данные зрителей
+        this.resetForNewRound();
 
         setTimeout(() => {
             this.calculateLevelLeader();
@@ -1746,6 +1889,9 @@ class Game {
             this.drawPlayerStats(this.ctx);
         }
 
+        // Отрисовываем всплывающие тексты
+        this.drawFloatingTexts(this.ctx);
+
         this.enemyManager.enemies.forEach(enemy => enemy.draw(this.ctx));
         this.bullets.forEach(bullet => bullet.draw(this.ctx));
         this.effectManager.explosions.forEach(explosion => explosion.draw(this.ctx));
@@ -2062,4 +2208,427 @@ class Game {
         if (distance > protectedRadius) return 0;
         return protectedRadius - distance + 1;
     }
-}
+
+    spawnViewerTank(userId, username, avatarUrl) {
+        // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА
+        if (this.levelComplete || this.gameOver) {
+            console.log('🚫 Раунд завершен! Новые танки нельзя создавать.');
+            return;
+        }
+
+        // ПРОВЕРКА НА ДУБЛИКАТ
+        const existingViewerTank = this.enemyManager.enemies.find(enemy =>
+        (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
+        );
+
+        if (existingViewerTank) {
+            console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже существует в этом раунде!`);
+            return;
+        }
+
+        // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА - в глобальном списке уничтоженных за раунд
+        if (this.destroyedViewerTanks && this.destroyedViewerTanks.has(userId)) {
+            console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже был уничтожен в этом раунде!`);
+            return;
+        }
+
+        const spawnPoint = this.enemyManager.getNextSpawnPoint();
+
+        // Создаем анимацию спавна
+        const spawnAnimation = new SpawnAnimation(spawnPoint.x, spawnPoint.y);
+        this.enemyManager.spawnAnimations.push(spawnAnimation);
+
+        // ПРЕДЗАГРУЗКА АВАТАРКИ
+        if (avatarUrl && avatarUrl !== '') {
+            this.preloadAvatar(userId, avatarUrl);
+        }
+
+        // Сохраняем оригинальный метод
+        const originalComplete = this.enemyManager.completeSpawnAnimation.bind(this.enemyManager);
+
+        // Временно заменяем метод completeSpawnAnimation
+        this.enemyManager.completeSpawnAnimation = (position) => {
+            // Восстанавливаем оригинальный метод
+            this.enemyManager.completeSpawnAnimation = originalComplete;
+
+            // ФИНАЛЬНАЯ ПРОВЕРКА ПЕРЕД СОЗДАНИЕМ ТАНКА
+            const duplicateCheck = this.enemyManager.enemies.find(enemy =>
+            (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
+            );
+
+            if (duplicateCheck) {
+                console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже создан! Отмена спавна.`);
+                return;
+            }
+
+            if (this.destroyedViewerTanks && this.destroyedViewerTanks.has(userId)) {
+                console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) был уничтожен! Отмена спавна.`);
+                return;
+            }
+
+            // Создаем танк зрителя
+            const viewerTank = new Tank(position.x, position.y, "enemy", this.level, 'VIEWER');
+
+            // Кастомизация для зрителя
+            viewerTank.username = username;
+            viewerTank.userId = userId;
+            viewerTank.avatarUrl = avatarUrl;
+            viewerTank.viewerName = username;
+            viewerTank.color = this.getViewerColor(userId);
+            viewerTank.health = 2;
+            viewerTank.isViewerTank = true;
+
+            // ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА АВАТАРКИ
+            this.setupViewerTankAvatar(viewerTank, userId, avatarUrl);
+
+            // 🔥 ВАЖНО: ПРИМЕНЯЕМ ЭФФЕКТ "СТОП-ВРЕМЕНИ" ЕСЛИ ОН АКТИВЕН
+            if (this.timeStopActive) {
+                const remainingTime = this.timeStopDuration - (Date.now() - this.timeStopStartTime);
+                if (remainingTime > 0) {
+                    viewerTank.freeze(remainingTime);
+                    console.log(`⏰ Танк зрителя ${username} заморожен на ${remainingTime}мс`);
+                }
+            }
+
+            // Добавляем в список врагов
+            this.enemyManager.enemies.push(viewerTank);
+
+            console.log(`🎮 Танк зрителя "${username}" создан через анимацию`);
+
+            // Визуальный эффект
+            this.effectManager.addExplosion(position.x, position.y, 'bonus');
+            this.screenShake = 10;
+        };
+
+        let spawnDelay = 3000; // 🔥 Теперь 3 секунды (было 500)
+
+        if (this.timeStopActive) {
+            spawnDelay = 3500; // Немного больше при стоп-времени
+            console.log(`⏰ Анимация спавна танка ${username} замедлена из-за стоп-времени`);
+        }
+
+        // Устанавливаем таймер для завершения анимации
+        setTimeout(() => {
+            const index = this.enemyManager.spawnAnimations.indexOf(spawnAnimation);
+            if (index !== -1) {
+                this.enemyManager.spawnAnimations.splice(index, 1);
+
+                // Проверяем, не закончилось ли стоп-время пока шла анимация
+                if (!this.timeStopActive) {
+                    this.enemyManager.completeSpawnAnimation(spawnPoint);
+                } else {
+                    // Если время все еще остановлено, откладываем создание танка
+                    console.log(`⏰ Откладываем создание танка ${username} до окончания стоп-времени`);
+                    this.delayedSpawn = {
+                        point: spawnPoint,
+                        callback: () => this.enemyManager.completeSpawnAnimation(spawnPoint)
+                    };
+                }
+            }
+        }, spawnDelay);
+    }
+
+    // Новый метод для настройки аватарки
+    setupViewerTankAvatar(tank, userId, avatarUrl) {
+        tank.avatarLoaded = false;
+        tank.avatarError = false;
+
+        if (!avatarUrl || avatarUrl === '') {
+            tank.avatarError = true;
+            return;
+        }
+
+        // Пытаемся использовать кэшированную аватарку
+        const cachedAvatar = this.getCachedAvatar(userId);
+        if (cachedAvatar) {
+            console.log(`✅ Используем кэшированную аватарку для ${tank.username}`);
+            tank.avatarImage = cachedAvatar;
+            tank.avatarLoaded = true;
+        } else if (cachedAvatar === null) {
+            // Помечаем как ошибку если загрузка ранее не удалась
+            tank.avatarError = true;
+        } else {
+            // Ждем загрузки аватарки
+            console.log(`⏳ Ожидаем загрузку аватарки для ${tank.username}`);
+            this.waitForAvatar(userId, (loadedAvatar) => {
+                if (loadedAvatar) {
+                    tank.avatarImage = loadedAvatar;
+                    tank.avatarLoaded = true;
+                    console.log(`✅ Аватарка загружена для ${tank.username}`);
+                } else {
+                    tank.avatarError = true;
+                    console.log(`❌ Аватарка не загрузилась для ${tank.username}`);
+                }
+            });
+        }
+    }
+
+    // Генерируем уникальный цвет на основе ID пользователя
+    getViewerColor(userId) {
+        const colors = [
+            '#FF69B4', // Розовый
+            '#9370DB', // Фиолетовый
+            '#00CED1', // Бирюзовый
+            '#32CD32', // Лаймовый
+            '#FFD700', // Золотой
+            '#FF6347', // Томатный
+            '#1E90FF', // Голубой
+            '#FF8C00'  // Оранжевый
+        ];
+
+        // Простой хэш для получения индекса цвета
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+            hash = ((hash << 5) - hash) + userId.charCodeAt(i);
+            hash = hash & hash;
+        }
+
+        return colors[Math.abs(hash) % colors.length];
+    }
+
+    handleLikeFromViewer(userId, username, message) {
+        if (!this.player || this.player.isDestroyed) {
+            console.log(`💖 ${username} лайкнул, но игрок уничтожен`);
+            return;
+        }
+
+        // Добавляем опыт игроку за лайк
+        const expGained = 5; // Опыт за лайк
+        this.player.experience += expGained;
+        this.playerExperience = this.player.experience;
+
+        // Проверяем уровень ап
+        const levelBefore = this.player.playerLevel;
+        this.player.checkLevelUp();
+        const levelAfter = this.player.playerLevel;
+
+        // Визуальный эффект с именем отправителя
+        const likeText = levelAfter > levelBefore
+        ? `УРОВЕНЬ ${levelAfter}! ⭐`
+        : `+${expGained} XP 💖`;
+
+        this.createFloatingText(
+            this.player.position.x,
+            this.player.position.y - 20,
+            `${username}: ${likeText}`,
+            '#FF69B4'
+        );
+
+        // Дополнительный эффект при уровнепе
+        if (levelAfter > levelBefore) {
+            this.effectManager.addExplosion(this.player.position.x, this.player.position.y, 'bonus');
+            this.screenShake = 15;
+            console.log(`⭐ Игрок достиг уровня ${levelAfter}! Спасибо ${username} за лайки!`);
+        }
+
+        console.log(`💖 ${username} лайкнул! Игрок получает +${expGained} опыта!`);
+
+        // Сохраняем прогресс
+        this.savePlayerProgress();
+        this.updatePlayerStats();
+    }
+
+    createFloatingText(x, y, text, color = '#FFFFFF') {
+        if (!this.floatingTexts) this.floatingTexts = [];
+
+        this.floatingTexts.push({
+            x: x,
+            y: y,
+            text: text,
+            color: color,
+            lifetime: 120, // 2 секунды при 60 FPS
+            alpha: 1.0,
+            velocity: new Vector2(0, -1.5), // Двигается вверх
+                                scale: 1.0
+        });
+    }
+
+    drawFloatingTexts(ctx) {
+        if (!this.floatingTexts || this.floatingTexts.length === 0) return;
+
+        ctx.save();
+
+        this.floatingTexts.forEach(text => {
+            // Тень
+            ctx.fillStyle = 'rgba(0, 0, 0, ' + (text.alpha * 0.7) + ')';
+            ctx.font = `bold ${text.fontSize || 16}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text.text, text.x + 2, text.y + 2);
+
+            // Основной текст
+            ctx.fillStyle = text.color.replace(')', ', ' + text.alpha + ')').replace('rgb', 'rgba');
+            ctx.fillText(text.text, text.x, text.y);
+        });
+
+        ctx.restore();
+    }
+
+    resetForNewRound() {
+        // Очищаем всплывающие тексты
+        if (this.floatingTexts) {
+            this.floatingTexts = [];
+        }
+
+        // Можно также очистить другие данные зрителей при необходимости
+        console.log('🔄 Данные зрителей сброшены для нового раунда');
+    }
+
+    handlePowerupGift(userId, username, giftType, giftConfig) {
+        // Создаем бонус на карте используя существующий тип
+        const position = this.bonusManager.findFreeBonusPosition();
+        if (position) {
+            const bonus = new Bonus(
+                position.x,
+                position.y,
+                giftConfig.bonusType, // Используем существующий тип бонуса
+                this
+            );
+
+            // Увеличиваем время жизни бонуса
+            bonus.lifetime = 15000;
+            bonus.giftedBy = username; // Добавляем информацию о дарителе
+
+            this.bonusManager.bonuses.push(bonus);
+        }
+
+        // Визуальный эффект и сообщение
+        if (!this.floatingTexts) this.floatingTexts = [];
+        this.floatingTexts.push({
+            x: this.player.position.x,
+            y: this.player.position.y,
+            text: `${giftConfig.message} ${username}`,
+            color: this.getGiftColor(giftType),
+                                lifetime: 120,
+                                alpha: 1.0,
+                                velocity: { x: 0, y: -1.2 },
+                                scale: 1.0
+        });
+
+        this.screenShake = 8;
+        this.soundManager.play('bonusPickup');
+
+        console.log(`🎁 Создан бонус ${giftConfig.bonusType.id} от ${username}`);
+    }
+
+    handleGiftFromViewer(userId, username, message) {
+        if (!this.player || this.player.isDestroyed) {
+            console.log(`🎁 ${username} отправил подарок, но игрок уничтожен`);
+            return;
+        }
+
+        // Определяем тип подарка из сообщения
+        const giftType = this.detectGiftType(message);
+
+        if (!giftType) {
+            // Случайный бонус за неузнанный подарок
+            this.handleRandomGift(userId, username);
+            return;
+        }
+
+        const giftConfig = GIFT_BONUSES[giftType];
+        if (!giftConfig) {
+            this.handleRandomGift(userId, username);
+            return;
+        }
+
+        console.log(`🎁 ${username} отправил подарок: ${giftType}`);
+
+        // Все подарки создают бонусы на карте
+        this.handlePowerupGift(userId, username, giftType, giftConfig);
+    }
+
+    // Определение типа подарка по сообщению
+    detectGiftType(message) {
+        const cleanMessage = message.toLowerCase();
+
+        for (const [giftKey, keywords] of Object.entries(GIFT_TYPES)) {
+            if (keywords.some(keyword => cleanMessage.includes(keyword))) {
+                return giftKey;
+            }
+        }
+
+        return null;
+    }
+
+    // Вспомогательные методы
+    getGiftSymbol(giftType) {
+        const symbols = {
+            'rose': '🌹',
+            'coin': '🪙',
+            'diamond': '💎',
+            'cake': '🎂',
+            'crown': '👑',
+            'rocket': '🚀',
+            'super_star': '⭐'
+        };
+        return symbols[giftType] || '🎁';
+    }
+
+    getGiftColor(giftType) {
+        const colors = {
+            'rose': '#FF69B4',
+            'coin': '#FFD700',
+            'diamond': '#00FFFF',
+            'cake': '#FF6B6B',
+            'crown': '#FFA500',
+            'rocket': '#9370DB',
+            'super_star': '#FFFF00'
+        };
+        return colors[giftType] || '#FFFFFF';
+    }
+
+    handleRandomGift(userId, username) {
+        const randomGifts = ['rose', 'coin', 'diamond', 'cake'];
+        const randomGift = randomGifts[Math.floor(Math.random() * randomGifts.length)];
+        const giftConfig = GIFT_BONUSES[randomGift];
+
+        this.handlePowerupGift(userId, username, randomGift, giftConfig);
+    }
+} // ← ЭТА скобка закрывает класс Game
+
+// Глобальная функция для тестирования чата - ВНЕ класса Game
+window.testChat = (id, name, avatar, command) => {
+    if (!game) {
+        console.log('Игра не инициализирована');
+        return;
+    }
+
+    if (command === '!танк') {
+        game.spawnViewerTank(id, name, avatar);
+    } else {
+        console.log(`Неизвестная команда: ${command}`);
+    }
+};
+
+// Глобальная функция для тестирования чата - ВНЕ класса Game
+window.testChat = (id, name, avatar, command) => {
+    if (!game) {
+        console.log('Игра не инициализирована');
+        return;
+    }
+
+    // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА
+    if (game.levelComplete || game.gameOver) {
+        console.log('🚫 Раунд завершен! Новые танки нельзя создавать.');
+        return;
+    }
+
+    const cleanCommand = command.toString().toLowerCase().trim();
+
+    if (command === '!танк') {
+        game.spawnViewerTank(id, name, avatar);
+    } else if (command.toLowerCase().includes('лайк') ||
+        command.toLowerCase().includes('like') ||
+        command.includes('❤️') ||
+        command.includes('💖') ||
+        command.includes('👍')) {
+        game.handleLikeFromViewer(id, name, command);
+        } else if (command.toLowerCase().includes('подарок') ||
+            command.toLowerCase().includes('gift') ||
+            command.includes('🎁')) {
+            game.handleGiftFromViewer(id, name, command);
+            } else {
+                console.log(`Неизвестная команда: ${command}`);
+            }
+};

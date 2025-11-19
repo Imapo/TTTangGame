@@ -44,6 +44,13 @@ class Tank {
         this.username = this.generateEnemyName(enemyType);
         this.aiLevel = ENEMY_AI_LEVELS.BASIC;
 
+        // ДОБАВЬТЕ ЭТО ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ
+        if (enemyType === 'VIEWER' || this.isViewerTank) {
+            this.avatarLoaded = false;
+            this.avatarError = false;
+            // Загрузка аватарки будет вызвана позже, когда установятся avatarUrl и username
+        }
+
         this.initEnemyAI();
         this.determineBonus();
     }
@@ -1053,66 +1060,262 @@ class Tank {
     drawEnemyInfo(ctx) {
         if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
 
-        ctx.save();
-        ctx.translate(this.position.x, this.position.y);
-
-        const debugLines = [];
-        const tempAvatars = { 'BASIC': '🚵‍♂️', 'FAST': '🌠', 'HEAVY': '🦏', 'SNIPER': '🎯' };
-        debugLines.push(`${tempAvatars[this.enemyType] || '👤'} ${this.username}`);
-
-        const isDebugMode = game && game.debugShowVision;
-        if (isDebugMode) {
-            const healthIcons = ['❤️', '❤️❤️', '❤️❤️❤️'];
-            debugLines.push(`${healthIcons[this.health - 1] || '❤️'} Жизней = ${this.health}`);
-
-            const aiIcons = {
-                [ENEMY_AI_LEVELS.BASIC]: '🚲 Базовый ИИ',
-                [ENEMY_AI_LEVELS.ADVANCED]: '🚨 Продвинутый ИИ'
-            };
-            debugLines.push(`${aiIcons[this.aiLevel] || '❓ Неизвестный ИИ'}`);
-
-            let stateLine = '';
-            if (this.aiLevel === ENEMY_AI_LEVELS.BASIC) {
-                const stateIcons = {
-                    'MOVING': '🚗 Еду',
-                    'STOPPED': '🛑 Стою',
-                    'LOOKING_AROUND': '👀 Осматриваюсь'
-                };
-                stateLine = stateIcons[this.patrolState] || '❓';
-            }
-            debugLines.push(stateLine);
+        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ В КОНСОЛЬ
+        if ((this.enemyType === 'VIEWER' || this.isViewerTank) && !this.avatarLoaded && !this.avatarError) {
+            console.log(`🔄 Танк ${this.username}: avatarLoaded=${this.avatarLoaded}, avatarError=${this.avatarError}, avatarUrl=${this.avatarUrl}`);
         }
 
-        const lineHeight = 14;
-        const padding = 6;
-        const totalHeight = debugLines.length * lineHeight + padding * 2;
-        const maxWidth = Math.max(...debugLines.map(line => ctx.measureText(line).width)) + padding * 2;
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+        this.drawUnifiedEnemyInfo(ctx);
+        ctx.restore();
+    }
 
-        const blockX = -this.size - maxWidth - 15;
-        const blockY = -this.size - totalHeight - 10;
+    drawUnifiedEnemyInfo(ctx) {
+        const username = this.username.toUpperCase();
+        const hearts = '❤️'.repeat(this.health);
+        const infoText = `${username} ${hearts}`;
 
-        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + maxWidth, blockY + totalHeight);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
+        ctx.font = 'bold 12px Arial';
+        const textWidth = ctx.measureText(infoText).width;
+        const textHeight = 14;
 
-        ctx.fillStyle = gradient;
-        ctx.fillRect(blockX, blockY, maxWidth, totalHeight);
+        const padding = 8;
+        const blockWidth = textWidth + padding * 2;
+        const blockHeight = textHeight + padding * 2;
 
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(blockX, blockY, maxWidth, totalHeight);
+        // Позиция блока - убедимся что она правильная
+        const blockX = -this.size - blockWidth - 25;
+        const blockY = -this.size - blockHeight - 15;
 
+        // 1. Отрисовка иконки (с правильным центрированием)
+        this.drawEnemyIcon(ctx, blockX, blockY, blockHeight);
+
+        // 2. Отрисовка информационного блока
+        this.drawEnemyInfoBlock(ctx, blockX, blockY, blockWidth, blockHeight, infoText);
+
+        // 3. Линия от блока к танку
+        this.drawEnemyConnectionLine(ctx, blockX, blockY, blockWidth, blockHeight);
+    }
+
+    drawEnemyIcon(ctx, blockX, blockY, blockHeight) {
+        const iconSize = blockHeight - 4;
+        const iconX = blockX - iconSize - 8;
+
+        // ИСПРАВЛЕНИЕ: Правильное центрирование по вертикали
+        const iconY = blockY + (blockHeight - iconSize) / 2; // Центрируем по высоте блока
+
+        ctx.save();
+
+        // Обводка цветом танка
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2 + 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Белый фон
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 11px Arial';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
+        ctx.beginPath();
+        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2, 0, Math.PI * 2);
+        ctx.fill();
 
-        debugLines.forEach((line, index) => {
-            const yPos = blockY + padding + (index * lineHeight) + lineHeight/2;
-            ctx.fillText(line, blockX + padding, yPos);
-        });
+        // Отрисовка иконки или аватарки
+        if (this.shouldDrawAvatar()) {
+            this.drawAvatarImage(ctx, iconX, iconY, iconSize);
+        } else {
+            this.drawIcon(ctx, iconX, iconY, iconSize);
+        }
 
         ctx.restore();
+
+        // Линия от иконки к блоку (тоже обновим координаты)
+        ctx.strokeStyle = this.color + 'AA';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(iconX + iconSize, iconY + iconSize/2); // Центр правого края иконки
+        ctx.lineTo(blockX, blockY + blockHeight/2); // Центр левого края блока
+        ctx.stroke();
+    }
+
+    shouldDrawAvatar() {
+        return (this.enemyType === 'VIEWER' || this.isViewerTank) &&
+        this.avatarImage &&
+        this.avatarLoaded &&
+        !this.avatarError;
+    }
+
+    drawAvatarImage(ctx, x, y, size) {
+        if (!this.avatarImage || !this.avatarLoaded) {
+            // Показываем индикатор загрузки (тоже центрированный)
+            this.drawLoadingIndicator(ctx, x, y, size);
+            return;
+        }
+
+        try {
+            ctx.save();
+
+            // Создаем круглую маску
+            ctx.beginPath();
+            ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+            ctx.clip();
+
+            // Плавное появление
+            if (!this.avatarShowProgress) this.avatarShowProgress = 0;
+            this.avatarShowProgress = Math.min(this.avatarShowProgress + 0.1, 1);
+            ctx.globalAlpha = this.avatarShowProgress;
+
+            const img = this.avatarImage;
+            const aspectRatio = img.width / img.height;
+
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (aspectRatio > 1) {
+                // Широкая картинка - подгоняем по ширине
+                drawWidth = size;
+                drawHeight = size / aspectRatio;
+                offsetX = 0;
+                offsetY = (size - drawHeight) / 2; // Центрируем по вертикали
+            } else {
+                // Высокая картинка - подгоняем по высоте
+                drawWidth = size * aspectRatio;
+                drawHeight = size;
+                offsetX = (size - drawWidth) / 2; // Центрируем по горизонтали
+                offsetY = 0;
+            }
+
+            // Отрисовываем аватарку по центру круга
+            ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
+            ctx.restore();
+
+        } catch (e) {
+            console.log('Ошибка отрисовки аватарки:', e);
+            this.drawLoadingIndicator(ctx, x, y, size);
+        }
+    }
+
+    // Новый метод для индикатора загрузки
+    drawLoadingIndicator(ctx, x, y, size) {
+        ctx.save();
+
+        const centerX = x + size/2;
+        const centerY = y + size/2;
+
+        // Анимированное кольцо загрузки
+        const time = Date.now() * 0.01;
+        const progress = (time % 100) / 100;
+
+        ctx.translate(centerX, centerY);
+        ctx.rotate(progress * Math.PI * 2);
+
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, size/4, 0, Math.PI * 1.5); // Уменьшили радиус для центрирования
+        ctx.stroke();
+
+        ctx.restore();
+
+        // Текст "Загрузка..." по центру
+        if (!this.avatarError) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 8px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('...', centerX, centerY);
+        }
+    }
+
+    drawIcon(ctx, x, y, size) {
+        ctx.fillStyle = this.color;
+        ctx.font = `bold ${Math.floor(size * 0.5)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle'; // Важно: выравнивание по центру по вертикали
+
+        const icon = this.getEnemyIcon();
+
+        // Основной текст
+        ctx.fillStyle = this.color;
+        ctx.fillText(icon, x + size/2, y + size/2 + 1);
+    }
+
+    getEnemyIcon() {
+        if (this.enemyType === 'VIEWER' || this.isViewerTank) {
+            return '📷'; // Иконка камеры для зрителей (fallback)
+        }
+
+        // Иконки для ИИ противников
+        const icons = {
+            'BASIC': '🔴',    // Обычный
+            'FAST': '⚡',     // Быстрый
+            'HEAVY': '🛡️',   // Тяжелый
+            'SNIPER': '🎯'    // Снайпер
+        };
+
+        return icons[this.enemyType] || '👤';
+    }
+
+    drawEnemyInfoBlock(ctx, blockX, blockY, blockWidth, blockHeight, infoText) {
+        // Фон блока
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.9)');
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Обводка блока цветом танка
+        ctx.strokeStyle = this.color + 'CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Текст
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(infoText, blockX + 8, blockY + blockHeight/2);
+    }
+
+    drawEnemyConnectionLine(ctx, blockX, blockY, blockWidth, blockHeight) {
+        // Линия от блока к танку
+        ctx.strokeStyle = this.color + 'AA';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(blockX + blockWidth, blockY + blockHeight/2);
+        ctx.lineTo(-this.size/2, 0);
+        ctx.stroke();
+    }
+
+    loadAvatar() {
+        if (!this.avatarUrl || this.avatarUrl === '' || this.avatarUrl === 'undefined') {
+            console.log(`❌ Нет URL аватарки для ${this.username}`);
+            this.avatarError = true;
+            return;
+        }
+
+        this.avatarImage = new Image();
+        this.avatarImage.crossOrigin = "anonymous"; // Для CORS если нужно
+
+        this.avatarImage.onload = () => {
+            console.log(`✅ Аватарка загружена для ${this.username}`);
+            this.avatarLoaded = true;
+            this.avatarError = false;
+        };
+
+        this.avatarImage.onerror = () => {
+            console.log(`❌ Ошибка загрузки аватарки: ${this.avatarUrl}`);
+            this.avatarLoaded = false;
+            this.avatarError = true;
+            this.avatarImage = null;
+        };
+
+        try {
+            this.avatarImage.src = this.avatarUrl;
+            console.log(`🔄 Загружаем аватарку: ${this.avatarUrl}`);
+        } catch (error) {
+            console.log(`❌ Ошибка установки src аватарки: ${error}`);
+            this.avatarError = true;
+        }
     }
 
     drawInvincibilityEffect(ctx) {
