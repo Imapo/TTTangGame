@@ -11,6 +11,7 @@ const TOTAL_ENEMIES_PER_LEVEL = 4;
 const RESPAWN_DELAY = 3000;
 const SPAWN_ANIMATION_DURATION = 3000;
 const PLAYER_SHIELD_DURATION = 5000;
+const DEBUG_MODE = true; // Поставь true чтобы видеть границы коллизии
 
 const EXIT_ANIMATION_DURATION = 2000;
 const EXIT_WIDTH = 60;

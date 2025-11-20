@@ -13,7 +13,7 @@ class GameMap {
             return;
         }
 
-        this.grid = this.generateLevel(level);
+        this.grid = this.generateProceduralLevel(level);
         this.brickTiles = new Map();
         this.basePosition = new Vector2(Math.floor(this.width / 2), this.height - 2);
         this.baseDestroyed = false;
@@ -54,10 +54,32 @@ class GameMap {
         }
     }
 
-    generateLevel(level) {
-        const grid = Array(this.height).fill().map(() => Array(this.width).fill(0));
+    generateProceduralLevel(level) {
+        const grid = Array(this.height).fill().map(() => Array(this.width).fill(TILE_TYPES.EMPTY));
 
-        // Границы
+        // Создаем границы
+        this.createBoundaries(grid);
+
+        // Определяем зоны спавна
+        const spawnAreas = this.defineSpawnAreas();
+
+        // Защищаем зоны спавна
+        this.protectSpawnAreas(grid, spawnAreas);
+
+        // Создаем защиту базы
+        this.createBaseDefense(grid);
+
+        // Генерируем различные типы препятствий
+        this.generateObstacles(grid, level, spawnAreas);
+
+        // Добавляем специальные структуры
+        this.generateSpecialStructures(grid, level);
+
+        return grid;
+    }
+
+    createBoundaries(grid) {
+        // Внешние границы из бетона
         for (let i = 0; i < this.width; i++) {
             grid[0][i] = TILE_TYPES.CONCRETE;
             grid[this.height-1][i] = TILE_TYPES.CONCRETE;
@@ -66,59 +88,60 @@ class GameMap {
             grid[i][0] = TILE_TYPES.CONCRETE;
             grid[i][this.width-1] = TILE_TYPES.CONCRETE;
         }
+    }
 
-        // Защита зон спавна
-        const playerSpawnArea = [
-            [6,22],[7,22],[8,22],[9,22],[6,23],[7,23],[8,23],[9,23],
-            [6,24],[7,24],[8,24],[9,24],[6,25],[7,25],[8,25],[9,25]
-        ];
+    defineSpawnAreas() {
+        const playerSpawnArea = [];
+        const enemySpawnAreas = [];
 
-        const enemySpawnAreas = [
-            [11,1],[12,1],[13,1],[14,1],[11,2],[12,2],[13,2],[14,2],[11,3],[12,3],[13,3],[14,3],
-            [21,1],[22,1],[23,1],[24,1],[21,2],[22,2],[23,2],[24,2],[21,3],[22,3],[23,3],[24,3],
-            [1,1],[2,1],[3,1],[4,1],[1,2],[2,2],[3,2],[4,2],[1,3],[2,3],[3,3],[4,3]
-        ];
-
-        const allSpawnAreas = [...playerSpawnArea, ...enemySpawnAreas];
-        allSpawnAreas.forEach(([x,y]) => {
-            if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
-                grid[y][x] = TILE_TYPES.EMPTY;
-            }
-        });
-
-        // Препятствия
-        const obstacleCount = 12 + level * 3;
-        for (let i = 0; i < obstacleCount; i++) {
-            const x = Math.floor(Math.random() * (this.width - 8)) + 4;
-            const y = Math.floor(Math.random() * (this.height - 12)) + 4;
-
-            let inSpawnArea = allSpawnAreas.some(([sx,sy]) => x === sx && y === sy);
-            if (!inSpawnArea && grid[y][x] === TILE_TYPES.EMPTY) {
-                const rand = Math.random();
-                if (rand < 0.3) grid[y][x] = TILE_TYPES.BRICK;
-                else if (rand < 0.5) grid[y][x] = TILE_TYPES.WATER;
-                else if (rand < 0.9) grid[y][x] = TILE_TYPES.GRASS;
-                else grid[y][x] = TILE_TYPES.CONCRETE;
-
-                if (Math.random() > 0.3) {
-                    [[x,y],[x+1,y],[x,y+1],[x+1,y+1]].forEach(([sx,sy]) => {
-                        if (sx >= 0 && sx < this.width && sy >= 0 && sy < this.height) {
-                            let segInSpawn = allSpawnAreas.some(([spx,spy]) => sx === spx && sy === spy);
-                            if (!segInSpawn && grid[sy][sx] === TILE_TYPES.EMPTY) {
-                                grid[sy][sx] = grid[y][x];
-                            }
-                        }
-                    });
+        // Зона спавна игрока (нижняя центральная часть)
+        for (let y = this.height - 6; y < this.height - 2; y++) {
+            for (let x = Math.floor(this.width/2) - 3; x <= Math.floor(this.width/2) + 2; x++) {
+                if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                    playerSpawnArea.push([x, y]);
                 }
             }
         }
 
-        // Защита базы
+        // Зоны спавна врагов (верхняя часть)
+        const enemySpawnCount = 3 + Math.min(2, Math.floor(level / 3));
+        for (let i = 0; i < enemySpawnCount; i++) {
+            const areaWidth = 4;
+            const areaHeight = 3;
+            const x = Math.floor(i * (this.width - areaWidth) / (enemySpawnCount - 1));
+            const y = 1;
+
+            for (let dy = 0; dy < areaHeight; dy++) {
+                for (let dx = 0; dx < areaWidth; dx++) {
+                    if (x + dx < this.width && y + dy < this.height) {
+                        enemySpawnAreas.push([x + dx, y + dy]);
+                    }
+                }
+            }
+        }
+
+        return {
+            playerSpawnArea,
+            enemySpawnAreas,
+            allSpawnAreas: [...playerSpawnArea, ...enemySpawnAreas.flat()]
+        };
+    }
+
+    protectSpawnAreas(grid, spawnAreas) {
+        spawnAreas.allSpawnAreas.forEach(([x, y]) => {
+            if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+                grid[y][x] = TILE_TYPES.EMPTY;
+            }
+        });
+    }
+
+    createBaseDefense(grid) {
         const baseX = Math.floor(this.width / 2);
         const baseY = this.height - 2;
 
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
+        // Очищаем область вокруг базы
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
                 const x = baseX + dx, y = baseY + dy;
                 if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
                     grid[y][x] = TILE_TYPES.EMPTY;
@@ -126,22 +149,302 @@ class GameMap {
             }
         }
 
-        const wallPositions = [
-            [baseX-1,baseY-1],[baseX-1,baseY],[baseX-1,baseY+1],
-            [baseX+1,baseY-1],[baseX+1,baseY],[baseX+1,baseY+1],
-            [baseX,baseY-1],[baseX,baseY+1]
+        // Создаем защитные стены вокруг базы
+        const defensePatterns = [
+            // Паттерн 1: Крестообразная защита
+            [
+                [baseX-2, baseY-2], [baseX-1, baseY-2], [baseX, baseY-2], [baseX+1, baseY-2], [baseX+2, baseY-2],
+                [baseX-2, baseY-1], [baseX+2, baseY-1],
+                [baseX-2, baseY], [baseX+2, baseY],
+                [baseX-2, baseY+1], [baseX+2, baseY+1],
+                [baseX-2, baseY+2], [baseX-1, baseY+2], [baseX, baseY+2], [baseX+1, baseY+2], [baseX+2, baseY+2]
+            ],
+            // Паттерн 2: Угловая защита
+            [
+                [baseX-2, baseY-2], [baseX-1, baseY-2], [baseX, baseY-2], [baseX+1, baseY-2], [baseX+2, baseY-2],
+                [baseX-2, baseY-1], [baseX-2, baseY], [baseX-2, baseY+1], [baseX-2, baseY+2],
+                [baseX+2, baseY-1], [baseX+2, baseY], [baseX+2, baseY+1], [baseX+2, baseY+2],
+                [baseX-1, baseY+2], [baseX, baseY+2], [baseX+1, baseY+2]
+            ],
+            // Паттерн 3: Полная защита с проходами
+            [
+                [baseX-2, baseY-2], [baseX-1, baseY-2], [baseX, baseY-2], [baseX+1, baseY-2], [baseX+2, baseY-2],
+                [baseX-2, baseY-1], [baseX+2, baseY-1],
+                [baseX-2, baseY], [baseX+2, baseY],
+                [baseX-2, baseY+1], [baseX+2, baseY+1],
+                [baseX-1, baseY+2], [baseX+1, baseY+2]
+            ]
         ];
 
-        wallPositions.forEach(([x,y]) => {
+        const pattern = defensePatterns[Math.floor(Math.random() * defensePatterns.length)];
+        pattern.forEach(([x, y]) => {
             if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
                 grid[y][x] = TILE_TYPES.BRICK;
             }
         });
 
+        // Устанавливаем базу
         grid[baseY][baseX] = TILE_TYPES.BASE;
-        return grid;
     }
 
+    generateObstacles(grid, level, spawnAreas) {
+        const obstacleCount = 15 + level * 2;
+        const maxAttempts = obstacleCount * 10;
+        let attempts = 0;
+        let placed = 0;
+
+        while (placed < obstacleCount && attempts < maxAttempts) {
+            attempts++;
+
+            // Выбираем случайный тип препятствия с весами
+            const rand = Math.random();
+            let obstacleType;
+            if (rand < 0.4) obstacleType = TILE_TYPES.BRICK;      // 40% кирпичи
+            else if (rand < 0.65) obstacleType = TILE_TYPES.GRASS; // 25% трава
+            else if (rand < 0.85) obstacleType = TILE_TYPES.WATER; // 20% вода
+            else obstacleType = TILE_TYPES.CONCRETE;              // 15% бетон
+
+            // Выбираем размер препятствия
+            const size = Math.random() < 0.7 ? 1 : (Math.random() < 0.5 ? 2 : 3);
+
+            // Выбираем позицию
+            const x = Math.floor(Math.random() * (this.width - size - 4)) + 2;
+            const y = Math.floor(Math.random() * (this.height - size - 8)) + 4;
+
+            // Проверяем, можно ли разместить здесь препятствие
+            if (this.canPlaceObstacle(grid, x, y, size, spawnAreas.allSpawnAreas)) {
+                this.placeObstacle(grid, x, y, size, obstacleType);
+                placed++;
+            }
+        }
+
+        // Добавляем дополнительные препятствия на поздних уровнях
+        if (level > 3) {
+            this.addChallengeObstacles(grid, level, spawnAreas.allSpawnAreas);
+        }
+    }
+
+    canPlaceObstacle(grid, x, y, size, allSpawnAreas) {
+        // Проверяем, не пересекается ли с зонами спавна
+        for (let dy = 0; dy < size; dy++) {
+            for (let dx = 0; dx < size; dx++) {
+                const checkX = x + dx;
+                const checkY = y + dy;
+
+                // Проверяем границы
+                if (checkX >= this.width - 1 || checkY >= this.height - 1) {
+                    return false;
+                }
+
+                // Проверяем зоны спавна
+                const inSpawnArea = allSpawnAreas.some(([sx, sy]) => checkX === sx && checkY === sy);
+                if (inSpawnArea) {
+                    return false;
+                }
+
+                // Проверяем, не занята ли уже клетка
+                if (grid[checkY][checkX] !== TILE_TYPES.EMPTY) {
+                    return false;
+                }
+
+                // Проверяем, чтобы не блокировал проходы к базе (особенно снизу)
+                if (checkY > this.height - 8 && Math.abs(checkX - Math.floor(this.width/2)) < 3) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    placeObstacle(grid, x, y, size, type) {
+        for (let dy = 0; dy < size; dy++) {
+            for (let dx = 0; dx < size; dx++) {
+                if (x + dx < this.width - 1 && y + dy < this.height - 1) {
+                    grid[y + dy][x + dx] = type;
+                }
+            }
+        }
+
+        // Для больших препятствий добавляем вариативность
+        if (size > 1 && Math.random() < 0.3) {
+            this.varyLargeObstacle(grid, x, y, size, type);
+        }
+    }
+
+    varyLargeObstacle(grid, x, y, size, baseType) {
+        // Случайным образом меняем некоторые клетки большого препятствия
+        const variationCount = Math.floor(size * size * 0.3);
+        const variations = [TILE_TYPES.EMPTY, TILE_TYPES.GRASS, baseType];
+        const weights = baseType === TILE_TYPES.BRICK ? [0.1, 0.2, 0.7] : [0.05, 0.15, 0.8];
+
+        for (let i = 0; i < variationCount; i++) {
+            const varX = x + Math.floor(Math.random() * size);
+            const varY = y + Math.floor(Math.random() * size);
+            const rand = Math.random();
+            let newType = baseType;
+
+            if (rand < weights[0]) newType = variations[0];
+            else if (rand < weights[0] + weights[1]) newType = variations[1];
+
+            if (varX < this.width - 1 && varY < this.height - 1) {
+                grid[varY][varX] = newType;
+            }
+        }
+    }
+
+    addChallengeObstacles(grid, level, allSpawnAreas) {
+        // Добавляем сложные препятствия на высоких уровнях
+        const challengeCount = Math.floor(level / 2);
+
+        for (let i = 0; i < challengeCount; i++) {
+            const patternType = Math.floor(Math.random() * 3);
+
+            switch (patternType) {
+                case 0: // Лабиринтные стены
+                    this.createMazePattern(grid, allSpawnAreas);
+                    break;
+                case 1: // Водные преграды
+                    this.createWaterBarrier(grid, allSpawnAreas);
+                    break;
+                case 2: // Бетонные укрепления
+                    this.createConcreteFortification(grid, allSpawnAreas);
+                    break;
+            }
+        }
+    }
+
+    createMazePattern(grid, allSpawnAreas) {
+        const mazeWidth = 5 + Math.floor(Math.random() * 3);
+        const mazeHeight = 4 + Math.floor(Math.random() * 3);
+        const startX = Math.floor(Math.random() * (this.width - mazeWidth - 4)) + 2;
+        const startY = Math.floor(Math.random() * (this.height - mazeHeight - 8)) + 4;
+
+        // Простой алгоритм создания лабиринта
+        for (let y = 0; y < mazeHeight; y++) {
+            for (let x = 0; x < mazeWidth; x++) {
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                // Создаем стены с шансом 60%, но оставляем проходы
+                if (worldX < this.width - 1 && worldY < this.height - 1) {
+                    const inSpawn = allSpawnAreas.some(([sx, sy]) => worldX === sx && worldY === sy);
+                    if (!inSpawn && grid[worldY][worldX] === TILE_TYPES.EMPTY) {
+                        // Создаем узор: чередуем стены и проходы
+                        if ((x % 2 === 0 && y % 2 === 1) || (x % 2 === 1 && y % 2 === 0)) {
+                            if (Math.random() < 0.6) {
+                                grid[worldY][worldX] = TILE_TYPES.BRICK;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    createWaterBarrier(grid, allSpawnAreas) {
+        const barrierLength = 3 + Math.floor(Math.random() * 4);
+        const isHorizontal = Math.random() < 0.5;
+        const startX = Math.floor(Math.random() * (this.width - barrierLength - 4)) + 2;
+        const startY = Math.floor(Math.random() * (this.height - barrierLength - 8)) + 4;
+
+        for (let i = 0; i < barrierLength; i++) {
+            const x = isHorizontal ? startX + i : startX;
+            const y = isHorizontal ? startY : startY + i;
+
+            if (x < this.width - 1 && y < this.height - 1) {
+                const inSpawn = allSpawnAreas.some(([sx, sy]) => x === sx && y === sy);
+                if (!inSpawn && grid[y][x] === TILE_TYPES.EMPTY) {
+                    grid[y][x] = TILE_TYPES.WATER;
+                }
+            }
+        }
+    }
+
+    createConcreteFortification(grid, allSpawnAreas) {
+        const fortSize = 2 + Math.floor(Math.random() * 2);
+        const startX = Math.floor(Math.random() * (this.width - fortSize - 4)) + 2;
+        const startY = Math.floor(Math.random() * (this.height - fortSize - 8)) + 4;
+
+        for (let y = 0; y < fortSize; y++) {
+            for (let x = 0; x < fortSize; x++) {
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                if (worldX < this.width - 1 && worldY < this.height - 1) {
+                    const inSpawn = allSpawnAreas.some(([sx, sy]) => worldX === sx && worldY === sy);
+                    if (!inSpawn && grid[worldY][worldX] === TILE_TYPES.EMPTY) {
+                        grid[worldY][worldX] = TILE_TYPES.CONCRETE;
+                    }
+                }
+            }
+        }
+    }
+
+    generateSpecialStructures(grid, level) {
+        // Добавляем специальные структуры на средних и высоких уровнях
+        if (level >= 2) {
+            const structureCount = 1 + Math.floor(level / 3);
+
+            for (let i = 0; i < structureCount; i++) {
+                const structureType = Math.floor(Math.random() * 2);
+
+                switch (structureType) {
+                    case 0: // Кирпичные крепости
+                        this.createBrickFortress(grid);
+                        break;
+                    case 1: // Смешанные укрепления
+                        this.createMixedFortification(grid);
+                        break;
+                }
+            }
+        }
+    }
+
+    createBrickFortress(grid) {
+        const fortressWidth = 4;
+        const fortressHeight = 3;
+        const startX = Math.floor(Math.random() * (this.width - fortressWidth - 4)) + 2;
+        const startY = Math.floor(Math.random() * (this.height - fortressHeight - 8)) + 4;
+
+        // Создаем U-образную структуру
+        for (let y = 0; y < fortressHeight; y++) {
+            for (let x = 0; x < fortressWidth; x++) {
+                // Создаем стены по краям, оставляя центр пустым
+                if (y === 0 || y === fortressHeight - 1 || x === 0 || x === fortressWidth - 1) {
+                    const worldX = startX + x;
+                    const worldY = startY + y;
+
+                    if (worldX < this.width - 1 && worldY < this.height - 1 &&
+                        grid[worldY][worldX] === TILE_TYPES.EMPTY) {
+                        grid[worldY][worldX] = TILE_TYPES.BRICK;
+                        }
+                }
+            }
+        }
+    }
+
+    createMixedFortification(grid) {
+        const size = 3;
+        const startX = Math.floor(Math.random() * (this.width - size - 4)) + 2;
+        const startY = Math.floor(Math.random() * (this.height - size - 8)) + 4;
+        const materials = [TILE_TYPES.BRICK, TILE_TYPES.CONCRETE];
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const worldX = startX + x;
+                const worldY = startY + y;
+
+                if (worldX < this.width - 1 && worldY < this.height - 1 &&
+                    grid[worldY][worldX] === TILE_TYPES.EMPTY) {
+                    // Чередуем материалы для создания прочной структуры
+                    const material = materials[(x + y) % 2];
+                grid[worldY][worldX] = material;
+                    }
+            }
+        }
+    }
+
+    // Остальные методы класса остаются без изменений
     checkBoundaryCollision(rect) {
         return rect.x < TILE_SIZE || rect.x + rect.width > CANVAS_WIDTH - TILE_SIZE ||
         rect.y < TILE_SIZE || rect.y + rect.height > CANVAS_HEIGHT - TILE_SIZE;
@@ -184,6 +487,17 @@ class GameMap {
 
     checkBulletCollision(bullet) {
         const bulletBounds = bullet.getBounds();
+
+        // ПЕРВОЕ: проверяем фрагменты кирпичей (они могут быть где угодно)
+        for (let [key, brickTile] of this.brickTiles) {
+            if (brickTile.isDestroyed && brickTile.hasFragments()) {
+                if (brickTile.checkFragmentCollision(bulletBounds)) {
+                    return 'brick';
+                }
+            }
+        }
+
+        // ВТОРОЕ: проверяем обычные тайлы по сетке
         const startX = Math.max(0, Math.floor(bulletBounds.x / this.tileSize));
         const startY = Math.max(0, Math.floor(bulletBounds.y / this.tileSize));
         const endX = Math.min(this.width-1, Math.floor((bulletBounds.x + bulletBounds.width) / this.tileSize));
@@ -212,7 +526,7 @@ class GameMap {
                     const key = `${x},${y}`;
                     if (this.brickTiles.has(key)) {
                         const brickTile = this.brickTiles.get(key);
-                        if (brickTile.checkBulletCollision(bullet)) {
+                        if (!brickTile.isDestroyed && brickTile.checkBulletCollision(bullet)) {
                             if (bullet.owner === 'enemy' && bullet.shooter) {
                                 bullet.shooter.recordWallDestroyed();
                                 if (typeof game !== 'undefined') game.saveEnemyStatsToStorage(bullet.shooter);

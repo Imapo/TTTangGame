@@ -21,8 +21,17 @@ class Vector2 {
         return new Vector2(this.x, this.y);
     }
 
-    // НОВЫЙ МЕТОД: Длина вектора
+    // Длина вектора
     length() {
         return Math.sqrt(this.x * this.x + this.y * this.y);
+    }
+
+    // НОВЫЙ МЕТОД: Нормализация вектора
+    normalize() {
+        const len = this.length();
+        if (len > 0) {
+            return new Vector2(this.x / len, this.y / len);
+        }
+        return new Vector2(0, 0);
     }
 }
