@@ -39,14 +39,6 @@
         <!-- Уведомления -->
         <div class="spawn-notification" id="spawnNotification">Появление танка!</div>
 
-        <!-- Управление -->
-        <div class="controls">
-            <p>Управление: WASD/Стрелки - движение, Space/Enter - стрельба</p>
-        </div>
-
-        <!-- Отладочная информация -->
-        <div class="debug" id="debugInfo"></div>
-
         <!-- Экран завершения уровня -->
         <div class="level-complete" id="levelComplete">
             <div class="level-complete-header">
@@ -114,37 +106,13 @@
                 <!-- Записи будут здесь -->
             </div>
         </div>
-
-        <!-- Дебаг панель -->
-        <div id="debugPanel" class="debug-panel">
-            <h3>🎮 Тест бонусов</h3>
-            <div class="debug-section">
-                <strong>Игрок:</strong>
-                <button onclick="game.debugAddBonus('SHIELD')">🛡️ Щит</button>
-                <button onclick="game.debugAddBonus('INVINCIBILITY')">✨ Неуязвимость</button>
-                <button onclick="game.debugAddBonus('AUTO_AIM')">🎯 Автонаведение</button>
-                <button onclick="game.debugAddBonus('FORTIFY')">🏰 Укрепить базу</button>
-                <button onclick="game.debugAddBonus('TIME_STOP')">⏰ Остановка времени</button>
-            </div>
-            <div class="debug-section">
-                <strong>Враги:</strong>
-                <button onclick="game.debugSpawnEnemyWithBonus('BASIC')">🔴 Базовый + бонус</button>
-                <button onclick="game.debugSpawnEnemyWithBonus('FAST')">🟡 Быстрый + бонус</button>
-                <button onclick="game.debugSpawnEnemyWithBonus('HEAVY')">🟣 Тяжелый + бонус</button>
-                <button onclick="game.debugSpawnEnemyWithBonus('SNIPER')">🟢 Снайпер с бонусом</button>
-            </div>
-            <div class="debug-section">
-                <strong>Другое:</strong>
-                <button onclick="game.debugAddLife()">❤️ +1 жизнь</button>
-                <button onclick="game.debugTogglePanel()">❌ Закрыть</button>
-            </div>
-        </div>
     </div>
 
     <!-- Подключение скриптов -->
     <script src="js/vector2.js"></script>
     <script src="js/rectangle.js"></script>
     <script src="js/constants.js"></script>
+    <script src="js/viewer-system.js"></script> <!-- ДОБАВЬТЕ ЗДЕСЬ -->
     <script src="js/teleport.js"></script>
     <script src="js/stream-interaction.js"></script>
     <script src="js/managers.js"></script>
@@ -158,16 +126,8 @@
     <script src="js/bonus.js"></script>
     <script src="js/game.js"></script>
     <script src="js/main.js"></script>
+    <!-- WebSocket клиент для TikTok интеграции -->
+    <script src="js/tiktok-client.js"></script>
 
-
-    <script>
-    // Глобальные обработчики
-    document.addEventListener('keydown', (e) => {
-        if (e.code === 'F2' && typeof game !== 'undefined') {
-            game.debugTogglePanel();
-            e.preventDefault();
-        }
-    });
-    </script>
 </body>
 </html>
