@@ -8,6 +8,56 @@ class EnemyManager {
         this.currentSpawnIndex = 0;
         this.lastRespawnTime = Date.now();
         this.destroyedEnemiesStats = [];
+
+        // 🔥 ДОБАВЛЯЕМ ИНИЦИАЛИЗАЦИЮ СЧЕТЧИКА
+        this.destroyedEnemies = 0;
+        this.totalEnemies = 20; // Общее количество врагов на уровень
+    }
+
+    // Получаем количество обычных врагов (не зрителей)
+    getRegularEnemiesCount() {
+        return this.enemies.filter(enemy =>
+        !enemy.isViewerTank && enemy.enemyType !== 'VIEWER'
+        ).length;
+    }
+
+    // Получаем количество танков зрителей
+    getViewerTanksCount() {
+        return this.enemies.filter(enemy =>
+        enemy.isViewerTank || enemy.enemyType === 'VIEWER'
+        ).length;
+    }
+
+    // Получаем оставшееся количество обычных врагов
+    getRemainingRegularEnemies() {
+        const currentRegular = this.getRegularEnemiesCount();
+        const destroyed = this.destroyedEnemies || 0;
+        const total = this.totalEnemies || 20;
+
+        return Math.max(0, total - destroyed - currentRegular);
+    }
+
+    // Получаем общее количество танков на поле (для экстренного лимита)
+    getTotalTanksOnField() {
+        return this.enemies.length;
+    }
+
+    // Получаем информацию о всех танках для дебага
+    getTanksDebugInfo() {
+        const regularEnemies = this.enemies.filter(enemy =>
+        !enemy.isViewerTank && enemy.enemyType !== 'VIEWER'
+        );
+        const viewerTanks = this.enemies.filter(enemy =>
+        enemy.isViewerTank || enemy.enemyType === 'VIEWER'
+        );
+
+        return {
+            total: this.enemies.length,
+            regular: regularEnemies.length,
+            viewer: viewerTanks.length,
+            regularNames: regularEnemies.map(e => e.username),
+            viewerNames: viewerTanks.map(e => e.username)
+        };
     }
 
     showSpawnNotification() {
@@ -37,6 +87,13 @@ class EnemyManager {
     }
 
     completeSpawnAnimation(position) {
+        // ДОБАВЛЯЕМ ПРОВЕРКУ ПЕРЕД СОЗДАНИЕМ ЛЮБОГО ТАНКА
+        const totalSpawnedSoFar = this.destroyedEnemies + this.enemies.length;
+        if (totalSpawnedSoFar >= 20) {
+            console.log(`🚫 ДОСТИГНУТ ЛИМИТ 20 ТАНКОВ! Не создаем нового врага.`);
+            return;
+        }
+
         const enemyType = this.getRandomEnemyType();
         const username = this.generateUniqueEnemyName(enemyType);
         const enemy = new Tank(position.x, position.y, "enemy", this.game.level, enemyType);
@@ -105,9 +162,11 @@ class EnemyManager {
     }
 
     update() {
+        // ПЕРЕМЕЩАЕМ ОБЪЯВЛЕНИЕ allTanks В НАЧАЛО МЕТОДА
         const allTanks = [this.game.player, ...this.enemies];
         const allFragments = this.game.getAllFragments();
 
+        // Обновляем врагов
         this.enemies.forEach(enemy => {
             enemy.update();
             enemy.updateEnemyAI(this.game.map, allTanks, allFragments, this.game.player);
@@ -123,7 +182,16 @@ class EnemyManager {
             }
         });
 
+        // УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ
+        const newlyDestroyed = this.enemies.filter(enemy => enemy.isDestroyed).length;
+        if (newlyDestroyed > 0) {
+            this.destroyedEnemies = (this.destroyedEnemies || 0) + newlyDestroyed;
+        }
+
+        // Удаляем уничтоженных врагов
         this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
+
+        // Обрабатываем столкновения (теперь allTanks объявлена)
         this.handleTankCollisions(allTanks);
     }
 
@@ -180,9 +248,29 @@ class EnemyManager {
         (Date.now() - this.lastRespawnTime >= RESPAWN_DELAY);
 
         if (canSpawn) {
+            // 🔥 ПРОВЕРЯЕМ: МОЖЕМ ЛИ СПАВНИТЬ ЗРИТЕЛЯ ВМЕСТО ОБЫЧНОГО ВРАГА?
+            if (this.game.viewerSystem && this.shouldSpawnViewerInstead()) {
+                const spawned = this.game.viewerSystem.trySpawnViewerTank();
+                if (spawned) {
+                    console.log('🎮 Спавн зрителя вместо обычного врага');
+                    this.lastRespawnTime = Date.now();
+                    this.game.enemiesToSpawn--;
+                    this.game.updateUI();
+                    return;
+                }
+            }
+
+            // 🔥 ЕСЛИ НЕ ВЫШЛО СО ЗРИТЕЛЕМ - СПАВНИМ ОБЫЧНОГО ВРАГА
             this.spawnEnemy();
             this.lastRespawnTime = Date.now();
         }
+    }
+
+    // 🔥 РЕШАЕМ: КОГДА СПАВНИТЬ ЗРИТЕЛЯ ВМЕСТО ОБЫЧНОГО ВРАГА
+    shouldSpawnViewerInstead() {
+        // 50% шанс заменить обычного врага на зрителя
+        // return Math.random() < 0.5;
+        return true;
     }
 
     clear() {

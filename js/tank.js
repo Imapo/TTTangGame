@@ -831,6 +831,20 @@ class Tank {
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
+        // ЭФФЕКТ РЕВЕРСА - ИНВЕРСИЯ ЦВЕТОВ
+        if (this.isReversed) {
+            const elapsed = Date.now() - this.reverseStartTime;
+            const progress = elapsed / this.reverseDuration;
+
+            if (progress < 1) {
+                const pulse = (Math.sin(Date.now() * 0.005) + 1) * 0.3;
+                ctx.filter = `hue-rotate(120deg) brightness(${1 + pulse})`;
+            } else {
+                // Автоматически сбрасываем когда время вышло
+                this.isReversed = false;
+            }
+        }
+
         let angle = 0;
         if (this.direction === DIRECTIONS.RIGHT) angle = Math.PI / 2;
         else if (this.direction === DIRECTIONS.DOWN) angle = Math.PI;

@@ -15,17 +15,15 @@ class Game {
         this.debugGodMode = false;
         this.level = 1;
 
-        // ИНИЦИАЛИЗАЦИЯ debugInfo
-        this.debugInfo = document.getElementById('debugInfo') || { textContent: '' };
-
         this.createDebugMenu();
         this.currentRoundEnemies = new Map();
         this.roundEnemiesList = [];
         this.totalEnemiesSpawned = 0;
 
-        this.avatarCache = new Map(); // Кэш загруженных аватарок
-        this.avatarLoadCallbacks = new Map(); // Колбэки для ожидающих загрузки
-        this.delayedSpawns = [];
+        this.viewerSystem = new ViewerSystem(this);
+
+        this.tiktokClient = null;
+        this.initTikTokIntegration();
 
         this.initGameState();
         this.setupEventListeners();
@@ -86,46 +84,13 @@ class Game {
         this.initLevel();
     }
 
-    // Метод для предзагрузки аватарки
-    preloadAvatar(userId, avatarUrl) {
-        if (!avatarUrl || this.avatarCache.has(userId)) return;
-
-        console.log(`🔄 Предзагрузка аватарки для ${userId}`);
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-
-        img.onload = () => {
-            console.log(`✅ Аватарка предзагружена для ${userId}`);
-            this.avatarCache.set(userId, img);
-            // Вызываем колбэки ожидающих танков
-            if (this.avatarLoadCallbacks.has(userId)) {
-                this.avatarLoadCallbacks.get(userId).forEach(callback => callback(img));
-                this.avatarLoadCallbacks.delete(userId);
-            }
-        };
-
-        img.onerror = () => {
-            console.log(`❌ Ошибка предзагрузки аватарки для ${userId}`);
-            this.avatarCache.set(userId, null); // Помечаем как неудачную загрузку
-        };
-
-        img.src = avatarUrl;
-    }
-
-    // Получить аватарку из кэша
-    getCachedAvatar(userId) {
-        return this.avatarCache.get(userId);
-    }
-
-    // Ожидание загрузки аватарки
-    waitForAvatar(userId, callback) {
-        if (this.avatarCache.has(userId)) {
-            callback(this.avatarCache.get(userId));
-        } else {
-            if (!this.avatarLoadCallbacks.has(userId)) {
-                this.avatarLoadCallbacks.set(userId, []);
-            }
-            this.avatarLoadCallbacks.get(userId).push(callback);
+    initTikTokIntegration() {
+        try {
+            this.tiktokClient = new TikTokClient(this);
+            this.tiktokClient.connect();
+            console.log('🎮 TikTok клиент инициализирован');
+        } catch (error) {
+            console.log('ℹ️ TikTok интеграция недоступна (сервер не запущен)');
         }
     }
 
@@ -136,6 +101,11 @@ class Game {
             trackedEnemy.destroyed = true;
             trackedEnemy.destroyTime = Date.now();
             trackedEnemy.finalStats = {...enemy.levelStats};
+        }
+
+        // Если это танк зрителя, отмечаем в системе зрителей
+        if ((enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId) {
+            this.viewerSystem.markViewerTankDestroyed(enemy.userId);
         }
     }
 
@@ -416,47 +386,16 @@ class Game {
                         });
                     }
                 });
-
-                this.updateDebugInfo();
     }
 
     setGameLevel(targetLevel) {
         this.level = targetLevel;
         this.initLevel();
-        this.updateDebugInfo();
     }
 
     debugSpawnTestEnemy() {
         const spawnPoint = this.enemyManager.getNextSpawnPoint();
         this.enemyManager.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
-    }
-
-    updateDebugInfo() {
-        if (typeof this.level === 'undefined') this.level = 1;
-
-        const currentAIElement = document.getElementById('debugCurrentAI');
-        if (currentAIElement) {
-            currentAIElement.textContent = this.level <= 4 ? 'Базовый' : 'Продвинутый';
-        }
-
-        const levelSelect = document.getElementById('debugLevelSelect');
-        if (levelSelect) levelSelect.value = this.level.toString();
-
-        const playerLevelElement = document.getElementById('debugPlayerLevel');
-        const playerExpElement = document.getElementById('debugPlayerExp');
-        const gameLevelElement = document.getElementById('debugGameLevel');
-        const killsElement = document.getElementById('debugKills');
-        const deathsElement = document.getElementById('debugDeaths');
-        const levelsElement = document.getElementById('debugLevels');
-
-        if (playerLevelElement) playerLevelElement.textContent = this.playerLevel || 1;
-        if (playerExpElement) playerExpElement.textContent = this.playerExperience || 0;
-        if (gameLevelElement) gameLevelElement.textContent = this.level || 1;
-        if (killsElement && this.playerStats) {
-            killsElement.textContent = this.playerStats.enemiesKilled;
-            deathsElement.textContent = this.playerStats.deaths;
-            levelsElement.textContent = this.playerStats.levelsCompleted;
-        }
     }
 
     debugAddBonus(bonusType) {
@@ -531,7 +470,6 @@ class Game {
 
         this.exitTeleport = null;
         this.entryTeleport = null;
-        this.updateDebugInfo();
 
         if (this.enemyManager) this.enemyManager.clearStats();
         this.enemyManager.clear();
@@ -656,6 +594,9 @@ class Game {
             this.checkLevelCompletion();
         }
 
+        // Обновляем систему зрителей
+        this.viewerSystem.update();
+
         // Обновляем всплывающие тексты
         if (this.floatingTexts) {
             for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
@@ -706,6 +647,11 @@ class Game {
 
                 if (this.soundManager) this.soundManager.stopTimeStop();
             }
+        }
+
+        // РАЗМОРАЖИВАЕМ ИГРОКА ПРИ СМЕРТИ
+        if (this.player.isDestroyed && this.viewerSystem.playerFrozen) {
+            this.viewerSystem.unfreezeOnDeath();
         }
     }
 
@@ -979,7 +925,14 @@ class Game {
     handleInput() {
         const allTanks = [this.player, ...this.enemyManager.enemies];
         const allFragments = this.getAllFragments();
-        const currentDirection = this.getCurrentDirection();
+
+        // ПОЛУЧАЕМ НАПРАВЛЕНИЕ С УЧЕТОМ РЕВЕРСА
+        let currentDirection;
+        if (this.viewerSystem.playerReversed) {
+            currentDirection = this.viewerSystem.getReversedDirection();
+        } else {
+            currentDirection = this.getCurrentDirection();
+        }
 
         const wasMoving = this.isPlayerMoving;
         this.isPlayerMoving = false;
@@ -1025,8 +978,6 @@ class Game {
         }
 
         const bonusTanksCount = this.enemyManager.enemies.filter(enemy => enemy.hasBonus).length;
-        this.debugInfo.textContent = `Уровень: ${this.level} | Уничтожено: ${this.enemiesDestroyed}/${TOTAL_ENEMIES_PER_LEVEL} | Осталось заспавнить: ${this.enemiesToSpawn} | Бонусы: ${this.bonusManager.bonuses.length} | Танки с бонусами: ${bonusTanksCount} | FPS: ${Math.round(1000 / this.deltaTime)}` +
-        (this.gameOver ? ' | ИГРА ОКОНЧЕНА' : '') + (this.levelComplete ? ' | УРОВЕНЬ ПРОЙДЕН' : '') + (this.baseDestroyed ? ' | БАЗА УНИЧТОЖЕНА' : '');
     }
 
     loadLeaderboard() {
@@ -1232,7 +1183,7 @@ class Game {
         this.levelCompleteTimer = 0;
 
         // Сбрасываем данные зрителей
-        this.resetForNewRound();
+        this.viewerSystem.resetForNewRound();
 
         setTimeout(() => {
             this.calculateLevelLeader();
@@ -1889,8 +1840,11 @@ class Game {
             this.drawPlayerStats(this.ctx);
         }
 
-        // Отрисовываем всплывающие тексты
-        this.drawFloatingTexts(this.ctx);
+        // СНАЧАЛА эффекты
+        this.viewerSystem.drawEffects(this.ctx);
+
+        // ПОТОМ тексты (поверх эффектов)
+        this.viewerSystem.drawFloatingTexts(this.ctx);
 
         this.enemyManager.enemies.forEach(enemy => enemy.draw(this.ctx));
         this.bullets.forEach(bullet => bullet.draw(this.ctx));
@@ -2209,348 +2163,6 @@ class Game {
         return protectedRadius - distance + 1;
     }
 
-    spawnViewerTank(userId, username, avatarUrl) {
-        // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА
-        if (this.levelComplete || this.gameOver) {
-            console.log('🚫 Раунд завершен! Новые танки нельзя создавать.');
-            return;
-        }
-
-        // ПРОВЕРКА НА ДУБЛИКАТ
-        const existingViewerTank = this.enemyManager.enemies.find(enemy =>
-        (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
-        );
-
-        if (existingViewerTank) {
-            console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже существует в этом раунде!`);
-            return;
-        }
-
-        // ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА - в глобальном списке уничтоженных за раунд
-        if (this.destroyedViewerTanks && this.destroyedViewerTanks.has(userId)) {
-            console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже был уничтожен в этом раунде!`);
-            return;
-        }
-
-        const spawnPoint = this.enemyManager.getNextSpawnPoint();
-
-        // Создаем анимацию спавна
-        const spawnAnimation = new SpawnAnimation(spawnPoint.x, spawnPoint.y);
-        this.enemyManager.spawnAnimations.push(spawnAnimation);
-
-        // ПРЕДЗАГРУЗКА АВАТАРКИ
-        if (avatarUrl && avatarUrl !== '') {
-            this.preloadAvatar(userId, avatarUrl);
-        }
-
-        // Сохраняем оригинальный метод
-        const originalComplete = this.enemyManager.completeSpawnAnimation.bind(this.enemyManager);
-
-        // Временно заменяем метод completeSpawnAnimation
-        this.enemyManager.completeSpawnAnimation = (position) => {
-            // Восстанавливаем оригинальный метод
-            this.enemyManager.completeSpawnAnimation = originalComplete;
-
-            // ФИНАЛЬНАЯ ПРОВЕРКА ПЕРЕД СОЗДАНИЕМ ТАНКА
-            const duplicateCheck = this.enemyManager.enemies.find(enemy =>
-            (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
-            );
-
-            if (duplicateCheck) {
-                console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) уже создан! Отмена спавна.`);
-                return;
-            }
-
-            if (this.destroyedViewerTanks && this.destroyedViewerTanks.has(userId)) {
-                console.log(`🎮 Танк зрителя ${username} (ID: ${userId}) был уничтожен! Отмена спавна.`);
-                return;
-            }
-
-            // Создаем танк зрителя
-            const viewerTank = new Tank(position.x, position.y, "enemy", this.level, 'VIEWER');
-
-            // Кастомизация для зрителя
-            viewerTank.username = username;
-            viewerTank.userId = userId;
-            viewerTank.avatarUrl = avatarUrl;
-            viewerTank.viewerName = username;
-            viewerTank.color = this.getViewerColor(userId);
-            viewerTank.health = 2;
-            viewerTank.isViewerTank = true;
-
-            // ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА АВАТАРКИ
-            this.setupViewerTankAvatar(viewerTank, userId, avatarUrl);
-
-            // 🔥 ВАЖНО: ПРИМЕНЯЕМ ЭФФЕКТ "СТОП-ВРЕМЕНИ" ЕСЛИ ОН АКТИВЕН
-            if (this.timeStopActive) {
-                const remainingTime = this.timeStopDuration - (Date.now() - this.timeStopStartTime);
-                if (remainingTime > 0) {
-                    viewerTank.freeze(remainingTime);
-                    console.log(`⏰ Танк зрителя ${username} заморожен на ${remainingTime}мс`);
-                }
-            }
-
-            // Добавляем в список врагов
-            this.enemyManager.enemies.push(viewerTank);
-
-            console.log(`🎮 Танк зрителя "${username}" создан через анимацию`);
-
-            // Визуальный эффект
-            this.effectManager.addExplosion(position.x, position.y, 'bonus');
-            this.screenShake = 10;
-        };
-
-        let spawnDelay = 3000; // 🔥 Теперь 3 секунды (было 500)
-
-        if (this.timeStopActive) {
-            spawnDelay = 3500; // Немного больше при стоп-времени
-            console.log(`⏰ Анимация спавна танка ${username} замедлена из-за стоп-времени`);
-        }
-
-        // Устанавливаем таймер для завершения анимации
-        setTimeout(() => {
-            const index = this.enemyManager.spawnAnimations.indexOf(spawnAnimation);
-            if (index !== -1) {
-                this.enemyManager.spawnAnimations.splice(index, 1);
-
-                // Проверяем, не закончилось ли стоп-время пока шла анимация
-                if (!this.timeStopActive) {
-                    this.enemyManager.completeSpawnAnimation(spawnPoint);
-                } else {
-                    // Если время все еще остановлено, откладываем создание танка
-                    console.log(`⏰ Откладываем создание танка ${username} до окончания стоп-времени`);
-                    this.delayedSpawn = {
-                        point: spawnPoint,
-                        callback: () => this.enemyManager.completeSpawnAnimation(spawnPoint)
-                    };
-                }
-            }
-        }, spawnDelay);
-    }
-
-    // Новый метод для настройки аватарки
-    setupViewerTankAvatar(tank, userId, avatarUrl) {
-        tank.avatarLoaded = false;
-        tank.avatarError = false;
-
-        if (!avatarUrl || avatarUrl === '') {
-            tank.avatarError = true;
-            return;
-        }
-
-        // Пытаемся использовать кэшированную аватарку
-        const cachedAvatar = this.getCachedAvatar(userId);
-        if (cachedAvatar) {
-            console.log(`✅ Используем кэшированную аватарку для ${tank.username}`);
-            tank.avatarImage = cachedAvatar;
-            tank.avatarLoaded = true;
-        } else if (cachedAvatar === null) {
-            // Помечаем как ошибку если загрузка ранее не удалась
-            tank.avatarError = true;
-        } else {
-            // Ждем загрузки аватарки
-            console.log(`⏳ Ожидаем загрузку аватарки для ${tank.username}`);
-            this.waitForAvatar(userId, (loadedAvatar) => {
-                if (loadedAvatar) {
-                    tank.avatarImage = loadedAvatar;
-                    tank.avatarLoaded = true;
-                    console.log(`✅ Аватарка загружена для ${tank.username}`);
-                } else {
-                    tank.avatarError = true;
-                    console.log(`❌ Аватарка не загрузилась для ${tank.username}`);
-                }
-            });
-        }
-    }
-
-    // Генерируем уникальный цвет на основе ID пользователя
-    getViewerColor(userId) {
-        const colors = [
-            '#FF69B4', // Розовый
-            '#9370DB', // Фиолетовый
-            '#00CED1', // Бирюзовый
-            '#32CD32', // Лаймовый
-            '#FFD700', // Золотой
-            '#FF6347', // Томатный
-            '#1E90FF', // Голубой
-            '#FF8C00'  // Оранжевый
-        ];
-
-        // Простой хэш для получения индекса цвета
-        let hash = 0;
-        for (let i = 0; i < userId.length; i++) {
-            hash = ((hash << 5) - hash) + userId.charCodeAt(i);
-            hash = hash & hash;
-        }
-
-        return colors[Math.abs(hash) % colors.length];
-    }
-
-    handleLikeFromViewer(userId, username, message) {
-        if (!this.player || this.player.isDestroyed) {
-            console.log(`💖 ${username} лайкнул, но игрок уничтожен`);
-            return;
-        }
-
-        // Добавляем опыт игроку за лайк
-        const expGained = 5; // Опыт за лайк
-        this.player.experience += expGained;
-        this.playerExperience = this.player.experience;
-
-        // Проверяем уровень ап
-        const levelBefore = this.player.playerLevel;
-        this.player.checkLevelUp();
-        const levelAfter = this.player.playerLevel;
-
-        // Визуальный эффект с именем отправителя
-        const likeText = levelAfter > levelBefore
-        ? `УРОВЕНЬ ${levelAfter}! ⭐`
-        : `+${expGained} XP 💖`;
-
-        this.createFloatingText(
-            this.player.position.x,
-            this.player.position.y - 20,
-            `${username}: ${likeText}`,
-            '#FF69B4'
-        );
-
-        // Дополнительный эффект при уровнепе
-        if (levelAfter > levelBefore) {
-            this.effectManager.addExplosion(this.player.position.x, this.player.position.y, 'bonus');
-            this.screenShake = 15;
-            console.log(`⭐ Игрок достиг уровня ${levelAfter}! Спасибо ${username} за лайки!`);
-        }
-
-        console.log(`💖 ${username} лайкнул! Игрок получает +${expGained} опыта!`);
-
-        // Сохраняем прогресс
-        this.savePlayerProgress();
-        this.updatePlayerStats();
-    }
-
-    createFloatingText(x, y, text, color = '#FFFFFF') {
-        if (!this.floatingTexts) this.floatingTexts = [];
-
-        this.floatingTexts.push({
-            x: x,
-            y: y,
-            text: text,
-            color: color,
-            lifetime: 120, // 2 секунды при 60 FPS
-            alpha: 1.0,
-            velocity: new Vector2(0, -1.5), // Двигается вверх
-                                scale: 1.0
-        });
-    }
-
-    drawFloatingTexts(ctx) {
-        if (!this.floatingTexts || this.floatingTexts.length === 0) return;
-
-        ctx.save();
-
-        this.floatingTexts.forEach(text => {
-            // Тень
-            ctx.fillStyle = 'rgba(0, 0, 0, ' + (text.alpha * 0.7) + ')';
-            ctx.font = `bold ${text.fontSize || 16}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text.text, text.x + 2, text.y + 2);
-
-            // Основной текст
-            ctx.fillStyle = text.color.replace(')', ', ' + text.alpha + ')').replace('rgb', 'rgba');
-            ctx.fillText(text.text, text.x, text.y);
-        });
-
-        ctx.restore();
-    }
-
-    resetForNewRound() {
-        // Очищаем всплывающие тексты
-        if (this.floatingTexts) {
-            this.floatingTexts = [];
-        }
-
-        // Можно также очистить другие данные зрителей при необходимости
-        console.log('🔄 Данные зрителей сброшены для нового раунда');
-    }
-
-    handlePowerupGift(userId, username, giftType, giftConfig) {
-        // Создаем бонус на карте используя существующий тип
-        const position = this.bonusManager.findFreeBonusPosition();
-        if (position) {
-            const bonus = new Bonus(
-                position.x,
-                position.y,
-                giftConfig.bonusType, // Используем существующий тип бонуса
-                this
-            );
-
-            // Увеличиваем время жизни бонуса
-            bonus.lifetime = 15000;
-            bonus.giftedBy = username; // Добавляем информацию о дарителе
-
-            this.bonusManager.bonuses.push(bonus);
-        }
-
-        // Визуальный эффект и сообщение
-        if (!this.floatingTexts) this.floatingTexts = [];
-        this.floatingTexts.push({
-            x: this.player.position.x,
-            y: this.player.position.y,
-            text: `${giftConfig.message} ${username}`,
-            color: this.getGiftColor(giftType),
-                                lifetime: 120,
-                                alpha: 1.0,
-                                velocity: { x: 0, y: -1.2 },
-                                scale: 1.0
-        });
-
-        this.screenShake = 8;
-        this.soundManager.play('bonusPickup');
-
-        console.log(`🎁 Создан бонус ${giftConfig.bonusType.id} от ${username}`);
-    }
-
-    handleGiftFromViewer(userId, username, message) {
-        if (!this.player || this.player.isDestroyed) {
-            console.log(`🎁 ${username} отправил подарок, но игрок уничтожен`);
-            return;
-        }
-
-        // Определяем тип подарка из сообщения
-        const giftType = this.detectGiftType(message);
-
-        if (!giftType) {
-            // Случайный бонус за неузнанный подарок
-            this.handleRandomGift(userId, username);
-            return;
-        }
-
-        const giftConfig = GIFT_BONUSES[giftType];
-        if (!giftConfig) {
-            this.handleRandomGift(userId, username);
-            return;
-        }
-
-        console.log(`🎁 ${username} отправил подарок: ${giftType}`);
-
-        // Все подарки создают бонусы на карте
-        this.handlePowerupGift(userId, username, giftType, giftConfig);
-    }
-
-    // Определение типа подарка по сообщению
-    detectGiftType(message) {
-        const cleanMessage = message.toLowerCase();
-
-        for (const [giftKey, keywords] of Object.entries(GIFT_TYPES)) {
-            if (keywords.some(keyword => cleanMessage.includes(keyword))) {
-                return giftKey;
-            }
-        }
-
-        return null;
-    }
-
     // Вспомогательные методы
     getGiftSymbol(giftType) {
         const symbols = {
@@ -2577,15 +2189,7 @@ class Game {
         };
         return colors[giftType] || '#FFFFFF';
     }
-
-    handleRandomGift(userId, username) {
-        const randomGifts = ['rose', 'coin', 'diamond', 'cake'];
-        const randomGift = randomGifts[Math.floor(Math.random() * randomGifts.length)];
-        const giftConfig = GIFT_BONUSES[randomGift];
-
-        this.handlePowerupGift(userId, username, randomGift, giftConfig);
-    }
-} // ← ЭТА скобка закрывает класс Game
+}
 
 // Глобальная функция для тестирования чата - ВНЕ класса Game
 window.testChat = (id, name, avatar, command) => {
@@ -2601,34 +2205,54 @@ window.testChat = (id, name, avatar, command) => {
     }
 };
 
-// Глобальная функция для тестирования чата - ВНЕ класса Game
+// === ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ВЗАИМОДЕЙСТВИЯ ===
+// === ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ВЗАИМОДЕЙСТВИЯ ===
 window.testChat = (id, name, avatar, command) => {
-    if (!game) {
-        console.log('Игра не инициализирована');
-        return;
-    }
-
-    // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА
-    if (game.levelComplete || game.gameOver) {
-        console.log('🚫 Раунд завершен! Новые танки нельзя создавать.');
+    if (!game || !game.viewerSystem) {
+        console.log('Игра или система зрителей не инициализирована');
         return;
     }
 
     const cleanCommand = command.toString().toLowerCase().trim();
 
     if (command === '!танк') {
-        game.spawnViewerTank(id, name, avatar);
+        // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА ТОЛЬКО ДЛЯ ТАНКОВ
+        if (game.levelComplete || game.gameOver) {
+            console.log('🚫 Раунд завершен! Новые танки нельзя создавать.');
+            return;
+        }
+        game.viewerSystem.spawnViewerTank(id, name, avatar);
     } else if (command.toLowerCase().includes('лайк') ||
         command.toLowerCase().includes('like') ||
         command.includes('❤️') ||
         command.includes('💖') ||
         command.includes('👍')) {
-        game.handleLikeFromViewer(id, name, command);
+        // ЛАЙКИ РАЗРЕШЕНЫ В ЛЮБОЕ ВРЕМЯ
+        game.viewerSystem.handleLikeFromViewer(id, name, command);
         } else if (command.toLowerCase().includes('подарок') ||
             command.toLowerCase().includes('gift') ||
             command.includes('🎁')) {
-            game.handleGiftFromViewer(id, name, command);
-            } else {
-                console.log(`Неизвестная команда: ${command}`);
-            }
+            // ПОДАРКИ РАЗРЕШЕНЫ В ЛЮБОЕ ВРЕМЯ
+            game.viewerSystem.handleGiftFromViewer(id, name, command);
+            } else if (command.toLowerCase().includes('лед') ||
+                command.toLowerCase().includes('ice') ||
+                command.toLowerCase().includes('мороз') ||
+                command.toLowerCase().includes('freeze') ||
+                command.toLowerCase().includes('холод') ||
+                command.includes('❄️') ||
+                command.includes('🌨️')) {
+                // ПРОКЛЯТИЯ ЗАМОРОЗКИ РАЗРЕШЕНЫ В ЛЮБОЕ ВРЕМЯ
+                game.viewerSystem.handleGiftFromViewer(id, name, command);
+                } else if (command.toLowerCase().includes('череп') ||
+                    command.toLowerCase().includes('skull') ||
+                    command.toLowerCase().includes('проклятие') ||
+                    command.toLowerCase().includes('curse') ||
+                    command.toLowerCase().includes('смерть') ||
+                    command.includes('💀') ||
+                    command.includes('☠️')) {
+                    // ПРОКЛЯТИЯ ЗАМОРОЗКИ РАЗРЕШЕНЫ В ЛЮБОЕ ВРЕМЯ
+                    game.viewerSystem.handleGiftFromViewer(id, name, command);
+                    } else {
+                        console.log(`Неизвестная команда: ${command}`);
+                    }
 };

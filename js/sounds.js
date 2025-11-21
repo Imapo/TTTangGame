@@ -48,6 +48,12 @@ class SoundManager {
             { name: 'viewerTankSpawn', src: 'sounds/viewer_tank_spawn.mp3', volume: 0.6 },
             { name: 'viewerLike', src: 'sounds/viewer_like.mp3', volume: 0.5 },
             { name: 'viewerGift', src: 'sounds/viewer_gift.mp3', volume: 0.7 },
+
+            // НОВЫЕ ЗВУКИ ДЛЯ ПРОКЛЯТИЙ ЗАМОРОЗКИ
+            { name: 'playerFreeze', src: 'sounds/player_freeze.mp3', volume: 0.8 },
+            { name: 'playerUnfreeze', src: 'sounds/player_unfreeze.mp3', volume: 0.4 },
+            // НОВЫЙ ЗВУК ДЛЯ РЕВЕРСА
+            { name: 'playerReverse', src: 'sounds/player_reverse.mp3', volume: 0.8 },
         ];
 
         // Создаем звуки по конфигурации

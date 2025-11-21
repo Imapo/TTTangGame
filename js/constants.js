@@ -6,8 +6,8 @@ const CANVAS_WIDTH = 832;
 const CANVAS_HEIGHT = 832;
 const FPS = 60;
 const FRAME_TIME = 1000 / FPS;
-const MAX_ENEMIES_ON_SCREEN = 1;
-const TOTAL_ENEMIES_PER_LEVEL = 4;
+const MAX_ENEMIES_ON_SCREEN = 2;
+const TOTAL_ENEMIES_PER_LEVEL = 6;
 const RESPAWN_DELAY = 3000;
 const SPAWN_ANIMATION_DURATION = 3000;
 const PLAYER_SHIELD_DURATION = 5000;
@@ -310,7 +310,6 @@ window.BASE_ZONE_SYSTEM = {
 };
 
 // === СИСТЕМА ПОДАРКОВ ===
-// === СИСТЕМА ПОДАРКОВ ===
 const GIFT_BONUSES = {
     // Используем существующие типы бонусов
     'rose': {
@@ -339,6 +338,19 @@ const GIFT_BONUSES = {
         bonusType: BONUS_TYPES.SHIELD, // Используем SHIELD как аналог неуязвимости
         message: '✨ Усиленный щит от',
         duration: 15000
+    },
+    'ice': {
+        bonusType: 'CURSE_FREEZE',
+        message: '❄️ Заморозка от',
+        duration: 10000, // 10 секунд
+        isCurse: true
+    },
+    // ПРОКЛЯТИЕ РЕВЕРСА (новый эффект)
+    'skull': {
+        bonusType: 'CURSE_REVERSE',
+        message: '💀 Реверс движения от',
+        duration: 15000, // 15 секунд
+        isCurse: true
     }
 };
 
@@ -348,8 +360,27 @@ const GIFT_TYPES = {
     'rose': ['роза', 'rose', 'цветок', 'flower'],
     'coin': ['коин', 'coin', 'монета', 'money'],
     'diamond': ['алмаз', 'diamond', 'бриллиант', 'кристалл'],
-
     // Средние подарки
     'cake': ['торт', 'cake', 'пирог', 'pie'],
-    'crown': ['корона', 'crown', 'королевский']
+    'crown': ['корона', 'crown', 'королевский'],
+    // ЗАМОРОЗКА
+    'ice': ['лед', 'ice', 'мороз', 'freeze', 'холод', '❄️', '🌨️'],
+    // ПРОКЛЯТИЕ РЕВЕРСА
+    'skull': ['череп', 'skull', 'проклятие', 'curse', 'смерть', 'реверс', 'reverse', '💀', '☠️']
+};
+
+// === СИСТЕМА ПРОКЛЯТИЙ ===
+const CURSE_EFFECTS = {
+    FREEZE: {
+        duration: 10000,
+        sound: 'playerFreeze',
+        color: '#00B4FF',
+        particleColor: '#87CEEB'
+    },
+    REVERSE: {
+        duration: 15000,
+        sound: 'playerReverse',
+        color: '#00FF00',
+        particleColor: '#32CD32'
+    }
 };
