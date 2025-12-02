@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle City - Ultimate Version</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="game-container">
+        <!-- Основной canvas -->
+        <canvas id="gameCanvas" width="832" height="832"></canvas>
+
+        <!-- Кнопка звука -->
+        <button class="mute-btn" onclick="game.soundManager.toggleMute()">🔊</button>
+
+        <!-- Основной UI -->
+        <div class="ui">
+            <div class="score">🎯 Очки: <span id="score">0</span></div>
+            <div class="lives">❤️ Жизни: <span id="lives">3</span></div>
+            <div class="level">🚀 Уровень: <span id="level">1</span></div>
+            <div class="tank-counter">🎯 Танки: <span id="tanksLeft">20</span>/20</div>
+
+            <div class="player-stats">
+                <div class="player-level">⭐ Ур.<span id="playerLevel">1</span></div>
+                <div class="player-exp">📊 <span id="playerExp">0/50</span></div>
+                <button class="reset-progress-btn" onclick="game.resetPlayerProgress()" title="Сбросить прогресс">🔄</button>
+            </div>
+        </div>
+
+        <!-- Индикаторы статусов -->
+        <div class="status-indicators">
+            <div class="shield-indicator" id="shieldIndicator">🛡️ Щит: <span id="shieldTime">0.0</span>с</div>
+            <div class="invincibility-indicator" id="invincibilityIndicator">✨ Неуязвимость: <span id="invincibilityTime">0.0</span>с</div>
+            <div class="fortify-indicator" id="fortifyIndicator">🏰 Укрепление базы: <span id="fortifyTime">0.0</span>с</div>
+            <div class="autoaim-indicator" id="autoaimIndicator">🎯 Автонаведение: <span id="autoaimTime">0.0</span>с</div>
+        </div>
+
+        <!-- Уведомления -->
+        <div class="spawn-notification" id="spawnNotification">Появление танка!</div>
+
+        <!-- Экран завершения уровня -->
+        <div class="level-complete" id="levelComplete">
+            <div class="level-complete-header">
+                <h2>Уровень пройден!</h2>
+                <button class="close-stats-btn" onclick="game.closeLevelStats()">×</button>
+            </div>
+            <div class="level-basic-info">
+                <p>Танки уничтожены: <span id="destroyedTanks">0</span>/20</p>
+                <p>Очки: <span id="levelScore">0</span></p>
+            </div>
+            <div class="level-leader-stats" id="levelLeaderStats">
+                <div class="leader-header">
+                    <h3>🥇 Лидер уровня</h3>
+                </div>
+                <div class="leader-content" id="leaderContent">
+                    <!-- Статистика будет здесь -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Экран Game Over -->
+        <div class="game-over" id="gameOver">
+            <div class="game-over-header">
+                <h2>💀 Игра окончена!</h2>
+            </div>
+
+            <div class="game-over-content">
+                <div class="game-over-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">🏆 Ваш счет:</span>
+                        <span class="stat-value" id="finalScore">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">🚀 Достигнут уровень:</span>
+                        <span class="stat-value" id="finalLevel">1</span>
+                    </div>
+                </div>
+
+                <!-- ИСПРАВЛЕНИЕ: используем УНИКАЛЬНЫЕ ID для Game Over -->
+                <div class="game-over-leader-stats" id="gameOverLeaderStats">
+                    <div class="leader-header">
+                        <h3 id="gameOverLeaderTitle">🥇 Лидер этого раунда</h3>
+                    </div>
+                    <div class="leader-content" id="gameOverLeaderContent">
+                        <!-- Статистика будет здесь -->
+                    </div>
+                </div>
+
+                <div class="game-over-actions">
+                    <button class="restart-btn" onclick="game.restartGame()">🎮 Начать заново</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Таблица лидеров -->
+        <div id="leaderboard" class="ui-panel">
+            <div class="leaderboard-header">
+                <h3>🏆 Таблица лидеров</h3>
+                <div class="leaderboard-controls">
+                    <button id="toggleLeaderboard" title="Показать всех">📊</button>
+                    <button id="resetLeaderboard" title="Сбросить таблицу">🗑️</button>
+                </div>
+            </div>
+            <div id="leaderboardEntries">
+                <!-- Записи будут здесь -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключение скриптов -->
+    <script src="js/vector2.js"></script>
+    <script src="js/rectangle.js"></script>
+    <script src="js/constants.js"></script>
+    <script src="js/viewer-system.js"></script> <!-- ДОБАВЬТЕ ЗДЕСЬ -->
+    <script src="js/teleport.js"></script>
+    <script src="js/stream-interaction.js"></script>
+    <script src="js/managers.js"></script>
+    <script src="js/sounds.js"></script>
+    <script src="js/effects.js"></script>
+    <script src="js/brick-effect.js"></script>
+    <script src="js/bullet.js"></script>
+    <script src="js/enemy-ai.js"></script>
+    <script src="js/tank.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/bonus.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/tiktok-client-windows.js"></script>
+    <!-- WebSocket клиент для TikTok интеграции 
+    <script src="js/tiktok-client-linux.js"></script>
+    -->
+    
+</body>
+</html>
