@@ -1285,7 +1285,166 @@ class Tank {
         return icons[this.enemyType] || '👤';
     }
 
-    drawEnemyInfoBlock(ctx, blockX, blockY, blockWidth, blockHeight, infoText) {
+    drawEnemyInfo(ctx) {
+        if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
+
+        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ В КОНСОЛЬ
+        if ((this.enemyType === 'VIEWER' || this.isViewerTank) && !this.avatarLoaded && !this.avatarError) {
+            console.log(`🔄 Танк ${this.username}: avatarLoaded=${this.avatarLoaded}, avatarError=${this.avatarError}, avatarUrl=${this.avatarUrl}`);
+        }
+
+        ctx.save();
+
+        // 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Используем абсолютные координаты, не трансформируем
+        this.drawUnifiedEnemyInfoAtPosition(ctx, this.position.x, this.position.y);
+
+        ctx.restore();
+    }
+
+    drawUnifiedEnemyInfoAtPosition(ctx, tankX, tankY) {
+        const username = this.username.toUpperCase();
+        const hearts = '❤️'.repeat(this.health);
+        const infoText = `${username} ${hearts}`;
+
+        ctx.font = 'bold 12px Arial';
+        const textWidth = ctx.measureText(infoText).width;
+        const textHeight = 14;
+
+        const padding = 8;
+        const blockWidth = textWidth + padding * 2;
+        const blockHeight = textHeight + padding * 2;
+
+        // 🔥 Позиционируем блок с учетом предпочтительной стороны
+        const {blockX, blockY, preferredSide} = this.findBestInfoPosition(
+            tankX, tankY, blockWidth, blockHeight
+        );
+
+        // 1. Отрисовка иконки (с правильным центрированием)
+        this.drawEnemyIconAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, preferredSide);
+
+        // 2. Отрисовка информационного блока
+        this.drawEnemyInfoBlockAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, infoText);
+
+        // 3. Линия от блока к танку
+        this.drawEnemyConnectionLineToTank(ctx, blockX, blockY, blockWidth, blockHeight, tankX, tankY, preferredSide);
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Находим лучшую позицию с учетом предпочтительной стороны
+    findBestInfoPosition(tankX, tankY, blockWidth, blockHeight) {
+        const positions = [
+            {
+                side: 'top',
+                x: tankX - blockWidth/2,
+                y: tankY - this.size - blockHeight - 5,
+                priority: 1
+            },
+            {
+                side: 'right',
+                x: tankX + this.size/2 + 10,
+                y: tankY - blockHeight/2,
+                priority: 2
+            },
+            {
+                side: 'left',
+                x: tankX - blockWidth - this.size/2 - 10,
+                y: tankY - blockHeight/2,
+                priority: 3
+            },
+            {
+                side: 'bottom',
+                x: tankX - blockWidth/2,
+                y: tankY + this.size + 5,
+                priority: 4
+            }
+        ];
+
+        // Сначала ищем полностью безопасную позицию
+        for (let pos of positions) {
+            if (this.isPositionSafeForInfo(pos.x, pos.y, blockWidth, blockHeight)) {
+                return {
+                    blockX: pos.x,
+                    blockY: pos.y,
+                    preferredSide: pos.side
+                };
+            }
+        }
+
+        // Если не нашли безопасную позицию, прижимаем лучшую к краю
+        const bestPosition = positions[0];
+        const clampedPos = this.clampPositionToScreen(
+            bestPosition,
+            blockWidth,
+            blockHeight
+        );
+
+        return {
+            blockX: clampedPos.x,
+            blockY: clampedPos.y,
+            preferredSide: bestPosition.side
+        };
+    }
+
+    drawEnemyConnectionLineToTank(ctx, blockX, blockY, blockWidth, blockHeight, tankX, tankY, side) {
+        // Координаты точки соединения на блоке (в зависимости от стороны)
+        let blockConnectionX, blockConnectionY;
+
+        switch(side) {
+            case 'top':
+                blockConnectionX = blockX + blockWidth/2;
+                blockConnectionY = blockY + blockHeight; // Нижняя грань (т.к. блок сверху от танка)
+                break;
+            case 'right':
+                blockConnectionX = blockX; // Левая грань (т.к. блок справа от танка)
+                blockConnectionY = blockY + blockHeight/2;
+                break;
+            case 'left':
+                blockConnectionX = blockX + blockWidth; // Правая грань (т.к. блок слева от танка)
+                blockConnectionY = blockY + blockHeight/2;
+                break;
+            case 'bottom':
+            default:
+                blockConnectionX = blockX + blockWidth/2;
+                blockConnectionY = blockY; // Верхняя грань (т.к. блок снизу от танка)
+                break;
+        }
+
+        // Координаты точки соединения на танке (ближайшая точка)
+        let tankConnectionX, tankConnectionY;
+
+        // Вектор от центра танка к точке на блоке
+        const dx = blockConnectionX - tankX;
+        const dy = blockConnectionY - tankY;
+
+        // Находим точку на границе танка в направлении блока
+        const angle = Math.atan2(dy, dx);
+        tankConnectionX = tankX + Math.cos(angle) * this.size/2;
+        tankConnectionY = tankY + Math.sin(angle) * this.size/2;
+
+        // Линия от блока к танку
+        ctx.strokeStyle = this.color + 'AA';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(blockConnectionX, blockConnectionY);
+
+        // Прямая линия (выглядит лучше для коротких расстояний)
+        ctx.lineTo(tankConnectionX, tankConnectionY);
+        ctx.stroke();
+
+        // Маленькие кружки в точках соединения
+        ctx.fillStyle = this.color;
+
+        // На блоке
+        ctx.beginPath();
+        ctx.arc(blockConnectionX, blockConnectionY, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // На танке
+        ctx.beginPath();
+        ctx.arc(tankConnectionX, tankConnectionY, 3, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    drawEnemyInfoBlockAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, infoText) {
         // Фон блока
         const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
         gradient.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
@@ -1305,6 +1464,168 @@ class Tank {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(infoText, blockX + 8, blockY + blockHeight/2);
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Проверка безопасности позиции
+    isPositionSafeForInfo(x, y, width, height) {
+        const margin = 5; // Небольшой отступ от края
+
+        return x >= margin &&
+        x + width <= CANVAS_WIDTH - margin &&
+        y >= margin &&
+        y + height <= CANVAS_HEIGHT - margin;
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Прижимание позиции к краю экрана
+    clampPositionToScreen(position, width, height) {
+        let x = position.x;
+        let y = position.y;
+        const margin = 5;
+
+        // Горизонтальные границы
+        if (x < margin) x = margin;
+        if (x + width > CANVAS_WIDTH - margin) x = CANVAS_WIDTH - margin - width;
+
+        // Вертикальные границы
+        if (y < margin) y = margin;
+        if (y + height > CANVAS_HEIGHT - margin) y = CANVAS_HEIGHT - margin - height;
+
+        return { x, y };
+    }
+
+    // 🔥 ОБНОВЛЯЕМ МЕТОД ОТРИСОВКИ ИКОНКИ ДЛЯ УЧЕТА СТОРОНЫ
+    drawEnemyIconAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, side) {
+        const iconSize = blockHeight - 4;
+
+        // Размещаем иконку в зависимости от стороны блока
+        let iconX, iconY;
+
+        switch(side) {
+            case 'top':
+                iconX = blockX + blockWidth/2 - iconSize/2; // По центру сверху
+                iconY = blockY - iconSize - 5;
+                break;
+            case 'right':
+                iconX = blockX + blockWidth + 5; // Справа от блока
+                iconY = blockY + blockHeight/2 - iconSize/2;
+                break;
+            case 'left':
+                iconX = blockX - iconSize - 5; // Слева от блока
+                iconY = blockY + blockHeight/2 - iconSize/2;
+                break;
+            case 'bottom':
+            default:
+                iconX = blockX + blockWidth/2 - iconSize/2; // По центру снизу
+                iconY = blockY + blockHeight + 5;
+                break;
+        }
+
+        ctx.save();
+
+        // Обводка цветом танка
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2 + 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Белый фон
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Отрисовка иконки или аватарки
+        if (this.shouldDrawAvatar()) {
+            this.drawAvatarImageAtPosition(ctx, iconX, iconY, iconSize);
+        } else {
+            this.drawIconAtPosition(ctx, iconX, iconY, iconSize);
+        }
+
+        ctx.restore();
+    }
+
+    drawIconAtPosition(ctx, x, y, size) {
+        ctx.fillStyle = this.color;
+        ctx.font = `bold ${Math.floor(size * 0.5)}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const icon = this.getEnemyIcon();
+        ctx.fillText(icon, x + size/2, y + size/2 + 1);
+    }
+
+    drawAvatarImageAtPosition(ctx, x, y, size) {
+        if (!this.avatarImage || !this.avatarLoaded) {
+            this.drawLoadingIndicatorAtPosition(ctx, x, y, size);
+            return;
+        }
+
+        try {
+            ctx.save();
+
+            // Создаем круглую маску
+            ctx.beginPath();
+            ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+            ctx.clip();
+
+            // Плавное появление
+            if (!this.avatarShowProgress) this.avatarShowProgress = 0;
+            this.avatarShowProgress = Math.min(this.avatarShowProgress + 0.1, 1);
+            ctx.globalAlpha = this.avatarShowProgress;
+
+            const img = this.avatarImage;
+            const aspectRatio = img.width / img.height;
+
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (aspectRatio > 1) {
+                drawWidth = size;
+                drawHeight = size / aspectRatio;
+                offsetX = 0;
+                offsetY = (size - drawHeight) / 2;
+            } else {
+                drawWidth = size * aspectRatio;
+                drawHeight = size;
+                offsetX = (size - drawWidth) / 2;
+                offsetY = 0;
+            }
+
+            ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
+            ctx.restore();
+
+        } catch (e) {
+            console.log('Ошибка отрисовки аватарки:', e);
+            this.drawLoadingIndicatorAtPosition(ctx, x, y, size);
+        }
+    }
+
+    drawLoadingIndicatorAtPosition(ctx, x, y, size) {
+        ctx.save();
+
+        const centerX = x + size/2;
+        const centerY = y + size/2;
+
+        const time = Date.now() * 0.01;
+        const progress = (time % 100) / 100;
+
+        ctx.translate(centerX, centerY);
+        ctx.rotate(progress * Math.PI * 2);
+
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, size/4, 0, Math.PI * 1.5);
+        ctx.stroke();
+
+        ctx.restore();
+
+        if (!this.avatarError) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 8px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('...', centerX, centerY);
+        }
     }
 
     drawEnemyConnectionLine(ctx, blockX, blockY, blockWidth, blockHeight) {

@@ -567,21 +567,401 @@ class GameMap {
     }
 
     draw(ctx) {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        // Создаем текстуру пола в стиле игры - квадратные плиты
+        const createFloorTexture = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = CANVAS_WIDTH;
+            canvas.height = CANVAS_HEIGHT;
+            const texCtx = canvas.getContext('2d');
 
-        // Границы
-        ctx.fillStyle = '#FFFFFF';
+            // Базовый цвет пола - темно-серый бетон
+            texCtx.fillStyle = '#1A1A1A';
+            texCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Размер плиты (соответствует стилю игры)
+            const PLATE_SIZE = 32; // Можно сделать кратным TILE_SIZE
+
+            // Рисуем сетку квадратных плит
+            const drawPlates = () => {
+                for (let y = 0; y < CANVAS_HEIGHT; y += PLATE_SIZE) {
+                    for (let x = 0; x < CANVAS_WIDTH; x += PLATE_SIZE) {
+                        // Небольшая вариация цвета для каждой плиты
+                        const brightnessVariation = Math.random() * 15 - 7.5;
+                        const colorValue = Math.max(20, Math.min(40, 26 + brightnessVariation));
+
+                        // Основной цвет плиты
+                        texCtx.fillStyle = `rgb(${colorValue}, ${colorValue}, ${colorValue})`;
+                        texCtx.fillRect(x, y, PLATE_SIZE, PLATE_SIZE);
+
+                        // Швы между плитами
+                        texCtx.strokeStyle = '#0F0F0F';
+                        texCtx.lineWidth = 1;
+                        texCtx.strokeRect(x + 0.5, y + 0.5, PLATE_SIZE - 1, PLATE_SIZE - 1);
+
+                        // Тонкие внутренние линии (имитация бетонной текстуры)
+                        texCtx.strokeStyle = `rgba(15, 15, 15, 0.3)`;
+                        texCtx.lineWidth = 0.5;
+
+                        // Вертикальные линии внутри плиты
+                        for (let i = 1; i < 4; i++) {
+                            const lineX = x + i * (PLATE_SIZE / 4);
+                            texCtx.beginPath();
+                            texCtx.moveTo(lineX, y + 2);
+                            texCtx.lineTo(lineX, y + PLATE_SIZE - 2);
+                            texCtx.stroke();
+                        }
+
+                        // Горизонтальные линии внутри плиты
+                        for (let i = 1; i < 4; i++) {
+                            const lineY = y + i * (PLATE_SIZE / 4);
+                            texCtx.beginPath();
+                            texCtx.moveTo(x + 2, lineY);
+                            texCtx.lineTo(x + PLATE_SIZE - 2, lineY);
+                            texCtx.stroke();
+                        }
+                    }
+                }
+            };
+
+            drawPlates();
+
+            // Добавляем трещины и повреждения на отдельных плитах
+            const addDamage = () => {
+                // Количество поврежденных плит (10-20%)
+                const totalPlates = Math.ceil(CANVAS_WIDTH / PLATE_SIZE) * Math.ceil(CANVAS_HEIGHT / PLATE_SIZE);
+                const damagedCount = Math.floor(totalPlates * (0.1 + Math.random() * 0.1));
+
+                for (let i = 0; i < damagedCount; i++) {
+                    const plateX = Math.floor(Math.random() * Math.ceil(CANVAS_WIDTH / PLATE_SIZE)) * PLATE_SIZE;
+                    const plateY = Math.floor(Math.random() * Math.ceil(CANVAS_HEIGHT / PLATE_SIZE)) * PLATE_SIZE;
+
+                    // Тип повреждения
+                    const damageType = Math.random();
+
+                    if (damageType < 0.4) {
+                        // Трещина по диагонали
+                        texCtx.strokeStyle = '#0A0A0A';
+                        texCtx.lineWidth = 1;
+                        texCtx.beginPath();
+                        texCtx.moveTo(plateX + 4, plateY + 4);
+                        texCtx.lineTo(plateX + PLATE_SIZE - 4, plateY + PLATE_SIZE - 4);
+                        texCtx.stroke();
+
+                        // Вторая трещина
+                        if (Math.random() > 0.5) {
+                            texCtx.beginPath();
+                            texCtx.moveTo(plateX + PLATE_SIZE - 4, plateY + 4);
+                            texCtx.lineTo(plateX + 4, plateY + PLATE_SIZE - 4);
+                            texCtx.stroke();
+                        }
+                    } else if (damageType < 0.7) {
+                        // Угловая трещина
+                        texCtx.strokeStyle = '#0A0A0A';
+                        texCtx.lineWidth = 1;
+                        texCtx.beginPath();
+                        const startX = plateX + Math.random() * PLATE_SIZE;
+                        const startY = plateY + Math.random() * PLATE_SIZE;
+                        texCtx.moveTo(startX, startY);
+
+                        // Неровная трещина
+                        for (let j = 0; j < 3; j++) {
+                            const endX = startX + (Math.random() * 20 - 10);
+                            const endY = startY + (Math.random() * 20 - 10);
+                            texCtx.lineTo(endX, endY);
+                        }
+                        texCtx.stroke();
+                    } else {
+                        // Пятно (масло, грязь)
+                        const spotSize = 8 + Math.random() * 12;
+                        const spotX = plateX + spotSize/2 + Math.random() * (PLATE_SIZE - spotSize);
+                        const spotY = plateY + spotSize/2 + Math.random() * (PLATE_SIZE - spotSize);
+
+                        const gradient = texCtx.createRadialGradient(
+                            spotX, spotY, 0,
+                            spotX, spotY, spotSize
+                        );
+                        gradient.addColorStop(0, 'rgba(10, 10, 10, 0.7)');
+                        gradient.addColorStop(1, 'rgba(10, 10, 10, 0)');
+
+                        texCtx.fillStyle = gradient;
+                        texCtx.beginPath();
+                        texCtx.arc(spotX, spotY, spotSize, 0, Math.PI * 2);
+                        texCtx.fill();
+                    }
+                }
+            };
+
+            addDamage();
+
+            // Добавляем легкую тень под плитами для объема
+            const addVolumeShadows = () => {
+                texCtx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+
+                for (let y = 0; y < CANVAS_HEIGHT; y += PLATE_SIZE) {
+                    for (let x = 0; x < CANVAS_WIDTH; x += PLATE_SIZE) {
+                        // Тень справа
+                        const gradientRight = texCtx.createLinearGradient(
+                            x + PLATE_SIZE - 2, y,
+                            x + PLATE_SIZE, y
+                        );
+                        gradientRight.addColorStop(0, 'rgba(0, 0, 0, 0)');
+                        gradientRight.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+
+                        texCtx.fillStyle = gradientRight;
+                        texCtx.fillRect(x + PLATE_SIZE - 2, y, 2, PLATE_SIZE);
+
+                        // Тень снизу
+                        const gradientBottom = texCtx.createLinearGradient(
+                            x, y + PLATE_SIZE - 2,
+                            x, y + PLATE_SIZE
+                        );
+                        gradientBottom.addColorStop(0, 'rgba(0, 0, 0, 0)');
+                        gradientBottom.addColorStop(1, 'rgba(0, 0, 0, 0.1)');
+
+                        texCtx.fillStyle = gradientBottom;
+                        texCtx.fillRect(x, y + PLATE_SIZE - 2, PLATE_SIZE, 2);
+                    }
+                }
+            };
+
+            addVolumeShadows();
+
+            // Легкая общая текстура для единства
+            const addOverallTexture = () => {
+                const textureCanvas = document.createElement('canvas');
+                textureCanvas.width = CANVAS_WIDTH;
+                textureCanvas.height = CANVAS_HEIGHT;
+                const textureCtx = textureCanvas.getContext('2d');
+
+                // Создаем очень тонкую текстуру
+                const imageData = textureCtx.createImageData(CANVAS_WIDTH, CANVAS_HEIGHT);
+                const data = imageData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    // Очень легкий шум
+                    const noise = Math.random() * 2;
+                    data[i] = noise;     // R
+                    data[i + 1] = noise; // G
+                    data[i + 2] = noise; // B
+                    data[i + 3] = 5;     // A - почти невидимый
+                }
+
+                textureCtx.putImageData(imageData, 0, 0);
+
+                // Наложение текстуры
+                texCtx.globalAlpha = 0.1;
+                texCtx.drawImage(textureCanvas, 0, 0);
+                texCtx.globalAlpha = 1.0;
+            };
+
+            addOverallTexture();
+
+            return canvas;
+        };
+
+        // Создаем текстуру пола один раз при инициализации
+        if (!this.floorTexture) {
+            this.floorTexture = createFloorTexture();
+        }
+
+        // Отрисовываем цельный текстурированный пол
+        ctx.drawImage(this.floorTexture, 0, 0);
+
+        // Создаем текстуру тёмного военного бетона
+        const createMilitaryConcreteTexture = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = TILE_SIZE;
+            canvas.height = TILE_SIZE;
+            const texCtx = canvas.getContext('2d');
+
+            // Грубый темно-серый бетонный фон
+            texCtx.fillStyle = '#2A2A2A';
+            texCtx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+
+            // Добавляем грубую текстуру бетона с крупными "камнями"
+            const drawConcreteGrain = () => {
+                // Крупные "камни" бетона
+                const stoneColors = ['#252525', '#2D2D2D', '#333333', '#3A3A3A'];
+
+                // Рисуем 3-4 крупных "камня"
+                for (let i = 0; i < 4; i++) {
+                    const size = TILE_SIZE / (2 + Math.random());
+                    const x = Math.random() * (TILE_SIZE - size);
+                    const y = Math.random() * (TILE_SIZE - size);
+                    const color = stoneColors[Math.floor(Math.random() * stoneColors.length)];
+
+                    texCtx.fillStyle = color;
+
+                    // Рисуем неровный камень
+                    texCtx.beginPath();
+                    texCtx.ellipse(
+                        x + size/2,
+                        y + size/2,
+                        size/2 - 2,
+                        size/2 - 2,
+                        0, 0, Math.PI * 2
+                    );
+                    texCtx.fill();
+                }
+
+                // Мелкая зернистость
+                for (let i = 0; i < 30; i++) {
+                    const x = Math.random() * TILE_SIZE;
+                    const y = Math.random() * TILE_SIZE;
+                    const size = 1 + Math.random() * 2;
+                    const brightness = 20 + Math.random() * 40;
+
+                    texCtx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness})`;
+                    texCtx.fillRect(x, y, size, size);
+                }
+            };
+
+            drawConcreteGrain();
+
+            // Трещины и дефекты бетона
+            texCtx.strokeStyle = '#1A1A1A';
+            texCtx.lineWidth = 1;
+
+            // 1-2 трещины
+            for (let i = 0; i < 1 + Math.floor(Math.random() * 2); i++) {
+                const startX = Math.random() * TILE_SIZE;
+                const startY = Math.random() * TILE_SIZE;
+                const length = 10 + Math.random() * 20;
+                const angle = Math.random() * Math.PI * 2;
+
+                texCtx.beginPath();
+                texCtx.moveTo(startX, startY);
+                for (let j = 0; j < 3; j++) {
+                    const segmentLength = length / 3;
+                    const endX = startX + Math.cos(angle + (j * 0.3 - 0.15)) * segmentLength;
+                    const endY = startY + Math.sin(angle + (j * 0.3 - 0.15)) * segmentLength;
+                    texCtx.lineTo(endX, endY);
+                }
+                texCtx.stroke();
+            }
+
+            // Металлические усиления (как в бункере)
+            texCtx.strokeStyle = '#1E1E1E';
+            texCtx.lineWidth = 2;
+            texCtx.setLineDash([3, 3]);
+
+            // Вертикальные металлические полосы
+            for (let i = 1; i < 3; i++) {
+                const x = i * (TILE_SIZE / 3);
+                texCtx.beginPath();
+                texCtx.moveTo(x, 2);
+                texCtx.lineTo(x, TILE_SIZE - 2);
+                texCtx.stroke();
+            }
+
+            // Горизонтальные металлические полосы
+            for (let i = 1; i < 3; i++) {
+                const y = i * (TILE_SIZE / 3);
+                texCtx.beginPath();
+                texCtx.moveTo(2, y);
+                texCtx.lineTo(TILE_SIZE - 2, y);
+                texCtx.stroke();
+            }
+
+            texCtx.setLineDash([]);
+
+            // Болты/крепления на пересечениях
+            texCtx.fillStyle = '#151515';
+            for (let y = 1; y < 3; y++) {
+                for (let x = 1; x < 3; x++) {
+                    const boltX = x * (TILE_SIZE / 3);
+                    const boltY = y * (TILE_SIZE / 3);
+
+                    // Болт
+                    texCtx.beginPath();
+                    texCtx.arc(boltX, boltY, 3, 0, Math.PI * 2);
+                    texCtx.fill();
+
+                    // Крестообразный шлиц
+                    texCtx.strokeStyle = '#0A0A0A';
+                    texCtx.lineWidth = 1;
+                    texCtx.beginPath();
+                    texCtx.moveTo(boltX - 2, boltY);
+                    texCtx.lineTo(boltX + 2, boltY);
+                    texCtx.moveTo(boltX, boltY - 2);
+                    texCtx.lineTo(boltX, boltY + 2);
+                    texCtx.stroke();
+                }
+            }
+
+            // Объемные тени по краям для эффекта толщины
+            const gradient = texCtx.createLinearGradient(0, 0, TILE_SIZE, 0);
+            gradient.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+            gradient.addColorStop(0.2, 'rgba(0, 0, 0, 0)');
+            gradient.addColorStop(0.8, 'rgba(0, 0, 0, 0)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+
+            texCtx.fillStyle = gradient;
+            texCtx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+
+            const gradient2 = texCtx.createLinearGradient(0, 0, 0, TILE_SIZE);
+            gradient2.addColorStop(0, 'rgba(0, 0, 0, 0.3)');
+            gradient2.addColorStop(0.2, 'rgba(0, 0, 0, 0)');
+            gradient2.addColorStop(0.8, 'rgba(0, 0, 0, 0)');
+            gradient2.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+
+            texCtx.fillStyle = gradient2;
+            texCtx.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+
+            return canvas;
+        };
+
+        // Создаем текстуру один раз и кэшируем
+        if (!this.borderTexture) {
+            this.borderTexture = createMilitaryConcreteTexture();
+        }
+
+        // Отрисовываем границы с текстурой
+        const texture = this.borderTexture;
+
+        // Верхняя и нижняя границы
         for (let i = 0; i < this.width; i++) {
-            ctx.fillRect(i * TILE_SIZE, 0, TILE_SIZE, TILE_SIZE);
-            ctx.fillRect(i * TILE_SIZE, (this.height-1) * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        }
-        for (let i = 0; i < this.height; i++) {
-            ctx.fillRect(0, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            ctx.fillRect((this.width-1) * TILE_SIZE, i * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            // Верхняя граница
+            ctx.drawImage(
+                texture,
+                i * TILE_SIZE,
+                0,
+                TILE_SIZE,
+                TILE_SIZE
+            );
+
+            // Нижняя граница
+            ctx.drawImage(
+                texture,
+                i * TILE_SIZE,
+                (this.height - 1) * TILE_SIZE,
+                          TILE_SIZE,
+                          TILE_SIZE
+            );
         }
 
-        // Тайлы
+        // Левая и правая границы
+        for (let i = 0; i < this.height; i++) {
+            // Левая граница
+            ctx.drawImage(
+                texture,
+                0,
+                i * TILE_SIZE,
+                TILE_SIZE,
+                TILE_SIZE
+            );
+
+            // Правая граница
+            ctx.drawImage(
+                texture,
+                (this.width - 1) * TILE_SIZE,
+                          i * TILE_SIZE,
+                          TILE_SIZE,
+                          TILE_SIZE
+            );
+        }
+
+        // Остальной код отрисовки тайлов остается без изменений
         for (let y = 1; y < this.height - 1; y++) {
             for (let x = 1; x < this.width - 1; x++) {
                 const tile = this.grid[y][x];
@@ -610,6 +990,7 @@ class GameMap {
                         ctx.fillText('★', tileX + this.tileSize/2, tileY + this.tileSize/2 + 7);
                         break;
                     case TILE_TYPES.CONCRETE:
+                        // Внутренние бетонные стены (остаются белыми или можно изменить тоже)
                         ctx.fillStyle = '#FFFFFF';
                         ctx.fillRect(tileX, tileY, this.tileSize, this.tileSize);
                         ctx.strokeStyle = '#CCCCCC';

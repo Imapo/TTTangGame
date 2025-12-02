@@ -5,7 +5,6 @@ class ViewerSystem {
         this.destroyedViewerTanks = new Set();
         this.avatarCache = new Map();
         this.avatarLoadCallbacks = new Map();
-        this.delayedSpawns = [];
         this.floatingTexts = [];
 
         // 🔥 ДОБАВЛЯЕМ onlineViewers В КОНСТРУКТОР
@@ -336,9 +335,10 @@ class ViewerSystem {
             // Восстанавливаем оригинальный метод
             this.game.enemyManager.completeSpawnAnimation = originalComplete;
 
+            // 🔴 УБИРАЕМ ПРОВЕРКУ НА timeStopActive здесь!
             // ФИНАЛЬНАЯ ПРОВЕРКА
             const duplicateCheck = this.game.enemyManager.enemies.find(enemy =>
-            (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
+                (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
             );
 
             if (duplicateCheck) {
@@ -363,27 +363,28 @@ class ViewerSystem {
             viewerTank.health = 2;
             viewerTank.isViewerTank = true;
 
-            // 🔥 ДОБАВЛЯЕМ РЕГИСТРАЦИЮ ЗДЕСЬ
-            if (this.game && this.game.currentRoundEnemies) {
-                this.game.currentRoundEnemies.set(username, {
-                    enemy: viewerTank,  // Теперь viewerTank определен
-                    spawnTime: Date.now(),
-                                                  destroyed: false,
-                                                  destroyTime: null,
-                                                  finalStats: null
-                });
-            }
-
-            // ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА АВАТАРКИ
-            this.setupViewerTankAvatar(viewerTank, userId, avatarUrl);
-
-            // 🔥 ВАЖНО: ПРИМЕНЯЕМ ЭФФЕКТ "СТОП-ВРЕМЕНИ" ЕСЛИ ОН АКТИВЕН
+            // 🔴 ВАЖНО: ПРИМЕНЯЕМ ЭФФЕКТ "СТОП-ВРЕМЕНИ" ЕСЛИ ОН АКТИВЕН
+            // ТОЧНО ТАК ЖЕ КАК ДЛЯ ИИ ТАНКОВ!
             if (this.game.timeStopActive) {
                 const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
                 if (remainingTime > 0) {
                     viewerTank.freeze(remainingTime);
                     console.log(`⏰ Танк зрителя ${username} заморожен на ${remainingTime}мс`);
                 }
+            }
+
+            // ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА АВАТАРКИ
+            this.setupViewerTankAvatar(viewerTank, userId, avatarUrl);
+
+            // 🔥 ДОБАВЛЯЕМ РЕГИСТРАЦИЮ ЗДЕСЬ
+            if (this.game && this.game.currentRoundEnemies) {
+                this.game.currentRoundEnemies.set(username, {
+                    enemy: viewerTank,
+                    spawnTime: Date.now(),
+                    destroyed: false,
+                    destroyTime: null,
+                    finalStats: null
+                });
             }
 
             // Добавляем в список врагов
@@ -406,20 +407,14 @@ class ViewerSystem {
             console.log(`⏰ Анимация спавна танка ${username} замедлена`);
         }
 
-        // Устанавливаем таймер для завершения анимации
+        // 🔴 УПРОЩАЕМ ТАЙМЕР: всегда вызываем completeSpawnAnimation
         setTimeout(() => {
             const index = this.game.enemyManager.spawnAnimations.indexOf(spawnAnimation);
             if (index !== -1) {
                 this.game.enemyManager.spawnAnimations.splice(index, 1);
-
-                if (!this.game.timeStopActive) {
-                    this.game.enemyManager.completeSpawnAnimation(spawnPoint);
-                } else {
-                    this.delayedSpawn = {
-                        point: spawnPoint,
-                        callback: () => this.game.enemyManager.completeSpawnAnimation(spawnPoint)
-                    };
-                }
+                
+                // 🔴 ВСЕГДА ВЫЗЫВАЕМ, НЕ ЗАВИСИМО ОТ timeStopActive!
+                this.game.enemyManager.completeSpawnAnimation(spawnPoint);
             }
         }, spawnDelay);
     }
