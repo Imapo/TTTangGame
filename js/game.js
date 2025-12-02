@@ -1598,11 +1598,6 @@ class Game {
 
         // Сообщаем о начале нового раунда
         console.log(`🎮 Начинаем раунд ${this.level}!`);
-
-        // Визуальный эффект
-        if (this.soundManager) {
-            this.soundManager.play('bonusPickup');
-        }
     }
 
     showLevelLeaderStats() {

@@ -55,7 +55,7 @@ const PLAYER_UPGRADES = {
         level: 1,
         color: '#4CAF50', // Зеленый
         speed: 3.0,
-        bulletSpeed: 5,
+        bulletSpeed: 7,
         reloadTime: 20,
         health: 1,
         bulletPower: 1,
@@ -65,8 +65,8 @@ const PLAYER_UPGRADES = {
     LEVEL_2: {
         level: 2,
         color: '#2196F3', // Синий
-        speed: 3.2,
-        bulletSpeed: 6,
+        speed: 3.1,
+        bulletSpeed: 9,
         reloadTime: 18,
         health: 1,
         bulletPower: 1,
@@ -76,8 +76,8 @@ const PLAYER_UPGRADES = {
     LEVEL_3: {
         level: 3,
         color: '#FF9800', // Оранжевый
-        speed: 3.5,
-        bulletSpeed: 7,
+        speed: 3.2,
+        bulletSpeed: 12,
         reloadTime: 15,
         health: 1,
         bulletPower: 2, // Пробивает кирпичи за 1 выстрел
@@ -86,9 +86,9 @@ const PLAYER_UPGRADES = {
     },
     LEVEL_4: {
         level: 4,
-        color: '#F44336', // Красный
-        speed: 3.8,
-        bulletSpeed: 8,
+        color: '#99aa99', // Красный
+        speed: 3.3,
+        bulletSpeed: 15,
         reloadTime: 12,
         health: 2, // +1 жизнь
         bulletPower: 2,
@@ -172,12 +172,12 @@ const ENEMY_TYPES = {
     },
     // ДОБАВЛЯЕМ ТИП ДЛЯ ЗРИТЕЛЕЙ
     VIEWER: {
-        chance: 0, // Не появляется случайно
-        speed: 0.3,
-        health: 2,
-        color: '#FF69B4', // Базовый цвет (будет переопределен)
-        bulletSpeed: 6,
-        reloadTime: 80
+        chance: 0,
+        speed: 0.3,           // Средняя скорость
+        health: 2,            // Базовое здоровье (умножается на тип)
+        color: '#FF69B4',     // Розовый (будет заменён)
+        bulletSpeed: 6,       // Быстрые пули
+        reloadTime: 80        // Базовая перезарядка (будет модифицирована)
     }
 };
 

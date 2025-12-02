@@ -15,7 +15,19 @@ class Tank {
         this.isInBaseZone = false;
 
         if (type === 'player') {
-            this.initPlayer(level);
+            this.playerLevel = level;
+            this.experience = 0;
+
+            // Всегда применяем апгрейд для игрока
+            const upgradeKey = `LEVEL_${Math.min(level, 4)}`;
+            const upgrade = PLAYER_UPGRADES[upgradeKey];
+
+            if (upgrade) {
+                this.applyUpgrade(upgrade);
+                console.log(`Танк создан с уровнем ${level}:`, upgrade);
+            }
+
+            this.checkLevelUp();
         } else {
             this.initEnemy(level, enemyType);
         }
@@ -40,19 +52,73 @@ class Tank {
     }
 
     initEnemy(level, enemyType) {
-        const config = ENEMY_TYPES[enemyType];
-        const multiplier = level === 1 ? 1 : 1.2;
+        // Всегда сохраняем originalEnemyType
+        this.originalEnemyType = enemyType;
+        this.enemyType = enemyType;
 
-        this.speed = config.speed * TANK_SPEED * multiplier;
-        this.color = config.color;
-        this.health = config.health;
-        this.bulletSpeed = config.bulletSpeed;
-        this.reloadTime = config.reloadTime;
-        this.bulletPower = 1;
-        this.canDestroyConcrete = false;
-        this.username = this.generateEnemyName(enemyType);
+        // Если это зритель - выбираем случайный тип, но originalEnemyType остаётся 'VIEWER'
+        if (enemyType === 'VIEWER') {
+            const availableTypes = ['BASIC', 'FAST', 'HEAVY', 'SNIPER'];
+            this.viewerPowerType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+            this.isViewerTank = true;
+
+            // Для звука будем использовать viewerPowerType
+            this.originalEnemyType = this.viewerPowerType; // ← Важно для звука!
+        } else {
+            this.isViewerTank = false;
+        }
+
+        // Базовые характеристики из конфига
+        const baseConfig = ENEMY_TYPES[this.originalEnemyType];
+        const levelMultiplier = level === 1 ? 1 : 1.2;
+
+        // УСИЛЕНИЕ ДЛЯ ЗРИТЕЛЕЙ
+        if (this.isViewerTank) {
+            // Используем базовые значения из VIEWER конфига, но с модификаторами
+            const viewerConfig = ENEMY_TYPES.VIEWER;
+
+            // Здоровье: x2 от базового типа
+            this.health = baseConfig.health * 2;
+
+            // Скорость перезарядки: в 1.5 раза быстрее
+            this.reloadTime = Math.max(8, baseConfig.reloadTime * 0.666); // ÷1.5
+
+            // Скорость движения из VIEWER конфига
+            this.speed = viewerConfig.speed * TANK_SPEED * levelMultiplier;
+
+            // Цвет оригинального типа (чтобы сохранить внешний вид)
+            this.color = baseConfig.color;
+
+            // Скорость пули из VIEWER конфига (или можно оставить базовую)
+            this.bulletSpeed = viewerConfig.bulletSpeed;
+
+            this.bulletPower = 1;
+            this.canDestroyConcrete = false;
+
+            // Зрительские атрибуты
+            this.avatarLoaded = false;
+            this.avatarError = false;
+
+            console.log(`🎮 Танк зрителя: ${this.username}`);
+            console.log(`   Тип: ${this.originalEnemyType}`);
+            console.log(`   Здоровье: ${this.health} (базовое: ${baseConfig.health})`);
+            console.log(`   Перезарядка: ${this.reloadTime} (базовая: ${baseConfig.reloadTime})`);
+            console.log(`   Скорость: ${this.speed} (из VIEWER конфига)`);
+        } else {
+            // Обычный враг - всё из конфига
+            this.speed = baseConfig.speed * TANK_SPEED * levelMultiplier;
+            this.color = baseConfig.color;
+            this.health = baseConfig.health;
+            this.bulletSpeed = baseConfig.bulletSpeed;
+            this.reloadTime = baseConfig.reloadTime;
+            this.bulletPower = 1;
+            this.canDestroyConcrete = false;
+        }
+
+        this.username = this.generateEnemyName(this.originalEnemyType);
         this.aiLevel = ENEMY_AI_LEVELS.BASIC;
-        // ДОБАВИТЬ: инициализация статистики и для зрителей
+
+        // Статистика
         this.levelStats = {
             shots: 0,
             wallsDestroyed: 0,
@@ -60,13 +126,6 @@ class Tank {
             baseDestroyed: false,
             totalScore: 0
         };
-
-        // ДОБАВЬТЕ ЭТО ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ
-        if (enemyType === 'VIEWER' || this.isViewerTank) {
-            this.avatarLoaded = false;
-            this.avatarError = false;
-            // Загрузка аватарки будет вызвана позже, когда установятся avatarUrl и username
-        }
 
         this.initEnemyAI();
         this.determineBonus();
@@ -436,12 +495,10 @@ class Tank {
 
         this.canShoot = false;
 
-        // ИСПРАВЛЕНИЕ: Правильно определяем reloadTime для разных типов танков
+        // Настройка перезарядки
         if (this.type === 'player') {
-            // Для игрока используем upgrade.reloadTime
             this.reloadTime = this.upgrade ? this.upgrade.reloadTime : 40;
         } else {
-            // Для врагов используем фиксированные значения в зависимости от типа
             this.reloadTime = this.getEnemyReloadTime();
         }
 
@@ -464,7 +521,7 @@ class Tank {
         }
 
         const offset = new Vector2(direction.x, direction.y).multiply(this.size / 2 + 5);
-        const bulletSpeed = this.type === 'player' ? 7 : ENEMY_TYPES[this.enemyType].bulletSpeed;
+        const bulletSpeed = this.bulletSpeed;
 
         const bullet = new Bullet(
             this.position.x + offset.x,
@@ -478,21 +535,39 @@ class Tank {
             bulletSpeed
         );
 
-        if (this.type === 'enemy' && game) {
-            game.soundManager.playEnemyShot(this.enemyType);
+        if (this.type === 'enemy' && game && game.soundManager) {
+            const soundType = this.getSoundType();
+            game.soundManager.playEnemyShot(soundType);
         }
 
         return bullet;
     }
 
+    // В классе Tank добавляем метод:
+    getSoundType() {
+        if (this.type === 'player') return 'player';
+
+        // Для врагов: если это зритель, используем viewerPowerType, иначе originalEnemyType
+        if (this.type === 'enemy') {
+            if (this.isViewerTank && this.viewerPowerType) {
+                return this.viewerPowerType;
+            }
+            return this.originalEnemyType || this.enemyType;
+        }
+
+        return 'enemy'; // fallback
+    }
+
     // ДОБАВЬТЕ ЭТОТ МЕТОД ДЛЯ ВРАЖЕСКИХ ТАНКОВ
     getEnemyReloadTime() {
-        switch (this.enemyType) {
-            case 'FAST': return 25;
-            case 'HEAVY': return 60;
-            case 'SNIPER': return 80;
-            default: return 40; // BASIC
+        // ЕСЛИ ЗРИТЕЛЬ - используем усиленную перезарядку
+        if (this.isViewerTank && this.originalEnemyType) {
+            const baseReload = ENEMY_TYPES[this.originalEnemyType].reloadTime;
+            return Math.max(8, Math.floor(baseReload * 0.666)); // В 1.5 раза быстрее
         }
+
+        // Обычные враги - из конфига
+        return ENEMY_TYPES[this.enemyType].reloadTime;
     }
 
     getBaseShootDirection() {
@@ -836,6 +911,8 @@ class Tank {
     }
 
     // Drawing methods
+    // В классе Tank добавляем/изменяем методы:
+
     draw(ctx) {
         if (this.isDestroyed) return;
 
@@ -875,38 +952,16 @@ class Tank {
             ctx.globalAlpha = 0.5;
         }
 
-        // Tank body
-        ctx.fillStyle = this.color;
-        ctx.fillRect(-this.size/2, -this.size/2, this.size, this.size);
-
-        // Turret
-        this.drawTurret(ctx);
-
-        // Level indicator
-        if (this.type === 'player' && this.playerLevel > 1) {
-            this.drawLevelIndicator(ctx);
+        // === ВЫБОР МОДЕЛИ ===
+        if (this.type === 'player') {
+            // ТВОЙ ОРИГИНАЛЬНЫЙ ДИЗАЙН ИГРОКА
+            this.drawOriginalPlayerTank(ctx);
+        } else if (this.type === 'enemy') {
+            // РАЗНЫЕ МОДЕЛИ ДЛЯ ВРАГОВ
+            this.drawEnemyTankByType(ctx);
         }
-
-        // Bonus effect
-        if (this.hasBonus) {
-            ctx.strokeStyle = `rgba(255, 255, 255, ${this.blinkAlpha})`;
-            ctx.lineWidth = 3;
-            ctx.strokeRect(-this.size/2, -this.size/2, this.size, this.size);
-        }
-
-        // Barrel
-        const barrelWidth = this.size * (this.type === 'player' ? 0.15 + (this.playerLevel * 0.015) : 0.2);
-        const barrelLength = this.size * 0.8;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
 
         ctx.globalAlpha = 1.0;
-
-        // Auto-aim device
-        if (this.hasAutoAim && this.type === 'player') {
-            this.drawAutoAimDevice(ctx);
-        }
-
         ctx.restore();
 
         // Additional effects
@@ -917,6 +972,677 @@ class Tank {
         if (this.type === 'enemy' && this.username) this.drawEnemyInfo(ctx);
         if (this.isFrozen && this.freezeProgress > 0) this.drawFreezeEffect(ctx);
         if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) this.drawPatrolEffects(ctx);
+    }
+
+    // === ТВОЙ ОРИГИНАЛЬНЫЙ ДИЗАЙН ТАНКА ИГРОКА ===
+    drawOriginalPlayerTank(ctx) {
+        const halfSize = this.size / 2;
+
+        // 1. МАССИВНЫЙ КВАДРАТНЫЙ КОРПУС
+        ctx.fillStyle = this.color;
+
+        // Основной массивный корпус
+        ctx.fillRect(-halfSize * 0.8, -halfSize * 0.7, this.size * 0.8, this.size * 0.7);
+
+        // 2. ШИРОКИЕ ГУСЕНИЦЫ (занимают почти всю высоту)
+        const trackWidth = this.size * 0.3;
+        const trackHeight = this.size * 0.9;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница с ШИРОКИМИ траками
+        this.drawHeavyTrack(ctx, -halfSize * 1.5, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        this.drawHeavyTrack(ctx, halfSize * 0.9, trackY, trackWidth, trackHeight);
+
+        // 3. МНОГООПОРНАЯ ПОДВЕСКА (много маленьких катков)
+        ctx.fillStyle = '#7F8C8D';
+        const smallRollerCount = 8;
+        const smallRollerRadius = this.size * 0.04;
+
+        // Левые катки
+        for (let i = 0; i < smallRollerCount; i++) {
+            const x = -halfSize * 1.05;
+            const y = trackY + (i * (trackHeight / (smallRollerCount - 1)));
+
+            // Каток
+            ctx.beginPath();
+            ctx.arc(x, y, smallRollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Поддерживающий ролик сверху
+            if (i < smallRollerCount - 1) {
+                const topY = y + (trackHeight / (smallRollerCount - 1)) / 2;
+                ctx.beginPath();
+                ctx.arc(x - trackWidth * 0.3, topY, smallRollerRadius * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Правые катки
+        for (let i = 0; i < smallRollerCount; i++) {
+            const x = halfSize * 1.1;
+            const y = trackY + (i * (trackHeight / (smallRollerCount - 1)));
+
+            ctx.beginPath();
+            ctx.arc(x, y, smallRollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (i < smallRollerCount - 1) {
+                const topY = y + (trackHeight / (smallRollerCount - 1)) / 2;
+                ctx.beginPath();
+                ctx.arc(x + trackWidth * 0.3, topY, smallRollerRadius * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 4. БАШНЯ (оставляем твою оригинальную)
+        this.drawTurret(ctx);
+
+        // 5. ДУЛО (зависит от уровня)
+        const barrelWidth = this.size * (0.15 + (this.playerLevel * 0.015));
+        const barrelLength = this.size * 0.8;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // 6. ИНДИКАТОР УРОВНЯ
+        if (this.playerLevel > 1) {
+            this.drawLevelIndicator(ctx);
+        }
+
+        // 7. УСТРОЙСТВО АВТО-ПРИЦЕЛА
+        if (this.hasAutoAim) {
+            this.drawAutoAimDevice(ctx);
+        }
+    }
+
+    // === МЕТОД ГУСЕНИЦ (твой оригинальный) ===
+    drawHeavyTrack(ctx, x, y, width, height) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Основа гусеницы
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(0, 0, width, height);
+
+        // ШИРОКИЕ ТРАКИ с развитым грунтозацепом
+        ctx.fillStyle = '#34495E';
+        const trackCount = 12; // Много траков для тяжёлого танка
+
+        for (let i = 0; i < trackCount; i++) {
+            const trackY = i * (height / trackCount);
+            const trackHeightSegment = height / trackCount;
+
+            // Основная пластина трака
+            ctx.fillRect(width * 0.05, trackY + 1, width * 0.9, trackHeightSegment - 2);
+
+            // Грунтозацепы (шипы)
+            ctx.fillStyle = '#1A1A1A';
+
+            // Центральный грунтозацеп
+            ctx.fillRect(width * 0.4, trackY + trackHeightSegment * 0.1, width * 0.2, trackHeightSegment * 0.8);
+
+            // Боковые грунтозацепы
+            ctx.fillRect(width * 0.1, trackY + trackHeightSegment * 0.3, width * 0.2, trackHeightSegment * 0.4);
+            ctx.fillRect(width * 0.7, trackY + trackHeightSegment * 0.3, width * 0.2, trackHeightSegment * 0.4);
+
+            ctx.fillStyle = '#34495E';
+        }
+
+        // Боковые направляющие гребни
+        ctx.fillStyle = '#1A1A1A';
+        ctx.fillRect(0, 0, width * 0.05, height);
+        ctx.fillRect(width * 0.95, 0, width * 0.05, height);
+
+        ctx.restore();
+    }
+
+    // === МЕТОДЫ ДЛЯ ВРАГОВ (оставляем из предыдущего ответа) ===
+    drawEnemyTankByType(ctx) {
+        // ЕСЛИ ЗРИТЕЛЬ - рисуем соответствующий тип
+        if (this.enemyType === 'VIEWER' && this.originalEnemyType) {
+            switch(this.originalEnemyType) {
+                case 'BASIC':
+                    this.drawBasicEnemy(ctx);
+                    break;
+                case 'FAST':
+                    this.drawFastEnemy(ctx);
+                    break;
+                case 'HEAVY':
+                    this.drawHeavyEnemy(ctx);
+                    break;
+                case 'SNIPER':
+                    this.drawSniperEnemy(ctx);
+                    break;
+                default:
+                    this.drawBasicEnemy(ctx);
+            }
+        } else {
+            // Обычные враги
+            switch(this.enemyType) {
+                case 'BASIC':
+                    this.drawBasicEnemy(ctx);
+                    break;
+                case 'FAST':
+                    this.drawFastEnemy(ctx);
+                    break;
+                case 'HEAVY':
+                    this.drawHeavyEnemy(ctx);
+                    break;
+                case 'SNIPER':
+                    this.drawSniperEnemy(ctx);
+                    break;
+                default:
+                    this.drawBasicEnemy(ctx);
+            }
+        }
+    }
+
+    // === 1. БАЗОВЫЙ ВРАГ (стандартный) ===
+    drawBasicEnemy(ctx) {
+        const halfSize = this.size / 2;
+
+        // КОРПУС: квадратный, простой
+        ctx.fillStyle = this.color || '#C0392B'; // Красный
+
+        // Основной корпус
+        ctx.fillRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        // Гусеницы
+        ctx.fillStyle = '#2C3E50';
+        const trackWidth = this.size * 0.2;
+        const trackHeight = this.size * 0.7;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница
+        ctx.fillRect(-halfSize * 0.9, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // Траки (простые полоски)
+        ctx.fillStyle = '#34495E';
+        for (let i = 0; i < 6; i++) {
+            const y = trackY + i * (trackHeight / 6);
+            // Левые траки
+            ctx.fillRect(-halfSize * 0.9 + 2, y + 2, trackWidth - 4, 3);
+            // Правые траки
+            ctx.fillRect(halfSize * 0.7 + 2, y + 2, trackWidth - 4, 3);
+        }
+
+        // БАШНЯ: круглая, простая
+        ctx.fillStyle = '#E74C3C';
+        const turretRadius = this.size / 3.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // МАЯЧОК БОНУСА (если есть)
+        if (this.hasBonus) {
+            this.drawBonusBeacon(ctx);
+        }
+
+        // ДУЛО: короткое
+        const barrelWidth = this.size * 0.15;
+        const barrelLength = this.size * 0.6;
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // ИКОНКА ТИПА
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚫', 0, 0); // Чёрный круг для базового
+    }
+
+    // === 2. БЫСТРЫЙ ВРАГ (лёгкий, обтекаемый) ===
+    drawFastEnemy(ctx) {
+        const halfSize = this.size / 2;
+
+        // КОРПУС: обтекаемый, низкий
+        ctx.fillStyle = this.color || '#F39C12'; // Оранжевый
+
+        // Овальный корпус
+        ctx.beginPath();
+        ctx.ellipse(0, 0, halfSize * 0.7, halfSize * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ГУСЕНИЦЫ: узкие, для скорости
+        ctx.fillStyle = '#2C3E50';
+        const trackWidth = this.size * 0.15;
+        const trackHeight = this.size * 0.6;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница
+        ctx.fillRect(-halfSize * 0.85, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // БОЛЬШИЕ КАТКИ (для скорости)
+        ctx.fillStyle = '#7F8C8D';
+        const rollerRadius = this.size * 0.06;
+
+        // Левые катки (3 больших)
+        for (let i = 0; i < 3; i++) {
+            const y = trackY + i * (trackHeight / 2);
+            ctx.beginPath();
+            ctx.arc(-halfSize * 0.77, y, rollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Правые катки
+        for (let i = 0; i < 3; i++) {
+            const y = trackY + i * (trackHeight / 2);
+            ctx.beginPath();
+            ctx.arc(halfSize * 0.77, y, rollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // БАШНЯ: маленькая, обтекаемая
+        ctx.fillStyle = '#E67E22';
+        const turretRadius = this.size / 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // МАЯЧОК БОНУСА (если есть)
+        if (this.hasBonus) {
+            this.drawBonusBeacon(ctx);
+        }
+
+        // ДУЛО: тонкое, длинное
+        const barrelWidth = this.size * 0.1;
+        const barrelLength = this.size * 0.7;
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // ИКОНКА: молния
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', 0, 0);
+    }
+
+    // === 3. ТЯЖЁЛЫЙ ВРАГ (бронированный) ===
+    drawHeavyEnemy(ctx) {
+        const halfSize = this.size / 2;
+
+        // КОРПУС: массивный, с дополнительной бронёй
+        ctx.fillStyle = this.color || '#7F8C8D'; // Серый
+
+        // Основной корпус
+        ctx.fillRect(-halfSize * 0.9, -halfSize * 0.7, this.size * 0.9, this.size * 0.7);
+
+        // ДОПОЛНИТЕЛЬНАЯ БРОНЯ (накладки)
+        ctx.fillStyle = '#95A5A6';
+        // Верхняя бронеплита
+        ctx.fillRect(-halfSize * 0.7, -halfSize * 0.8, this.size * 0.7, this.size * 0.1);
+        // Боковые экраны
+        ctx.fillRect(-halfSize * 0.95, -halfSize * 0.4, this.size * 0.1, this.size * 0.5);
+        ctx.fillRect(halfSize * 0.85, -halfSize * 0.4, this.size * 0.1, this.size * 0.5);
+
+        // ГУСЕНИЦЫ: очень широкие
+        ctx.fillStyle = '#2C3E50';
+        const trackWidth = this.size * 0.25;
+        const trackHeight = this.size * 0.8;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница
+        ctx.fillRect(-halfSize * 1.05, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        ctx.fillRect(halfSize * 0.8, trackY, trackWidth, trackHeight);
+
+        // МНОГО КАТКОВ (6 с каждой стороны)
+        ctx.fillStyle = '#5D6D7E';
+        const rollerRadius = this.size * 0.045;
+
+        for (let i = 0; i < 6; i++) {
+            const y = trackY + i * (trackHeight / 5);
+            // Левые
+            ctx.beginPath();
+            ctx.arc(-halfSize * 0.92, y, rollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+            // Правые
+            ctx.beginPath();
+            ctx.arc(halfSize * 0.92, y, rollerRadius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // БАШНЯ: крупная, шестигранная
+        ctx.fillStyle = '#95A5A6';
+        const turretSize = this.size / 3;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+            const angle = (i / 6) * Math.PI * 2;
+            const x = Math.cos(angle) * turretSize;
+            const y = Math.sin(angle) * turretSize;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // МАЯЧОК БОНУСА (если есть)
+        if (this.hasBonus) {
+            this.drawBonusBeacon(ctx);
+        }
+
+        // ДУЛО: очень толстое
+        const barrelWidth = this.size * 0.25;
+        const barrelLength = this.size * 0.7;
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // ИКОНКА: щит
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🛡️', 0, 0);
+    }
+
+    // === 4. СНАЙПЕР (дальнобойный) ===
+    drawSniperEnemy(ctx) {
+        const halfSize = this.size / 2;
+
+        // КОРПУС: низкий, для маскировки
+        ctx.fillStyle = this.color || '#27AE60'; // Зелёный
+
+        // Приплюснутый корпус
+        ctx.fillRect(-halfSize * 0.7, -halfSize * 0.4, this.size * 0.7, this.size * 0.4);
+
+        // КАМУФЛЯЖ (пятна)
+        ctx.fillStyle = '#2ECC71';
+        // Несколько пятен камуфляжа
+        ctx.fillRect(-halfSize * 0.5, -halfSize * 0.3, this.size * 0.2, this.size * 0.15);
+        ctx.fillRect(halfSize * 0.3, -halfSize * 0.2, this.size * 0.15, this.size * 0.1);
+        ctx.fillRect(-halfSize * 0.2, halfSize * 0.1, this.size * 0.25, this.size * 0.08);
+
+        // ГУСЕНИЦЫ: узкие, для малозаметности
+        ctx.fillStyle = '#34495E';
+        const trackWidth = this.size * 0.12;
+        const trackHeight = this.size * 0.5;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница
+        ctx.fillRect(-halfSize * 0.82, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // БАШНЯ: с прицелом
+        ctx.fillStyle = '#27AE60';
+        const turretRadius = this.size / 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // МАЯЧОК БОНУСА (если есть)
+        if (this.hasBonus) {
+            this.drawBonusBeacon(ctx);
+        }
+
+        // ПРИЦЕЛ (телескопический)
+        ctx.fillStyle = '#1ABC9C';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        // КРЕСТ ПРИЦЕЛА
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-turretRadius * 0.3, 0);
+        ctx.lineTo(turretRadius * 0.3, 0);
+        ctx.moveTo(0, -turretRadius * 0.3);
+        ctx.lineTo(0, turretRadius * 0.3);
+        ctx.stroke();
+
+        // ДУЛО: очень длинное (снайперское)
+        const barrelWidth = this.size * 0.08;
+        const barrelLength = this.size * 1.0; // Очень длинное!
+        ctx.fillStyle = '#2C3E50';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // ГЛУШИТЕЛЬ на конце ствола
+        ctx.fillStyle = '#7F8C8D';
+        ctx.fillRect(-barrelWidth, -barrelLength - 5, barrelWidth * 2, barrelLength * 0.15);
+    }
+
+    drawBonusBeacon(ctx) {
+        const currentTime = Date.now();
+        const cycleDuration = 1000; // 1 секунда
+
+        // Синусоидальная волна для плавной вспышки
+        // sin(0) = 0 → sin(π/2) = 1 → sin(π) = 0 → sin(3π/2) = -1 → sin(2π) = 0
+        const wavePosition = (currentTime % cycleDuration) / cycleDuration * Math.PI * 2;
+
+        // Используем только положительную часть синуса (0-1)
+        let intensity = Math.sin(wavePosition);
+        if (intensity < 0) intensity = 0; // Отрицательные значения = нет свечения
+
+        // Добавляем смягчение - возводим в квадрат для более плавного нарастания
+        intensity = Math.pow(intensity, 1.5);
+
+        // Слишком слабые вспышки не показываем
+        if (intensity < 0.1) return;
+
+        ctx.save();
+
+        // 1. ОЧЕНЬ МЯГКОЕ ВНЕШНЕЕ СВЕЧЕНИЕ
+        const outerRadius = this.size * (0.4 + intensity * 0.3);
+
+        ctx.fillStyle = `rgba(255, 230, 100, ${0.2 * intensity})`;
+        ctx.beginPath();
+        ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. ОСНОВНОЙ СВЕТЯЩИЙСЯ ШАР
+        const coreSize = this.size * 0.07 * (1 + intensity * 0.5);
+
+        // Градиент от ярко-жёлтого к оранжевому
+        const gradient = ctx.createRadialGradient(
+            0, 0, 0,
+            0, 0, coreSize
+        );
+        gradient.addColorStop(0, `rgba(255, 255, 200, ${0.9 * intensity})`);
+        gradient.addColorStop(0.7, `rgba(255, 220, 100, ${0.7 * intensity})`);
+        gradient.addColorStop(1, `rgba(255, 180, 50, ${0.4 * intensity})`);
+
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = 'rgba(255, 220, 100, 0.8)';
+        ctx.shadowBlur = 20 * intensity;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 3. ЯРКИЙ ЦЕНТР (с лёгкой пульсацией)
+        const pulse = Math.sin(currentTime * 0.015) * 0.2 + 0.8;
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * intensity * pulse})`;
+        ctx.shadowBlur = 10 * intensity;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, coreSize * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. ОЧЕНЬ ЛЁГКАЯ ПОДСВЕТКА ТАНКА
+        if (intensity > 0.3) {
+            ctx.globalCompositeOperation = 'soft-light';
+            ctx.fillStyle = `rgba(255, 220, 100, ${0.1 * intensity})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, this.size * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        ctx.shadowBlur = 0;
+        ctx.restore();
+    }
+
+    // === 5. ТАНК ЗРИТЕЛЯ (особый дизайн) ===
+    drawViewerTank(ctx) {
+        const halfSize = this.size / 2;
+
+        // КОРПУС: стильный, с градиентом
+        const gradient = ctx.createLinearGradient(-halfSize, -halfSize, halfSize, halfSize);
+        gradient.addColorStop(0, '#9B59B6');
+        gradient.addColorStop(1, '#3498DB');
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        // НЕОНОВЫЕ ЭФФЕКТЫ
+        ctx.strokeStyle = '#00FFFF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        // ГУСЕНИЦЫ: светящиеся
+        ctx.fillStyle = '#2C3E50';
+        const trackWidth = this.size * 0.2;
+        const trackHeight = this.size * 0.7;
+        const trackY = -trackHeight/2;
+
+        // Левая гусеница
+        ctx.fillRect(-halfSize * 0.9, trackY, trackWidth, trackHeight);
+
+        // Правая гусеница
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // СВЕТЯЩИЕСЯ ТОЧКИ на гусеницах
+        ctx.fillStyle = '#00FFFF';
+        for (let i = 0; i < 4; i++) {
+            const y = trackY + i * (trackHeight / 3);
+            // Левая сторона
+            ctx.beginPath();
+            ctx.arc(-halfSize * 0.8, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+            // Правая сторона
+            ctx.beginPath();
+            ctx.arc(halfSize * 0.8, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // БАШНЯ: с экраном/камерой
+        ctx.fillStyle = '#2980B9';
+        const turretRadius = this.size / 3.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // "ЭКРАН" камеры
+        ctx.fillStyle = '#1A1A1A';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+
+        // ИКОНКА КАМЕРЫ в центре
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('📷', 0, 0);
+
+        // ДУЛО: стильное
+        const barrelWidth = this.size * 0.12;
+        const barrelLength = this.size * 0.7;
+        ctx.fillStyle = '#9B59B6';
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // СВЕТОДИОДЫ на дуле
+        ctx.fillStyle = '#00FF00';
+        ctx.fillRect(-barrelWidth/2, -barrelLength * 0.3, barrelWidth, 2);
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(-barrelWidth/2, -barrelLength * 0.6, barrelWidth, 2);
+    }
+
+    // Метод отрисовки башни
+    drawTurret(ctx) {
+        const turretRadius = this.size / 3;
+
+        // Определяем цвета в зависимости от типа
+        let mainColor, detailColor;
+
+        if (this.type === 'player') {
+            mainColor = '#2C3E50'; // Темно-синий
+            detailColor = '#34495E';
+        } else {
+            // Разные цвета для разных типов врагов
+            switch(this.enemyType) {
+                case 'BASIC':
+                    mainColor = '#7D3C3C'; // Темно-красный
+                    detailColor = '#943434';
+                    break;
+                case 'FAST':
+                    mainColor = '#8E44AD'; // Фиолетовый
+                    detailColor = '#9B59B6';
+                    break;
+                case 'HEAVY':
+                    mainColor = '#34495E'; // Темно-серый
+                    detailColor = '#2C3E50';
+                    break;
+                case 'SNIPER':
+                    mainColor = '#16A085'; // Бирюзовый
+                    detailColor = '#1ABC9C';
+                    break;
+                default:
+                    mainColor = '#7D3C3C';
+                    detailColor = '#943434';
+            }
+        }
+
+        // 1. ОСНОВА БАШНИ (броня)
+        ctx.fillStyle = mainColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2. ТЕКСТУРА БРОНИ (рисуем заклепки)
+        ctx.fillStyle = detailColor;
+        for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2;
+            const x = Math.cos(angle) * turretRadius * 0.6;
+            const y = Math.sin(angle) * turretRadius * 0.6;
+
+            ctx.beginPath();
+            ctx.arc(x, y, turretRadius * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 3. Смотровой люк
+        ctx.fillStyle = '#1A1A1A';
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4. Щель прицела
+        ctx.fillStyle = '#7F8C8D';
+        ctx.fillRect(-turretRadius * 0.2, -turretRadius * 0.05, turretRadius * 0.4, turretRadius * 0.1);
+
+        // 5. ОБВОДКА
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Вспомогательный метод для затемнения цвета
+    getDarkColor(baseColor, alpha = 0.7) {
+        // Простое преобразование цвета с прозрачностью
+        // Для простоты используем rgba
+        if (baseColor.startsWith('#')) {
+            // Конвертируем hex в rgb
+            const r = parseInt(baseColor.slice(1, 3), 16);
+            const g = parseInt(baseColor.slice(3, 5), 16);
+            const b = parseInt(baseColor.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        }
+        return `rgba(0, 0, 0, ${alpha})`;
     }
 
     drawTracks(ctx) {
@@ -978,24 +1704,6 @@ class Tank {
         });
 
         ctx.restore();
-    }
-
-    drawTurret(ctx) {
-        const turretRadius = this.size / 3;
-
-        ctx.fillStyle = this.type === 'player' ? this.getDarkColor(this.color) : '#AA3333';
-        ctx.beginPath();
-        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-
-        ctx.fillStyle = '#2C3E50';
-        ctx.beginPath();
-        ctx.arc(0, 0, turretRadius / 2, 0, Math.PI * 2);
-        ctx.fill();
     }
 
     drawLevelIndicator(ctx) {
