@@ -20,6 +20,15 @@ class Tank {
             this.initEnemy(level, enemyType);
         }
 
+        if (type === 'player') {
+            this.direction = DIRECTIONS.UP;
+        } else {
+            this.direction = DIRECTIONS.DOWN;  // Всегда вниз для врагов
+        }
+
+        this.type = type;
+        this.enemyType = enemyType;
+
         this.initCommonProperties();
     }
 
@@ -43,6 +52,14 @@ class Tank {
         this.canDestroyConcrete = false;
         this.username = this.generateEnemyName(enemyType);
         this.aiLevel = ENEMY_AI_LEVELS.BASIC;
+        // ДОБАВИТЬ: инициализация статистики и для зрителей
+        this.levelStats = {
+            shots: 0,
+            wallsDestroyed: 0,
+            playerKills: 0,
+            baseDestroyed: false,
+            totalScore: 0
+        };
 
         // ДОБАВЬТЕ ЭТО ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ
         if (enemyType === 'VIEWER' || this.isViewerTank) {

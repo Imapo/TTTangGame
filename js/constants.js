@@ -254,10 +254,6 @@ const LEVEL_STATS_POINTS = {
     BASE_DESTROYED: 1000
 };
 
-// Добавьте в начало файла с константами
-const TELEPORT_RADIUS = 30;
-const TELEPORT_ANIMATION_DURATION = 2000; // 2 секунды
-
 // В constants.js обновляем PATROL_BEHAVIOR:
 const PATROL_BEHAVIOR = {
     MOVE_MIN_TIME: 3000,    // Увеличиваем время движения

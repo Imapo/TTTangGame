@@ -96,6 +96,7 @@ class Game {
 
     markEnemyDestroyed(enemy) {
         if (!enemy || !enemy.username) return;
+
         const trackedEnemy = this.currentRoundEnemies.get(enemy.username);
         if (trackedEnemy && !trackedEnemy.destroyed) {
             trackedEnemy.destroyed = true;
@@ -103,29 +104,87 @@ class Game {
             trackedEnemy.finalStats = {...enemy.levelStats};
         }
 
-        // Если это танк зрителя, отмечаем в системе зрителей
+        // 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Добавляем трекинг для танков зрителей
+        // Проверяем, был ли это танк зрителя
         if ((enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId) {
-            this.viewerSystem.markViewerTankDestroyed(enemy.userId);
+            // Если танка зрителя еще нет в трекере, добавляем
+            if (!this.currentRoundEnemies.has(enemy.username)) {
+                this.currentRoundEnemies.set(enemy.username, {
+                    enemy: enemy,
+                    spawnTime: Date.now() - 30000, // Примерное время спавна
+                                             destroyed: true,
+                                             destroyTime: Date.now(),
+                                             finalStats: enemy.levelStats || {
+                                                 shots: enemy.levelStats?.shots || 0,
+                                                 wallsDestroyed: enemy.levelStats?.wallsDestroyed || 0,
+                                                 playerKills: enemy.levelStats?.playerKills || 0,
+                                                 baseDestroyed: enemy.levelStats?.baseDestroyed || false,
+                                                 totalScore: enemy.levelStats?.totalScore || 0
+                                             }
+                });
+            }
         }
     }
 
     getAllRoundEnemies() {
         const enemies = [];
+
+        // 1. Сначала добавляем всех отслеживаемых врагов
         this.currentRoundEnemies.forEach((trackedEnemy, username) => {
             let finalStats;
-            if (trackedEnemy.finalStats) finalStats = trackedEnemy.finalStats;
-            else if (trackedEnemy.enemy && trackedEnemy.enemy.levelStats) finalStats = trackedEnemy.enemy.levelStats;
-            else finalStats = { shots: 0, wallsDestroyed: 0, playerKills: 0, baseDestroyed: false, totalScore: 0 };
+            if (trackedEnemy.finalStats) {
+                finalStats = trackedEnemy.finalStats;
+            } else if (trackedEnemy.enemy && trackedEnemy.enemy.levelStats) {
+                finalStats = trackedEnemy.enemy.levelStats;
+            } else {
+                finalStats = {
+                    shots: 0,
+                    wallsDestroyed: 0,
+                    playerKills: 0,
+                    baseDestroyed: false,
+                    totalScore: 0
+                };
+            }
 
             enemies.push({
                 username: username,
                 enemyType: trackedEnemy.enemy?.enemyType || 'BASIC',
+                isViewerTank: trackedEnemy.enemy?.isViewerTank || trackedEnemy.enemy?.enemyType === 'VIEWER',
                 stats: finalStats,
                 spawnTime: trackedEnemy.spawnTime,
                 destroyed: trackedEnemy.destroyed || false,
                 destroyTime: trackedEnemy.destroyTime
             });
         });
+
+        // 2. Добавляем танки зрителей, которые могли быть пропущены
+        // (например, уничтоженные до добавления в трекер)
+        if (this.viewerSystem && this.viewerSystem.viewerTanks) {
+            this.viewerSystem.viewerTanks.forEach(viewerTank => {
+                if (!viewerTank || !viewerTank.username) return;
+
+                // Проверяем, не добавлен ли уже этот танк
+                const alreadyAdded = enemies.some(e => e.username === viewerTank.username);
+                if (!alreadyAdded) {
+                    enemies.push({
+                        username: viewerTank.username,
+                        enemyType: 'VIEWER',
+                        isViewerTank: true,
+                        stats: viewerTank.levelStats || {
+                            shots: 0,
+                            wallsDestroyed: 0,
+                            playerKills: 0,
+                            baseDestroyed: false,
+                            totalScore: 0
+                        },
+                        spawnTime: Date.now() - 60000, // Примерное время
+                                 destroyed: viewerTank.isDestroyed || false,
+                                 destroyTime: viewerTank.isDestroyed ? Date.now() : null
+                    });
+                }
+            });
+        }
+
         return enemies;
     }
 
@@ -219,65 +278,6 @@ class Game {
     recordBlockDestroyed(count = 1) { this.playerStats.blocksDestroyed += count; this.savePlayerStats(); }
     recordLevelCompleted() { this.playerStats.levelsCompleted++; this.savePlayerStats(); }
     updatePlayerLevel(newLevel) { this.playerStats.level = newLevel; this.savePlayerStats(); }
-
-    createExitTeleport() {
-        const safeZones = [
-            { x: CANVAS_WIDTH / 2, y: 80, width: CANVAS_WIDTH - 160, height: 60 },
-            { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 80, width: CANVAS_WIDTH - 160, height: 60 },
-            { x: 80, y: CANVAS_HEIGHT / 2, width: 60, height: CANVAS_HEIGHT - 160 },
-            { x: CANVAS_WIDTH - 80, y: CANVAS_HEIGHT / 2, width: 60, height: CANVAS_HEIGHT - 160 }
-        ];
-
-        const randomZone = safeZones[Math.floor(Math.random() * safeZones.length)];
-        const x = randomZone.x - randomZone.width / 2 + Math.random() * randomZone.width;
-        const y = randomZone.y - randomZone.height / 2 + Math.random() * randomZone.height;
-
-        const tileX = Math.floor(x / TILE_SIZE);
-        const tileY = Math.floor(y / TILE_SIZE);
-        const isWall = tileX >= 0 && tileX < this.map.width && tileY >= 0 && tileY < this.map.height &&
-        (this.map.grid[tileY][tileX] === TILE_TYPES.BRICK || this.map.grid[tileY][tileX] === TILE_TYPES.CONCRETE);
-
-        if (isWall) this.exitTeleport = new Teleport(randomZone.x, randomZone.y, 'exit');
-        else this.exitTeleport = new Teleport(x, y, 'exit');
-    }
-
-    createEntryTeleport(x, y) {
-        const safePosition = this.ensureSafePosition(x, y);
-        this.entryTeleport = new Teleport(safePosition.x, safePosition.y, 'entry');
-
-        setTimeout(() => {
-            if (this.entryTeleport) this.entryTeleport.startClosing();
-        }, 1000);
-    }
-
-    ensureSafePosition(x, y) {
-        const tileX = Math.floor(x / TILE_SIZE);
-        const tileY = Math.floor(y / TILE_SIZE);
-        const isWall = tileX >= 0 && tileX < this.map.width && tileY >= 0 && tileY < this.map.height &&
-        (this.map.grid[tileY][tileX] === TILE_TYPES.BRICK || this.map.grid[tileY][tileX] === TILE_TYPES.CONCRETE);
-
-        if (!isWall) return { x: x, y: y };
-
-        const safeZones = [
-            { x: CANVAS_WIDTH / 2, y: 80 },
-            { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT - 80 },
-            { x: 80, y: CANVAS_HEIGHT / 2 },
-            { x: CANVAS_WIDTH - 80, y: CANVAS_HEIGHT / 2 }
-        ];
-
-        let closestZone = safeZones[0];
-        let minDistance = Infinity;
-
-        safeZones.forEach(zone => {
-            const distance = Math.sqrt(Math.pow(zone.x - x, 2) + Math.pow(zone.y - y, 2));
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestZone = zone;
-            }
-        });
-
-        return closestZone;
-    }
 
     createDebugMenu() {
         const existingMenu = document.getElementById('debugMenu');
@@ -557,13 +557,6 @@ class Game {
 
         this.handleInput();
 
-        if (this.exitTeleport && this.exitTeleport.active) this.checkTeleportEntry();
-        if (this.exitTeleport) this.exitTeleport.update();
-        if (this.entryTeleport) {
-            this.entryTeleport.update();
-            if (!this.entryTeleport.active) this.entryTeleport = null;
-        }
-
         if (!this.playerEnteredLevel) this.checkPlayerEntry();
         else if (this.waitingForExit) this.checkPlayerExit();
 
@@ -656,7 +649,9 @@ class Game {
     }
 
     updateBullets() {
-        if (this.bullets.length > 10) this.checkBulletCollisions();
+        // ВСЕГДА проверяем столкновения пуль (не только когда >10)
+        this.checkBulletCollisions();
+
         for (let i = this.bullets.length - 1; i >= 0; i--) {
             const bullet = this.bullets[i];
             bullet.deltaTime = this.deltaTime;
@@ -666,17 +661,122 @@ class Game {
     }
 
     checkBulletCollisions() {
+        // Проверяем все пули на столкновения друг с другом
         for (let i = this.bullets.length - 1; i >= 0; i--) {
+            const bullet1 = this.bullets[i];
+            if (!bullet1 || !bullet1.active) continue;
+
             for (let j = this.bullets.length - 1; j > i; j--) {
-                if (this.bullets[i].owner !== this.bullets[j].owner &&
-                    this.bullets[i].getBounds().intersects(this.bullets[j].getBounds())) {
-                    this.effectManager.addBulletExplosion(this.bullets[i].position.x, this.bullets[i].position.y);
-                this.bullets.splice(i, 1);
-                this.bullets.splice(j, 1);
-                this.soundManager.play('bulletCollision');
-                break;
+                const bullet2 = this.bullets[j];
+                if (!bullet2 || !bullet2.active) continue;
+
+                const bounds1 = bullet1.getBounds();
+                const bounds2 = bullet2.getBounds();
+
+                const collision = bounds1.intersects(bounds2);
+
+                if (collision) {
+                    // ★★★ РАЗНЫЕ ТИПЫ СТОЛКНОВЕНИЙ ★★★
+                    if (bullet1.owner !== bullet2.owner) {
+                        // 1. Пули разных владельцев (игрок/враг) - обычное столкновение
+                        console.log('💥 СТОЛКНОВЕНИЕ РАЗНЫХ ПУЛЬ!');
+                        this.handleBulletCollision(bullet1, bullet2, 'enemy_vs_player');
+
+                    } else if (bullet1.owner === 'enemy' && bullet2.owner === 'enemy') {
+                        // 2. Вражеские пули между собой - уничтожаются без урона
+                        console.log('🤝 ВРАЖЕСКИЕ ПУЛИ СТОЛКНУЛИСЬ!');
+                        this.handleBulletCollision(bullet1, bullet2, 'enemy_vs_enemy');
+
+                    } else if (bullet1.owner === 'player' && bullet2.owner === 'player') {
+                        // 3. Пули игрока между собой (если будет многопользовательская игра)
+                        console.log('👥 ПУЛИ ИГРОКА СТОЛКНУЛИСЬ!');
+                        this.handleBulletCollision(bullet1, bullet2, 'player_vs_player');
                     }
+
+                    // Удаляем обе пули из массива
+                    this.bullets.splice(j, 1);
+                    this.bullets.splice(i, 1);
+
+                    break;
+                }
             }
+        }
+    }
+
+    // ★★★ НОВЫЙ МЕТОД: ОБРАБОТКА РАЗНЫХ ТИПОВ СТОЛКНОВЕНИЙ ★★★
+    handleBulletCollision(bullet1, bullet2, collisionType) {
+        // Визуальный эффект в центре столкновения
+        const centerX = (bullet1.position.x + bullet2.position.x) / 2;
+        const centerY = (bullet1.position.y + bullet2.position.y) / 2;
+
+        // Разные эффекты для разных типов столкновений
+        switch(collisionType) {
+            case 'enemy_vs_player':
+                // Мощный эффект для столкновения вражеской и игровой пули
+                this.effectManager.addBulletExplosion(centerX, centerY, 'powerful');
+                this.playBulletCollisionSound(bullet1, bullet2, 'powerful');
+                break;
+
+            case 'enemy_vs_enemy':
+                // Более слабый эффект для вражеских пуль между собой
+                this.effectManager.addBulletExplosion(centerX, centerY, 'weak');
+
+                // Звук мягкого столкновения
+                if (this.soundManager) {
+                    this.soundManager.play('bulletHit');
+
+                    // Тихий дополнительный звук для эффекта
+                    setTimeout(() => {
+                        this.soundManager.play('brickHit');
+                    }, 50);
+                }
+                break;
+
+            case 'player_vs_player':
+                // Нейтральный эффект
+                this.effectManager.addBulletExplosion(centerX, centerY, 'neutral');
+                this.playBulletCollisionSound(bullet1, bullet2, 'neutral');
+                break;
+        }
+
+        // Деактивируем пули
+        bullet1.active = false;
+        bullet2.active = false;
+    }
+
+    // ★★★ ОБНОВЛЕННЫЙ МЕТОД ДЛЯ ЗВУКОВ ★★★
+    playBulletCollisionSound(bullet1, bullet2, type = 'normal') {
+        if (!this.soundManager) return;
+
+        switch(type) {
+            case 'powerful':
+                // Мощное столкновение (разные владельцы)
+                this.soundManager.play('bulletCollision');
+                setTimeout(() => this.soundManager.play('brickDestroy'), 30);
+                break;
+
+            case 'weak':
+                // Слабое столкновение (вражеские пули между собой)
+                this.soundManager.play('bulletHit');
+
+                // Тише и короче
+                try {
+                    const sound = this.soundManager.sounds.get('bulletHit');
+                    if (sound) {
+                        const clone = sound.cloneNode();
+                        clone.volume = 0.3;
+                        clone.playbackRate = 1.2; // Быстрее
+                        clone.play().catch(() => {});
+                    }
+                } catch (e) {
+                    // Фолбэк
+                    this.soundManager.play('bulletHit');
+                }
+                break;
+
+            default:
+                // Обычное столкновение
+                this.soundManager.play('bulletCollision');
         }
     }
 
@@ -685,8 +785,13 @@ class Game {
         if (destructionResult) return this.handleBulletMapCollision(bullet, index, destructionResult);
 
         const bulletBounds = bullet.getBounds();
-        if (bullet.owner === 'player') return this.handlePlayerBulletCollision(bullet, index, bulletBounds);
-        else return this.handleEnemyBulletCollision(bullet, index, bulletBounds);
+
+        if (bullet.owner === 'player') {
+            return this.handlePlayerBulletCollision(bullet, index, bulletBounds);
+        } else if (bullet.owner === 'enemy') {
+            // ★★★ ОБРАБОТКА ВРАЖЕСКИХ ПУЛЬ С ТАНКАМИ СОЮЗНИКОВ ★★★
+            return this.handleEnemyBulletCollision(bullet, index, bulletBounds);
+        }
 
         return true;
     }
@@ -821,6 +926,61 @@ class Game {
             this.bullets.splice(index, 1);
             return false;
         }
+
+        // ★★★ 2. Проверка столкновения с другими врагами (союзниками) ★★★
+        for (let j = this.enemyManager.enemies.length - 1; j >= 0; j--) {
+            const enemy = this.enemyManager.enemies[j];
+
+            // Пропускаем: уничтоженных, самого стреляющего, или если пуля принадлежит этому врагу
+            if (enemy.isDestroyed ||
+                bullet.shooter === enemy ||
+                (bullet.shooter && bullet.shooter.username === enemy.username)) {
+                continue;
+                }
+
+                if (bulletBounds.intersects(enemy.getBounds())) {
+                    console.log(`💥 Вражеская пуля попала в союзника ${enemy.username}!`);
+
+                    // Визуальный эффект (без урона)
+                    this.effectManager.addBulletExplosion(
+                        bullet.position.x,
+                        bullet.position.y,
+                        'friendly_fire'
+                    );
+
+                    // Звук попадания по броне
+                    if (this.soundManager) {
+                        this.soundManager.play('heavyTankHit');
+
+                        // Тихий звук столкновения
+                        setTimeout(() => {
+                            this.soundManager.play('bulletHit');
+                        }, 50);
+                    }
+
+                    // Минимальный экранный шейк для обратной связи
+                    this.screenShake = Math.max(this.screenShake, 5);
+
+                    // ★★★ ПУЛЯ УНИЧТОЖАЕТСЯ, НО УРОНА НЕ НАНОСИТ ★★★
+                    bullet.active = false;
+                    this.bullets.splice(index, 1);
+
+                    // Визуальный эффект на танке (мигание)
+                    enemy.blinkTimer = 0;
+                    enemy.blinkAlpha = 0.5;
+                    enemy.blinkDirection = 1;
+
+                    // Записываем статистику (дружественный огонь)
+                    if (bullet.shooter && bullet.shooter.recordShot) {
+                        bullet.shooter.recordShot();
+                    }
+
+                    return false;
+                }
+        }
+
+        // 3. Проверка столкновения с другими пулями (уже обработано в checkBulletCollisions)
+        // 4. Если не было столкновений, пуля продолжает полет
         return true;
     }
 
@@ -1189,7 +1349,7 @@ class Game {
             this.calculateLevelLeader();
             if (!this.levelLeader) this.findHonoraryLeader();
             this.showLevelCompleteStats = true;
-            this.showLevelComplete();
+            this.showLevelComplete(); // Здесь уже есть кнопка
         }, 1000);
             }
     }
@@ -1231,41 +1391,95 @@ class Game {
 
     calculateLevelLeader() {
         const allEnemies = this.getAllRoundEnemies();
+
+        // 🔥 ДЕБАГ: Вывести всех врагов в консоль
+        console.log("=== Все враги в раунде ===");
+        allEnemies.forEach(enemy => {
+            console.log(`${enemy.username} (${enemy.enemyType}) - ` +
+            `убийств игрока: ${enemy.stats.playerKills}, ` +
+            `выстрелов: ${enemy.stats.shots}, ` +
+            `стен: ${enemy.stats.wallsDestroyed}`);
+        });
+
         let leader = null;
         let maxScore = -1;
 
+        // Сначала ищем того, кто уничтожил базу
         allEnemies.forEach((enemyData) => {
             const stats = enemyData.stats;
             if (stats.baseDestroyed) {
-                leader = { enemy: { username: enemyData.username, enemyType: enemyData.enemyType }, stats: stats };
+                leader = {
+                    enemy: {
+                        username: enemyData.username,
+                        enemyType: enemyData.enemyType,
+                        isViewerTank: enemyData.isViewerTank
+                    },
+                    stats: stats
+                };
                 maxScore = stats.totalScore;
+                console.log(`Найден разрушитель базы: ${enemyData.username}`);
                 return;
             }
         });
 
+        // Если никто не разрушил базу, ищем по очкам
         if (!leader) {
             allEnemies.forEach((enemyData) => {
                 const stats = enemyData.stats;
-                const hasActivity = stats.shots > 0 || stats.wallsDestroyed > 0 || stats.playerKills > 0 || stats.baseDestroyed;
+                const hasActivity = stats.shots > 0 ||
+                stats.wallsDestroyed > 0 ||
+                stats.playerKills > 0 ||
+                stats.baseDestroyed;
+
                 if (stats.totalScore > maxScore && hasActivity) {
                     maxScore = stats.totalScore;
-                    leader = { enemy: { username: enemyData.username, enemyType: enemyData.enemyType }, stats: stats };
+                    leader = {
+                        enemy: {
+                            username: enemyData.username,
+                            enemyType: enemyData.enemyType,
+                            isViewerTank: enemyData.isViewerTank
+                        },
+                        stats: stats
+                    };
+                    console.log(`Новый лидер по очкам: ${enemyData.username} (${stats.totalScore})`);
                 }
             });
         }
 
+        // Если все еще нет лидера, выбираем случайного активного врага
         if (!leader && allEnemies.length > 0) {
-            const activeEnemies = allEnemies.filter(e => e.stats.shots > 0 || e.stats.wallsDestroyed > 0);
+            const activeEnemies = allEnemies.filter(e =>
+            e.stats.shots > 0 || e.stats.wallsDestroyed > 0
+            );
+
             if (activeEnemies.length > 0) {
                 const randomEnemy = activeEnemies[Math.floor(Math.random() * activeEnemies.length)];
-                leader = { enemy: { username: randomEnemy.username, enemyType: randomEnemy.enemyType }, stats: randomEnemy.stats };
+                leader = {
+                    enemy: {
+                        username: randomEnemy.username,
+                        enemyType: randomEnemy.enemyType,
+                        isViewerTank: randomEnemy.isViewerTank
+                    },
+                    stats: randomEnemy.stats
+                };
+                console.log(`Выбран случайный активный враг: ${randomEnemy.username}`);
             } else {
+                // Если все были полностью пассивны, все равно выбираем кого-то
                 const randomEnemy = allEnemies[Math.floor(Math.random() * allEnemies.length)];
-                leader = { enemy: { username: randomEnemy.username, enemyType: randomEnemy.enemyType }, stats: randomEnemy.stats };
+                leader = {
+                    enemy: {
+                        username: randomEnemy.username,
+                        enemyType: randomEnemy.enemyType,
+                        isViewerTank: randomEnemy.isViewerTank
+                    },
+                    stats: randomEnemy.stats
+                };
+                console.log(`Выбран случайный враг (все пассивны): ${randomEnemy.username}`);
             }
         }
 
         this.levelLeader = leader;
+        console.log("=== ФИНАЛЬНЫЙ ЛИДЕР ===", leader);
     }
 
     saveLevelLeaderboard() {
@@ -1308,6 +1522,86 @@ class Game {
             levelCompleteElement.style.display = "block";
 
             if (this.soundManager) this.soundManager.stopLoop("engineIdle");
+
+            // 🔥 ДОБАВЛЯЕМ КНОПКУ "НАЧАТЬ СЛЕДУЮЩИЙ РАУНД"
+            this.addNextLevelButton();
+        }
+    }
+
+    // 🔥 НОВЫЙ МЕТОД ДЛЯ ДОБАВЛЕНИЯ КНОПКИ
+    addNextLevelButton() {
+        const leaderContent = document.getElementById("leaderContent");
+        if (!leaderContent) return;
+
+        // Проверяем, не добавлена ли уже кнопка
+        if (document.getElementById("nextLevelBtn")) return;
+
+        const buttonHTML = `
+        <div style="margin-top: 20px; text-align: center;">
+        <button id="nextLevelBtn" style="
+        background: linear-gradient(45deg, #4CAF50, #45a049);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        padding: 15px 40px;
+        font-size: 18px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        transition: all 0.3s;
+        margin: 20px auto;
+        display: block;
+        ">
+        🎮 НАЧАТЬ СЛЕДУЮЩИЙ РАУНД
+        </button>
+        <div style="color: #bdc3c7; font-size: 12px; margin-top: 10px;">
+        Уровень ${this.level + 1} готов к бою!
+        </div>
+        </div>
+        `;
+
+        leaderContent.insertAdjacentHTML('beforeend', buttonHTML);
+
+        // Добавляем обработчик события
+        document.getElementById("nextLevelBtn").addEventListener("click", () => {
+            this.startNextLevel();
+        });
+    }
+
+    // 🔥 НОВЫЙ МЕТОД ЗАПУСКА СЛЕДУЮЩЕГО УРОВНЯ
+    startNextLevel() {
+        // Скрываем экран завершения уровня
+        const levelCompleteScreen = document.getElementById('levelComplete');
+        if (levelCompleteScreen) {
+            levelCompleteScreen.style.display = 'none';
+        }
+
+        // Сбрасываем флаги
+        this.showLevelCompleteScreen = false;
+        this.showLevelCompleteStats = false;
+        this.levelComplete = false;
+
+        // Записываем статистику завершенного уровня
+        this.recordLevelCompleted();
+        this.clearLevelStatsFromStorage();
+
+        // Сохраняем прогресс игрока
+        this.playerLevel = this.player.playerLevel;
+        this.playerExperience = this.player.experience;
+        this.savePlayerProgress();
+
+        // Увеличиваем уровень и инициализируем
+        this.level++;
+
+        // Перезапускаем уровень
+        this.initLevel();
+
+        // Сообщаем о начале нового раунда
+        console.log(`🎮 Начинаем раунд ${this.level}!`);
+
+        // Визуальный эффект
+        if (this.soundManager) {
+            this.soundManager.play('bonusPickup');
         }
     }
 
@@ -1339,97 +1633,13 @@ class Game {
         if (levelCompleteScreen) levelCompleteScreen.style.display = 'none';
         if (gameOverScreen) gameOverScreen.style.display = 'none';
 
-        if (!this.gameOver) this.createExitTeleport();
-    }
+        // 🔥 УДАЛИТЬ создание телепорта
+        // if (!this.gameOver) this.createExitTeleport();
 
-    checkTeleportEntry() {
-        if (!this.exitTeleport || !this.exitTeleport.active) return false;
-        if (this.exitTeleport.isPlayerInside(this.player)) {
-            const exitX = this.exitTeleport.position.x;
-            const exitY = this.exitTeleport.position.y;
-            this.exitTeleport.activate();
-            this.exitTeleport.active = false;
-            this.nextLevel(exitX, exitY);
-            return true;
+        // Вместо телепорта - предлагаем начать следующий раунд
+        if (!this.gameOver) {
+            this.showLevelComplete();
         }
-        return false;
-    }
-
-    openRandomExit() {
-        const exitTypes = [EXIT_TYPES.TOP, EXIT_TYPES.BOTTOM, EXIT_TYPES.LEFT, EXIT_TYPES.RIGHT];
-        this.currentExit = exitTypes[Math.floor(Math.random() * exitTypes.length)];
-        this.waitingForExit = true;
-        this.exitAnimationProgress = 0;
-        this.animateExitOpening();
-    }
-
-    animateExitOpening() {
-        const animationDuration = EXIT_ANIMATION_DURATION;
-        const startTime = Date.now();
-
-        const animate = () => {
-            const elapsed = Date.now() - startTime;
-            this.exitAnimationProgress = Math.min(elapsed / animationDuration, 1);
-            if (this.exitAnimationProgress < 1) requestAnimationFrame(animate);
-        };
-            animate();
-    }
-
-    calculateNextLevelExit() {
-        if (!this.currentExit) return EXIT_TYPES.TOP;
-        const oppositeExits = {
-            [EXIT_TYPES.TOP]: EXIT_TYPES.BOTTOM,
-            [EXIT_TYPES.BOTTOM]: EXIT_TYPES.TOP,
-            [EXIT_TYPES.LEFT]: EXIT_TYPES.RIGHT,
-            [EXIT_TYPES.RIGHT]: EXIT_TYPES.LEFT
-        };
-        return oppositeExits[this.currentExit];
-    }
-
-    checkPlayerExit() {
-        if (!this.waitingForExit || !this.currentExit || this.player.isDestroyed) return false;
-        const playerBounds = this.player.getBounds();
-        let exited = false;
-
-        switch (this.currentExit) {
-            case EXIT_TYPES.TOP: exited = playerBounds.y + playerBounds.height < -10; break;
-            case EXIT_TYPES.BOTTOM: exited = playerBounds.y > CANVAS_HEIGHT + 10; break;
-            case EXIT_TYPES.LEFT: exited = playerBounds.x + playerBounds.width < -10; break;
-            case EXIT_TYPES.RIGHT: exited = playerBounds.x > CANVAS_WIDTH + 10; break;
-        }
-
-        if (exited) {
-            this.nextLevelExit = this.calculateNextLevelExit();
-            this.nextLevel();
-            return true;
-        }
-        return false;
-    }
-
-    checkPlayerEntry() {
-        if (this.playerEnteredLevel || !this.nextLevelExit || this.player.isDestroyed) return false;
-        const playerBounds = this.player.getBounds();
-        let entered = false;
-
-        switch (this.nextLevelExit) {
-            case EXIT_TYPES.TOP: entered = playerBounds.y > TILE_SIZE; break;
-            case EXIT_TYPES.BOTTOM: entered = playerBounds.y + playerBounds.height < CANVAS_HEIGHT - TILE_SIZE; break;
-            case EXIT_TYPES.LEFT: entered = playerBounds.x > TILE_SIZE; break;
-            case EXIT_TYPES.RIGHT: entered = playerBounds.x + playerBounds.width < CANVAS_WIDTH - TILE_SIZE; break;
-        }
-
-        if (entered) {
-            this.playerEnteredLevel = true;
-            this.nextLevelExit = null;
-            this.closeExit();
-        }
-        return entered;
-    }
-
-    closeExit() {
-        this.currentExit = null;
-        this.waitingForExit = false;
-        this.exitAnimationProgress = 0;
     }
 
     showGameOver() {
@@ -1461,7 +1671,14 @@ class Game {
 
     generateGameOverLeaderStatsHTML(leader) {
         if (!leader || !leader.enemy || !leader.stats) return "<div>Ошибка: данные лидера неполные</div>";
-        const tankIcon = {BASIC:"🔴", FAST:"🟡", HEAVY:"🟣", SNIPER:"🟢"}[leader.enemy.enemyType] || "⚫";
+
+        // 🔥 ИКОНКИ ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ
+        let tankIcon;
+        if (leader.enemy.isViewerTank || leader.enemy.enemyType === 'VIEWER') {
+            tankIcon = '👤'; // Или '🎮' или '📹' - иконка для зрителя
+        } else {
+            tankIcon = {BASIC:"🔴", FAST:"🟡", HEAVY:"🟣", SNIPER:"🟢"}[leader.enemy.enemyType] || "⚫";
+        }
 
         if (leader.stats.baseDestroyed) {
             return `
@@ -1852,9 +2069,6 @@ class Game {
         this.effectManager.bulletExplosions.forEach(explosion => explosion.draw(this.ctx));
 
         this.map.drawGrassOverlay(this.ctx);
-
-        if (this.exitTeleport && this.exitTeleport.active) this.exitTeleport.draw(this.ctx);
-        if (this.entryTeleport) this.entryTeleport.draw(this.ctx);
 
         this.renderUIOverlays();
         this.drawPlayerStats(this.ctx);
@@ -2255,4 +2469,75 @@ window.testChat = (id, name, avatar, command) => {
                     } else {
                         console.log(`Неизвестная команда: ${command}`);
                     }
+};
+
+// Добавьте в конец game.js
+window.testFriendlyFire = () => {
+    if (!game) {
+        console.log('❌ Игра не инициализирована');
+        return;
+    }
+
+    console.log('🎯 Тест дружественного огня между врагами');
+
+    // Очищаем
+    game.enemyManager.enemies = [];
+    game.bullets = [];
+
+    // Создаем двух врагов рядом
+    const enemy1 = new Tank(300, 400, 'enemy', 1, 'BASIC');
+    const enemy2 = new Tank(350, 400, 'enemy', 1, 'BASIC');
+
+    enemy1.username = 'Враг-1';
+    enemy2.username = 'Враг-2';
+    enemy1.canShoot = true;
+    enemy2.canShoot = true;
+    enemy1.reloadTime = 0;
+    enemy2.reloadTime = 0;
+
+    // Добавляем врагов
+    game.enemyManager.enemies.push(enemy1, enemy2);
+
+    // Создаем пулю от врага 1 в направлении врага 2
+    const bullet = new Bullet(
+        320, 400, // Немного правее врага 1
+        DIRECTIONS.RIGHT,
+        'enemy',
+        enemy1,
+        false,
+        null,
+        1,
+        8
+    );
+
+    game.bullets.push(bullet);
+
+    console.log('✅ Созданы 2 врага и пуля от одного к другому');
+    console.log(`📍 Враг 1: (${enemy1.position.x}, ${enemy1.position.y})`);
+    console.log(`📍 Враг 2: (${enemy2.position.x}, ${enemy2.position.y})`);
+    console.log(`📍 Пуля: (${bullet.position.x}, ${bullet.position.y}) → ВПРАВО`);
+    console.log('📏 Расстояние пули до врага 2:', Math.abs(bullet.position.x - enemy2.position.x));
+
+    // Запускаем проверку столкновений вручную
+    console.log('🔄 Проверяем столкновения...');
+
+    // Проверяем столкновение пули с врагом 2
+    const bulletBounds = bullet.getBounds();
+    const enemyBounds = enemy2.getBounds();
+
+    console.log('📐 Пересечение bounds:', bulletBounds.intersects(enemyBounds));
+
+    // Запускаем обработку столкновений
+    game.processBulletCollisions(bullet, 0);
+
+    console.log('📊 Результат:');
+    console.log('  - Количество пуль:', game.bullets.length);
+    console.log('  - Здоровье врага 2:', enemy2.health);
+    console.log('  - Уничтожен ли враг 2:', enemy2.isDestroyed);
+
+    if (game.bullets.length === 0 && enemy2.health === 1 && !enemy2.isDestroyed) {
+        console.log('🎉 УСПЕХ! Дружественный огонь работает: пуля уничтожена, урона нет!');
+    } else {
+        console.log('❌ Проблема с логикой дружественного огня');
+    }
 };

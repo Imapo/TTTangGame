@@ -98,7 +98,17 @@ class EnemyManager {
         const username = this.generateUniqueEnemyName(enemyType);
         const enemy = new Tank(position.x, position.y, "enemy", this.game.level, enemyType);
 
-        enemy.direction = DIRECTIONS.DOWN;
+        // Направление к центру карты
+        const centerX = CANVAS_WIDTH / 2;
+        const centerY = CANVAS_HEIGHT / 2;
+        const dx = centerX - position.x;
+        const dy = centerY - position.y;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            enemy.direction = dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
+        } else {
+            enemy.direction = dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
+        }
         enemy.username = username;
 
         if (this.game?.currentRoundEnemies) {
@@ -350,6 +360,73 @@ class BonusManager {
     }
 }
 
+// ★★★ КЛАСС ДЛЯ ВЗРЫВА ДРУЖЕСТВЕННОГО ОГНЯ ★★★
+class FriendlyFireExplosion {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 15;
+        this.maxRadius = 25;
+        this.particles = [];
+        this.life = 30;
+        this.color = '#6666FF';
+        this.active = true;
+
+        // Создаем частицы
+        for (let i = 0; i < 8; i++) {
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 4,
+                                vy: (Math.random() - 0.5) * 4,
+                                life: 20 + Math.random() * 10,
+                                size: 2 + Math.random() * 3
+            });
+        }
+    }
+
+    update(deltaTime) {
+        // Обновляем радиус
+        this.radius = Math.min(this.radius + 0.5, this.maxRadius);
+        this.life--;
+
+        // Обновляем частицы
+        this.particles.forEach(particle => {
+            if (particle.life > 0) {
+                particle.x += particle.vx;
+                particle.y += particle.vy;
+                particle.life--;
+            }
+        });
+
+        this.active = this.life > 0;
+        return this.active;
+    }
+
+    draw(ctx) {
+        ctx.save();
+
+        // Полупрозрачное синее кольцо
+        ctx.strokeStyle = `rgba(100, 100, 255, ${this.life / 30})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Частицы
+        this.particles.forEach(particle => {
+            if (particle.life > 0) {
+                ctx.fillStyle = `rgba(136, 136, 255, ${particle.life / 30})`;
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        ctx.restore();
+    }
+}
+
 // === МЕНЕДЖЕР ЭФФЕКТОВ ===
 class EffectManager {
     constructor(game) {
@@ -359,11 +436,19 @@ class EffectManager {
         this.timeWaves = [];
     }
 
+    addFriendlyFireEffect(x, y) {
+        this.explosions.push(new FriendlyFireExplosion(x, y));
+    }
+
     addExplosion(x, y, type = 'tank') {
         this.explosions.push(new Explosion(x, y, type));
     }
 
-    addBulletExplosion(x, y) {
+    addBulletExplosion(x, y, type = 'normal') {
+        if (type === 'friendly_fire') {
+            this.addFriendlyFireEffect(x, y);
+            return;
+        }
         this.bulletExplosions.push(new BulletExplosion(x, y));
     }
 
@@ -372,6 +457,7 @@ class EffectManager {
     }
 
     update() {
+        // Теперь все взрывы имеют метод update()
         this.explosions = this.explosions.filter(explosion => {
             explosion.update(this.game.deltaTime);
             return explosion.active;

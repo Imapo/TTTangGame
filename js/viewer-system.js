@@ -363,6 +363,17 @@ class ViewerSystem {
             viewerTank.health = 2;
             viewerTank.isViewerTank = true;
 
+            // 🔥 ДОБАВЛЯЕМ РЕГИСТРАЦИЮ ЗДЕСЬ
+            if (this.game && this.game.currentRoundEnemies) {
+                this.game.currentRoundEnemies.set(username, {
+                    enemy: viewerTank,  // Теперь viewerTank определен
+                    spawnTime: Date.now(),
+                                                  destroyed: false,
+                                                  destroyTime: null,
+                                                  finalStats: null
+                });
+            }
+
             // ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА АВАТАРКИ
             this.setupViewerTankAvatar(viewerTank, userId, avatarUrl);
 
@@ -1358,6 +1369,12 @@ class ViewerSystem {
     // === УПРАВЛЕНИЕ СОСТОЯНИЕМ ===
     markViewerTankDestroyed(userId) {
         this.destroyedViewerTanks.add(userId);
+
+        // ДОБАВИТЬ: Обновление статистики
+        const viewerTank = this.viewerTanks.get(userId);
+        if (viewerTank && game) {
+            game.markEnemyDestroyed(viewerTank);
+        }
     }
 
     resetForNewRound() {

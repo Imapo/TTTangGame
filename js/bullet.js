@@ -164,12 +164,21 @@ class Bullet {
     }
 
     getBounds() {
-        const halfSize = this.size / 2;
+        const halfSize = this.size / 2 + 1; // +1 для лучшего обнаружения
         return new Rectangle(
             this.position.x - halfSize,
             this.position.y - halfSize,
-            this.size,
-            this.size
+            this.size + 2, // Увеличиваем на 2 пикселя
+            this.size + 2
         );
+    }
+
+    getDebugInfo() {
+        return {
+            position: { x: this.position.x, y: this.position.y },
+            owner: this.owner,
+            active: this.active,
+            bounds: this.getBounds()
+        };
     }
 }
