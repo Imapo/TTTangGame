@@ -24,6 +24,119 @@ class ViewerSystem {
         this.initGiftSystem();
     }
 
+    // === МЕТОД ОБРАБОТКИ СООБЩЕНИЙ ИЗ ЧАТА ===
+    handleChatMessage(userId, username, message) {
+        console.log(`💬 [ViewerSystem.handleChatMessage] ${username} (${userId}): ${message}`);
+
+        // Добавляем зрителя в активные
+        this.addActiveViewer(userId, username, '');
+
+        // Ищем танк этого зрителя на поле
+        console.log(`🔍 Ищем танк для userID: ${userId}`);
+        const viewerTank = this.findViewerTankByUserId(userId);
+
+        if (viewerTank) {
+            console.log(`✅ Найден танк: "${viewerTank.username}"`);
+            console.log(`   Тип танка: ${viewerTank.enemyType}, isViewerTank: ${viewerTank.isViewerTank}`);
+            console.log(`   Метод addChatMessage доступен: ${!!viewerTank.addChatMessage}`);
+
+            // Добавляем сообщение в танк
+            if (viewerTank.addChatMessage) {
+                viewerTank.addChatMessage(username, message);
+                console.log(`💬 Сообщение добавлено в танк "${viewerTank.username}"`);
+
+                // 🔥 ДИАГНОСТИКА: вызываем метод debugChatMessages если он есть
+                if (viewerTank.debugChatMessages) {
+                    viewerTank.debugChatMessages();
+                }
+            } else {
+                console.log(`❌ У танка нет метода addChatMessage!`);
+            }
+        } else {
+            console.log(`❌ Танк зрителя ${username} не найден на поле`);
+            console.log(`   Возможные причины:`);
+            console.log(`   1. Танк еще не создан`);
+            console.log(`   2. Танк уже уничтожен`);
+            console.log(`   3. userId не совпадает`);
+
+            // 🔥 Создаем танк автоматически, если его нет?
+            if (message.toLowerCase().includes('!танк') || message.toLowerCase().includes('!tank')) {
+                console.log(`🎮 Автоматически создаем танк для ${username}`);
+                this.spawnViewerTank(userId, username, '');
+            }
+        }
+
+        // Проверяем, есть ли команды в сообщении
+        this.checkChatCommands(userId, username, message);
+    }
+
+    checkChatCommands(userId, username, message) {
+        const lowerMessage = message.toLowerCase();
+
+        // Команда для спавна танка
+        if (lowerMessage.includes('!танк') || lowerMessage.includes('!tank')) {
+            console.log(`🎮 Команда на создание танка от ${username}`);
+
+            if (this.canSpawnViewerTank()) {
+                this.spawnViewerTank(userId, username, '');
+            }
+        }
+
+        // Команда для лайка (если нет системы лайков)
+        if (lowerMessage.includes('!лайк') || lowerMessage.includes('!like')) {
+            console.log(`💖 Виртуальный лайк от ${username}`);
+            this.handleLikeFromViewer(userId, username, 'chat_like');
+        }
+    }
+
+    // === ПОИСК ТАНКА ЗРИТЕЛЯ ПО USER ID ===
+    findViewerTankByUserId(userId) {
+        if (!this.game || !this.game.enemyManager) {
+            console.log(`❌ Не могу искать танк: game или enemyManager не доступны`);
+            return null;
+        }
+
+        const allTanks = this.game.enemyManager.enemies;
+        console.log(`🔍 Поиск танка для userId: ${userId}`);
+        console.log(`   Всего танков: ${allTanks.length}`);
+
+        // Ищем живой танк зрителя с нужным userId
+        for (let i = 0; i < allTanks.length; i++) {
+            const tank = allTanks[i];
+
+            // Пропускаем уничтоженные танки
+            if (tank.isDestroyed) continue;
+
+            const isViewer = tank.enemyType === 'VIEWER' || tank.isViewerTank;
+
+            if (isViewer && tank.userId === userId) {
+                console.log(`   ✅ Найден танк на позиции ${i}: "${tank.username}"`);
+                console.log(`      userId танка: "${tank.userId}"`);
+                console.log(`      userId зрителя: "${userId}"`);
+                console.log(`      Совпадение: ${tank.userId === userId}`);
+                return tank;
+            }
+        }
+
+        console.log(`❌ Танк с userId: "${userId}" не найден`);
+
+        // Выводим список всех танков зрителей для отладки
+        const viewerTanks = allTanks.filter(tank =>
+        (tank.enemyType === 'VIEWER' || tank.isViewerTank) && !tank.isDestroyed
+        );
+
+        if (viewerTanks.length > 0) {
+            console.log(`   Доступные танки зрителей:`);
+            viewerTanks.forEach((tank, index) => {
+                console.log(`   ${index}. "${tank.username}" - userId: "${tank.userId}"`);
+            });
+        } else {
+            console.log(`   На поле нет танков зрителей`);
+        }
+
+        return null;
+    }
+
     // 🔥 ПРОСТОЙ МЕТОД ДЛЯ СПАВНА ЗРИТЕЛЯ
     trySpawnViewerTank() {
         // ПРОВЕРКА НА ЗАВЕРШЕНИЕ РАУНДА
@@ -412,7 +525,7 @@ class ViewerSystem {
             const index = this.game.enemyManager.spawnAnimations.indexOf(spawnAnimation);
             if (index !== -1) {
                 this.game.enemyManager.spawnAnimations.splice(index, 1);
-                
+
                 // 🔴 ВСЕГДА ВЫЗЫВАЕМ, НЕ ЗАВИСИМО ОТ timeStopActive!
                 this.game.enemyManager.completeSpawnAnimation(spawnPoint);
             }

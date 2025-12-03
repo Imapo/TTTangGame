@@ -13,6 +13,14 @@ class Tank {
         this.hasAutoAim = false;
         this.baseAttackMode = false;
         this.isInBaseZone = false;
+        // СИСТЕМА СООБЩЕНИЙ (для зрителей)
+        this.chatMessages = [];          // Очередь сообщений
+        this.currentMessage = null;      // Текущее отображаемое сообщение
+        this.messageStartTime = 0;       // Время начала показа текущего сообщения
+        this.messageAlpha = 1.0;         // Прозрачность сообщения
+        this.messageFadeState = 'SHOW';  // Состояние: SHOW, FADE_OUT, FADE_IN
+        this.messageFadeProgress = 0;    // Прогресс плавного перехода
+        this.messageTimer = null;        // Таймер для исчезновения
 
         if (type === 'player') {
             this.playerLevel = level;
@@ -44,6 +52,154 @@ class Tank {
         this.initCommonProperties();
     }
 
+    addChatMessage(username, message) {
+        console.log(`💬 Танк "${this.username}" получает: "${message}" от ${username}`);
+
+        // 🔥 ПРОСТО ЗАМЕНЯЕМ СТАРОЕ СООБЩЕНИЕ НОВЫМ
+        this.currentMessage = {
+            username: username,
+            message: message,
+            timestamp: Date.now()
+        };
+
+        this.messageAlpha = 1.0;
+        this.messageFadeState = 'SHOW';
+
+        // 🔥 СБРАСЫВАЕМ ТАЙМЕР ИСЧЕЗНОВЕНИЯ
+        clearTimeout(this.messageTimer);
+
+        // 🔥 ЗАПУСКАЕМ НОВЫЙ ТАЙМЕР НА 5 СЕКУНД
+        this.messageTimer = setTimeout(() => {
+            this.startMessageFadeOut();
+        }, 5000);
+    }
+
+    // Показать следующее сообщение из очереди
+    showNextMessage() {
+        if (this.chatMessages.length === 0) {
+            this.currentMessage = null;
+            return;
+        }
+
+        this.currentMessage = this.chatMessages.shift();
+        this.messageStartTime = Date.now();
+        this.messageAlpha = 1.0;
+        this.messageFadeState = 'SHOW';
+        this.messageFadeProgress = 0;
+
+        console.log(`💬 Танк ${this.username}: показываем сообщение`);
+        console.log(`   От: ${this.currentMessage.username}`);
+        console.log(`   Текст: "${this.currentMessage.message}"`);
+    }
+
+    // Обновление состояния сообщений
+    startMessageFadeOut() {
+        if (this.currentMessage) {
+            this.messageFadeState = 'FADE_OUT';
+            this.messageFadeProgress = 0;
+        }
+    }
+
+    // 🔥 ОБНОВЛЕНИЕ СОСТОЯНИЯ СООБЩЕНИЙ
+    updateChatMessages() {
+        if (!this.currentMessage) return;
+
+        // Плавное исчезновение
+        if (this.messageFadeState === 'FADE_OUT') {
+            this.messageFadeProgress += 0.02; // ~1 секунда на исчезновение
+            this.messageAlpha = 1 - this.messageFadeProgress;
+
+            if (this.messageFadeProgress >= 1) {
+                // Полностью убираем сообщение
+                this.currentMessage = null;
+                this.messageAlpha = 1.0;
+                this.messageFadeState = 'SHOW';
+            }
+        }
+    }
+
+    drawChatMessage(ctx) {
+        if (!this.currentMessage || this.messageAlpha <= 0.01) return;
+
+        ctx.save();
+
+        // Позиция над информационным блоком
+        const messageY = -this.size - 85; // Выше информационного блока
+
+        // Фон сообщения
+        const messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
+        ctx.font = 'bold 11px Arial';
+        const textWidth = ctx.measureText(messageText).width;
+        const textHeight = 14;
+        const padding = 6;
+
+        // Позиционируем сообщение по центру над танком
+        const messageX = -textWidth / 2;
+
+        // Фон с закругленными углами
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.7 * this.messageAlpha})`;
+        this.roundRect(ctx, messageX - padding, messageY - textHeight,
+                       textWidth + padding * 2, textHeight + padding * 2, 5);
+        ctx.fill();
+
+        // Обводка цветом танка
+        ctx.strokeStyle = this.color + Math.floor(this.messageAlpha * 255).toString(16).padStart(2, '0');
+        ctx.lineWidth = 1;
+        this.roundRect(ctx, messageX - padding, messageY - textHeight,
+                       textWidth + padding * 2, textHeight + padding * 2, 5);
+        ctx.stroke();
+
+        // Текст сообщения
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.messageAlpha})`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(messageText, messageX, messageY);
+
+        // Индикатор времени (полоска внизу)
+        if (this.currentMessage) {
+            const elapsed = Date.now() - this.messageStartTime;
+            const timeProgress = 1 - (elapsed / this.currentMessage.displayTime);
+
+            ctx.fillStyle = this.color;
+            ctx.fillRect(messageX - padding, messageY + padding - 2,
+                         (textWidth + padding * 2) * Math.max(0, timeProgress), 2);
+        }
+
+        ctx.restore();
+    }
+
+    roundRect(ctx, x, y, width, height, radius) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.closePath();
+    }
+
+
+    // Метод для диагностики сообщений
+    debugChatMessages() {
+        console.log(`🐛 ДИАГНОСТИКА ЧАТА ТАНКА "${this.username}":`);
+        console.log(`   userId: "${this.userId}"`);
+        console.log(`   isViewerTank: ${this.isViewerTank}`);
+        console.log(`   enemyType: ${this.enemyType}`);
+        console.log(`   Текущее сообщение: ${this.currentMessage ? `"${this.currentMessage.username}: ${this.currentMessage.message}"` : 'нет'}`);
+        console.log(`   messageAlpha: ${this.messageAlpha}`);
+        console.log(`   messageFadeState: ${this.messageFadeState}`);
+        console.log(`   Сообщений в очереди: ${this.chatMessages.length}`);
+
+        this.chatMessages.forEach((msg, index) => {
+            const elapsed = Date.now() - msg.timestamp;
+            console.log(`   Очередь ${index}: "${msg.username}: ${msg.message}" (${Math.floor(elapsed/1000)}с назад)`);
+        });
+    }
+
     initPlayer(level) {
         this.playerLevel = 1;
         this.experience = 0;
@@ -52,60 +208,48 @@ class Tank {
     }
 
     initEnemy(level, enemyType) {
-        // Всегда сохраняем originalEnemyType
+        // Сохраняем изначальный тип (VIEWER или обычный тип)
         this.originalEnemyType = enemyType;
         this.enemyType = enemyType;
 
-        // Если это зритель - выбираем случайный тип, но originalEnemyType остаётся 'VIEWER'
+        // Если это зритель - выбираем случайный тип для определения характеристик
         if (enemyType === 'VIEWER') {
             const availableTypes = ['BASIC', 'FAST', 'HEAVY', 'SNIPER'];
             this.viewerPowerType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
             this.isViewerTank = true;
 
-            // Для звука будем использовать viewerPowerType
-            this.originalEnemyType = this.viewerPowerType; // ← Важно для звука!
-        } else {
-            this.isViewerTank = false;
-        }
+            // Для здоровья и характеристик используем viewerPowerType
+            const powerConfig = ENEMY_TYPES[this.viewerPowerType];
+            const levelMultiplier = level === 1 ? 1 : 1.2;
 
-        // Базовые характеристики из конфига
-        const baseConfig = ENEMY_TYPES[this.originalEnemyType];
-        const levelMultiplier = level === 1 ? 1 : 1.2;
+            // УСИЛЕННАЯ ВЕРСИЯ СЛУЧАЙНОГО ТИПА
+            this.health = powerConfig.health * 2; // ← Умножаем здоровье типа на 2
 
-        // УСИЛЕНИЕ ДЛЯ ЗРИТЕЛЕЙ
-        if (this.isViewerTank) {
-            // Используем базовые значения из VIEWER конфига, но с модификаторами
-            const viewerConfig = ENEMY_TYPES.VIEWER;
+            // Для HEAVY: 3 × 2 = 6 HP
+            // Для других: 1 × 2 = 2 HP
 
-            // Здоровье: x2 от базового типа
-            this.health = baseConfig.health * 2;
-
-            // Скорость перезарядки: в 1.5 раза быстрее
-            this.reloadTime = Math.max(8, baseConfig.reloadTime * 0.666); // ÷1.5
-
-            // Скорость движения из VIEWER конфига
-            this.speed = viewerConfig.speed * TANK_SPEED * levelMultiplier;
-
-            // Цвет оригинального типа (чтобы сохранить внешний вид)
-            this.color = baseConfig.color;
-
-            // Скорость пули из VIEWER конфига (или можно оставить базовую)
-            this.bulletSpeed = viewerConfig.bulletSpeed;
-
+            this.reloadTime = Math.max(8, Math.floor(powerConfig.reloadTime * 0.666)); // В 1.5 раза быстрее
+            this.speed = powerConfig.speed * TANK_SPEED * levelMultiplier; // скорость типа
+            this.color = powerConfig.color; // цвет типа
+            this.bulletSpeed = powerConfig.bulletSpeed; // скорость пуль типа
             this.bulletPower = 1;
             this.canDestroyConcrete = false;
 
-            // Зрительские атрибуты
-            this.avatarLoaded = false;
-            this.avatarError = false;
+            console.log(`🎮 Танк зрителя (тип: ${this.viewerPowerType}):`);
+            console.log(`   Базовое здоровье типа: ${powerConfig.health}`);
+            console.log(`   Усиленное здоровье: ${this.health} (×2)`);
+            console.log(`   Перезарядка: ${this.reloadTime} (быстрее в 1.5 раза)`);
+            console.log(`   Скорость: ${this.speed}`);
 
-            console.log(`🎮 Танк зрителя: ${this.username}`);
-            console.log(`   Тип: ${this.originalEnemyType}`);
-            console.log(`   Здоровье: ${this.health} (базовое: ${baseConfig.health})`);
-            console.log(`   Перезарядка: ${this.reloadTime} (базовая: ${baseConfig.reloadTime})`);
-            console.log(`   Скорость: ${this.speed} (из VIEWER конфига)`);
+            // Для звука используем viewerPowerType
+            // originalEnemyType остаётся 'VIEWER' для идентификации как зритель
+            // но для звука будем использовать специальную логику в getSoundType
         } else {
-            // Обычный враг - всё из конфига
+            // Обычный враг
+            this.isViewerTank = false;
+            const baseConfig = ENEMY_TYPES[enemyType];
+            const levelMultiplier = level === 1 ? 1 : 1.2;
+
             this.speed = baseConfig.speed * TANK_SPEED * levelMultiplier;
             this.color = baseConfig.color;
             this.health = baseConfig.health;
@@ -115,7 +259,17 @@ class Tank {
             this.canDestroyConcrete = false;
         }
 
-        this.username = this.generateEnemyName(this.originalEnemyType);
+        // Генерируем имя в зависимости от типа
+        if (this.isViewerTank) {
+            // Для зрителей используем специальные имена или обычные имена выбранного типа
+            const viewerNames = ENEMY_NAMES.VIEWER || ['Зритель', 'Фанат', 'Подписчик'];
+            const typeNames = ENEMY_NAMES[this.viewerPowerType] || ['Враг'];
+            const allNames = [...viewerNames, ...typeNames];
+            this.username = allNames[Math.floor(Math.random() * allNames.length)];
+        } else {
+            this.username = this.generateEnemyName(this.enemyType);
+        }
+
         this.aiLevel = ENEMY_AI_LEVELS.BASIC;
 
         // Статистика
@@ -301,6 +455,9 @@ class Tank {
         this.updateSpecialEffects();
         this.updateMovementSystems();
         this.updateCombatSystems();
+
+        // 🔥 ОБНОВЛЕНИЕ СООБЩЕНИЙ ЧАТА
+        this.updateChatMessages();
     }
 
     updateBaseZoneStatus() {
@@ -547,12 +704,13 @@ class Tank {
     getSoundType() {
         if (this.type === 'player') return 'player';
 
-        // Для врагов: если это зритель, используем viewerPowerType, иначе originalEnemyType
         if (this.type === 'enemy') {
+            // Если это танк зрителя, используем viewerPowerType для звука
             if (this.isViewerTank && this.viewerPowerType) {
                 return this.viewerPowerType;
             }
-            return this.originalEnemyType || this.enemyType;
+            // Иначе используем обычный тип
+            return this.enemyType;
         }
 
         return 'enemy'; // fallback
@@ -560,9 +718,9 @@ class Tank {
 
     // ДОБАВЬТЕ ЭТОТ МЕТОД ДЛЯ ВРАЖЕСКИХ ТАНКОВ
     getEnemyReloadTime() {
-        // ЕСЛИ ЗРИТЕЛЬ - используем усиленную перезарядку
-        if (this.isViewerTank && this.originalEnemyType) {
-            const baseReload = ENEMY_TYPES[this.originalEnemyType].reloadTime;
+        // Если это зритель, используем viewerPowerType для определения базовой перезарядки
+        if (this.isViewerTank && this.viewerPowerType) {
+            const baseReload = ENEMY_TYPES[this.viewerPowerType].reloadTime;
             return Math.max(8, Math.floor(baseReload * 0.666)); // В 1.5 раза быстрее
         }
 
@@ -1099,9 +1257,9 @@ class Tank {
 
     // === МЕТОДЫ ДЛЯ ВРАГОВ (оставляем из предыдущего ответа) ===
     drawEnemyTankByType(ctx) {
-        // ЕСЛИ ЗРИТЕЛЬ - рисуем соответствующий тип
-        if (this.enemyType === 'VIEWER' && this.originalEnemyType) {
-            switch(this.originalEnemyType) {
+        // Если это зритель - рисуем соответствующий тип танка
+        if (this.isViewerTank && this.viewerPowerType) {
+            switch(this.viewerPowerType) {
                 case 'BASIC':
                     this.drawBasicEnemy(ctx);
                     break;
@@ -1799,15 +1957,10 @@ class Tank {
     drawEnemyInfo(ctx) {
         if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
 
-        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ В КОНСОЛЬ
-        if ((this.enemyType === 'VIEWER' || this.isViewerTank) && !this.avatarLoaded && !this.avatarError) {
-            console.log(`🔄 Танк ${this.username}: avatarLoaded=${this.avatarLoaded}, avatarError=${this.avatarError}, avatarUrl=${this.avatarUrl}`);
-        }
+        console.log(`🎨 Отрисовка инфо для "${this.username}"`);
+        console.log(`   Сообщение: ${this.currentMessage ? this.currentMessage.message : 'нет'}`);
 
-        ctx.save();
-        ctx.translate(this.position.x, this.position.y);
-        this.drawUnifiedEnemyInfo(ctx);
-        ctx.restore();
+        this.drawUnifiedEnemyInfoAtPosition(ctx, this.position.x, this.position.y);
     }
 
     drawUnifiedEnemyInfo(ctx) {
@@ -1819,29 +1972,95 @@ class Tank {
         const textWidth = ctx.measureText(infoText).width;
         const textHeight = 14;
 
-        const padding = 8;
-        const blockWidth = textWidth + padding * 2;
-        const blockHeight = textHeight + padding * 2;
+        // 🔥 РАСЧЕТ РАЗМЕРА БЛОКА С УЧЕТОМ СООБЩЕНИЯ
+        let blockHeight = textHeight + 16; // базовый блок
+        let messageText = '';
+        let messageWidth = 0;
 
-        // Позиция блока - убедимся что она правильная
+        // 🔥 ПРОВЕРЯЕМ ЕСТЬ ЛИ ТЕКУЩЕЕ СООБЩЕНИЕ
+        if (this.currentMessage && this.messageAlpha > 0.05) {
+            messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
+
+            // Обрезаем слишком длинные сообщения
+            if (messageText.length > 25) {
+                messageText = messageText.substring(0, 22) + '...';
+            }
+
+            ctx.font = 'normal 10px Arial';
+            messageWidth = ctx.measureText(messageText).width;
+            blockHeight += 20; // Добавляем место для сообщения
+        }
+
+        const padding = 8;
+        const blockWidth = Math.max(textWidth, messageWidth) + padding * 2;
+
+        // 🔥 ПОЗИЦИЯ БЛОКА (остаётся как было)
         const blockX = -this.size - blockWidth - 25;
         const blockY = -this.size - blockHeight - 15;
 
-        // 1. Отрисовка иконки (с правильным центрированием)
+        // 1. ФОН БЛОКА
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+
+        // 2. ОБВОДКА ЦВЕТОМ ТАНКА
+        ctx.strokeStyle = this.color + 'CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+
+        // 3. ИМЯ ЗРИТЕЛЯ И ЗДОРОВЬЕ
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(infoText, blockX + 8, blockY + 14);
+
+        // 4. 🔥 СООБЩЕНИЕ ЧАТА (если есть)
+        if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
+            // Разделительная линия
+            ctx.strokeStyle = this.color + '77';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(blockX + 4, blockY + 24);
+            ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
+            ctx.stroke();
+
+            // Текст сообщения с плавным исчезновением
+            ctx.fillStyle = `rgba(255, 255, 255, ${this.messageAlpha})`;
+            ctx.font = 'normal 10px Arial';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(messageText, blockX + 8, blockY + 34);
+
+            // 🔥 ИНДИКАТОР ВРЕМЕНИ (полоска прогресса)
+            if (this.currentMessage) {
+                const elapsed = Date.now() - this.currentMessage.timestamp;
+                const timeProgress = 1 - Math.min(elapsed / 5000, 1); // 5 секунд
+
+                // Фон полоски
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
+
+                // Прогресс (сжимающаяся полоска)
+                ctx.fillStyle = this.color;
+                const barWidth = (blockWidth - 16) * timeProgress;
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, barWidth, 3);
+            }
+        }
+
+        // 5. ИКОНКА (остаётся как было)
         this.drawEnemyIcon(ctx, blockX, blockY, blockHeight);
 
-        // 2. Отрисовка информационного блока
-        this.drawEnemyInfoBlock(ctx, blockX, blockY, blockWidth, blockHeight, infoText);
-
-        // 3. Линия от блока к танку
+        // 6. ЛИНИЯ ОТ БЛОКА К ТАНКУ (остаётся как было)
         this.drawEnemyConnectionLine(ctx, blockX, blockY, blockWidth, blockHeight);
     }
 
     drawEnemyIcon(ctx, blockX, blockY, blockHeight) {
         const iconSize = blockHeight - 4;
         const iconX = blockX - iconSize - 8;
-
-        // ИСПРАВЛЕНИЕ: Правильное центрирование по вертикали
         const iconY = blockY + (blockHeight - iconSize) / 2; // Центрируем по высоте блока
 
         ctx.save();
@@ -1867,12 +2086,12 @@ class Tank {
 
         ctx.restore();
 
-        // Линия от иконки к блоку (тоже обновим координаты)
+        // Линия от иконки к блоку
         ctx.strokeStyle = this.color + 'AA';
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(iconX + iconSize, iconY + iconSize/2); // Центр правого края иконки
-        ctx.lineTo(blockX, blockY + blockHeight/2); // Центр левого края блока
+        ctx.moveTo(iconX + iconSize, iconY + iconSize/2);
+        ctx.lineTo(blockX, blockY + blockHeight/2);
         ctx.stroke();
     }
 
@@ -2018,23 +2237,353 @@ class Tank {
         const textWidth = ctx.measureText(infoText).width;
         const textHeight = 14;
 
-        const padding = 8;
-        const blockWidth = textWidth + padding * 2;
-        const blockHeight = textHeight + padding * 2;
+        // РАСЧИТЫВАЕМ РАЗМЕР БЛОКА С УЧЕТОМ СООБЩЕНИЯ
+        let blockHeight = textHeight + 16; // базовый блок (8px padding сверху и снизу)
+        let messageText = '';
+        let messageWidth = 0;
 
-        // 🔥 Позиционируем блок с учетом предпочтительной стороны
+        // ПРОВЕРЯЕМ ЕСТЬ ЛИ СООБЩЕНИЕ
+        if (this.currentMessage && this.messageAlpha > 0.05) {
+            // 🔥 ТОЛЬКО ТЕКСТ СООБЩЕНИЯ (без имени)
+            messageText = this.currentMessage.message;
+
+            // 🔥 ОБРЕЗАЕМ С УЧЕТОМ ЭМОДЗИ (теперь можно больше)
+            if (this.getTextLengthWithEmojis(messageText) > 35) {
+                messageText = this.truncateTextWithEmojis(messageText, 35);
+            }
+
+            // 🔥 РАСЧЕТ ШИРИНЫ С УЧЕТОМ ЭМОДЗИ
+            messageWidth = this.measureTextWithEmojis(ctx, messageText);
+            blockHeight += 20; // Добавляем место для сообщения
+        }
+
+        const padding = 8;
+        const blockWidth = Math.max(textWidth, messageWidth) + padding * 2;
+
+        // ПОЗИЦИОНИРОВАНИЕ БЛОКА
         const {blockX, blockY, preferredSide} = this.findBestInfoPosition(
             tankX, tankY, blockWidth, blockHeight
         );
 
-        // 1. Отрисовка иконки (с правильным центрированием)
+        // 1. Отрисовка иконки
         this.drawEnemyIconAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, preferredSide);
 
-        // 2. Отрисовка информационного блока
-        this.drawEnemyInfoBlockAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, infoText);
+        // 2. ОТРИСОВКА БЛОКА С СООБЩЕНИЕМ
+        this.drawInfoBlockWithMessage(ctx, blockX, blockY, blockWidth, blockHeight, infoText, messageText, preferredSide);
 
         // 3. Линия от блока к танку
         this.drawEnemyConnectionLineToTank(ctx, blockX, blockY, blockWidth, blockHeight, tankX, tankY, preferredSide);
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Расчет ширины текста с учетом эмодзи
+    measureTextWithEmojis(ctx, text) {
+        const parts = this.splitTextWithEmojis(text);
+        let totalWidth = 0;
+
+        for (const part of parts) {
+            if (this.isEmoji(part)) {
+                totalWidth += 20; // Фиксированная ширина для эмодзи
+            } else {
+                ctx.font = 'normal 10px Arial';
+                totalWidth += ctx.measureText(part).width;
+            }
+        }
+
+        return totalWidth;
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Подсчет длины текста с учетом эмодзи
+    getTextLengthWithEmojis(text) {
+        let length = 0;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+
+            // Эмодзи из суррогатной пары считаем как 1 символ
+            if (char >= '\uD800' && char <= '\uDFFF') {
+                i++; // Пропускаем второй символ пары
+            }
+
+            length++;
+        }
+
+        return length;
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Отрисовка блока информации с сообщением
+    drawInfoBlockWithMessage(ctx, blockX, blockY, blockWidth, blockHeight, infoText, messageText, side) {
+        // Фон блока
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
+
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Обводка блока цветом танка
+        ctx.strokeStyle = this.color + 'CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+
+        // ИМЯ ЗРИТЕЛЯ И ЗДОРОВЬЕ
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(infoText, blockX + 8, blockY + 14);
+
+        // 🔥 СООБЩЕНИЕ ЧАТА (если есть)
+        if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
+            // Разделительная линия
+            ctx.strokeStyle = this.color + '77';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(blockX + 4, blockY + 24);
+            ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
+            ctx.stroke();
+
+            // 🔥 ПРОВЕРЯЕМ КОМАНДЫ И МЕНЯЕМ ЦВЕТ
+            let textColor = `rgba(255, 255, 255, ${this.messageAlpha})`;
+
+            // Команды для танка
+            if (messageText.toLowerCase().includes('!танк') || messageText.toLowerCase().includes('!tank')) {
+                textColor = `rgba(0, 255, 0, ${this.messageAlpha})`; // Зеленый для команд
+            }
+            // Крики/восклицания
+            else if (messageText.includes('!') || messageText.includes('!!')) {
+                textColor = `rgba(255, 200, 0, ${this.messageAlpha})`; // Желтый для восклицаний
+            }
+            // Вопросы
+            else if (messageText.includes('?')) {
+                textColor = `rgba(100, 200, 255, ${this.messageAlpha})`; // Голубой для вопросов
+            }
+
+            ctx.fillStyle = textColor;
+
+            // РАЗДЕЛЯЕМ ТЕКСТ НА ЧАСТИ ДЛЯ ПРАВИЛЬНОЙ ОТРИСОВКИ ЭМОДЗИ
+            const messageParts = this.splitTextWithEmojis(messageText);
+            let currentX = blockX + 8;
+            const messageY = blockY + 34;
+
+            for (const part of messageParts) {
+                if (this.isEmoji(part)) {
+                    // ОТРИСОВКА ЭМОДЗИ (большим шрифтом)
+                    ctx.font = '16px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+                    ctx.fillText(part, currentX, messageY);
+                    currentX += 20; // Ширина эмодзи
+                } else {
+                    // ОТРИСОВКА ОБЫЧНОГО ТЕКСТА
+                    ctx.font = 'normal 10px Arial';
+                    ctx.fillText(part, currentX, messageY);
+                    currentX += ctx.measureText(part).width;
+                }
+            }
+
+            // ИНДИКАТОР ВРЕМЕНИ (полоска внизу)
+            if (this.currentMessage) {
+                const elapsed = Date.now() - this.currentMessage.timestamp;
+                const timeProgress = 1 - Math.min(elapsed / 5000, 1); // 5 секунд
+
+                // Фон полоски
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
+
+                // Прогресс (сжимающаяся полоска)
+                ctx.fillStyle = this.color;
+                const barWidth = (blockWidth - 16) * timeProgress;
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, barWidth, 3);
+            }
+        }
+    }
+
+    // 🔥 ПРОВЕРКА ЯВЛЯЕТСЯ ЛИ СИМВОЛ ЭМОДЗИ
+    isEmoji(character) {
+        // Простая проверка по диапазону кодов эмодзи
+        const code = character.codePointAt(0);
+
+        // Основные диапазоны эмодзи в Unicode
+        return (
+            (code >= 0x1F600 && code <= 0x1F64F) || // Emoticons
+            (code >= 0x1F300 && code <= 0x1F5FF) || // Misc Symbols and Pictographs
+            (code >= 0x1F680 && code <= 0x1F6FF) || // Transport and Map Symbols
+            (code >= 0x2600 && code <= 0x26FF)   || // Misc symbols
+            (code >= 0x2700 && code <= 0x27BF)   || // Dingbats
+            (code >= 0xFE00 && code <= 0xFE0F)   || // Variation Selectors
+            (code >= 0x1F900 && code <= 0x1F9FF) || // Supplemental Symbols and Pictographs
+            (code >= 0x1F1E6 && code <= 0x1F1FF)    // Regional indicator symbols
+        );
+    }
+
+    // 🔥 РАЗДЕЛЕНИЕ ТЕКСТА НА ОБЫЧНЫЕ СИМВОЛЫ И ЭМОДЗИ
+    splitTextWithEmojis(text) {
+        const parts = [];
+        let currentPart = '';
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+
+            // Пропускаем суррогатные пары (эмодзи из 2 символов)
+            if (char >= '\uD800' && char <= '\uDFFF') {
+                if (currentPart) {
+                    parts.push(currentPart);
+                    currentPart = '';
+                }
+
+                // Собираем полный эмодзи (может быть 2 символа)
+                const emoji = i + 1 < text.length ? char + text[i + 1] : char;
+                parts.push(emoji);
+                i++; // Пропускаем второй символ суррогатной пары
+                continue;
+            }
+
+            // Проверяем обычные эмодзи (один символ)
+            if (this.isEmoji(char)) {
+                if (currentPart) {
+                    parts.push(currentPart);
+                    currentPart = '';
+                }
+                parts.push(char);
+            } else {
+                currentPart += char;
+            }
+        }
+
+        // Добавляем остаток текста
+        if (currentPart) {
+            parts.push(currentPart);
+        }
+
+        return parts;
+    }
+
+    // 🔥 ОБНОВЛЕННЫЙ МЕТОД ОБРЕЗКИ ТЕКСТА С УЧЕТОМ ЭМОДЗИ
+    truncateTextWithEmojis(text, maxLength = 35) { // 🔥 УВЕЛИЧИЛИ С 25 ДО 35
+        if (this.getTextLengthWithEmojis(text) <= maxLength) return text;
+
+        let result = '';
+        let length = 0;
+        let i = 0;
+
+        while (i < text.length && length < maxLength - 3) { // -3 для "..."
+            const char = text[i];
+
+            // Обрабатываем суррогатные пары (эмодзи из 2 символов)
+            if (char >= '\uD800' && char <= '\uDFFF') {
+                if (i + 1 < text.length) {
+                    result += char + text[i + 1];
+                    i += 2;
+                } else {
+                    result += char;
+                    i++;
+                }
+            } else if (this.isEmoji(char)) {
+                result += char;
+                i++;
+            } else {
+                result += char;
+                i++;
+            }
+
+            length++;
+        }
+
+        return result + '...';
+    }
+
+    drawChatMessageAtPosition(ctx, tankX, tankY, blockX, blockY, blockHeight, side) {
+        if (!this.currentMessage || this.messageAlpha <= 0.01) return;
+
+        ctx.save();
+
+        // Определяем позицию сообщения в зависимости от стороны блока
+        let messageX, messageY;
+        const messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
+        ctx.font = 'bold 11px Arial';
+        const textWidth = ctx.measureText(messageText).width;
+        const textHeight = 12;
+        const padding = 5;
+
+        switch(side) {
+            case 'top':
+                messageX = blockX;
+                messageY = blockY - textHeight - padding * 2 - 5;
+                break;
+            case 'right':
+                messageX = blockX + blockHeight + 10;
+                messageY = blockY;
+                break;
+            case 'left':
+                messageX = blockX - textWidth - padding * 2 - 10;
+                messageY = blockY;
+                break;
+            case 'bottom':
+            default:
+                messageX = blockX;
+                messageY = blockY + blockHeight + 5;
+                break;
+        }
+
+        // Фон сообщения
+        ctx.fillStyle = `rgba(0, 0, 0, ${0.8 * this.messageAlpha})`;
+        this.roundRect(ctx, messageX, messageY,
+                       textWidth + padding * 2, textHeight + padding * 2, 4);
+        ctx.fill();
+
+        // Обводка цветом танка
+        ctx.strokeStyle = this.color + Math.floor(this.messageAlpha * 255).toString(16).padStart(2, '0');
+        ctx.lineWidth = 1;
+        this.roundRect(ctx, messageX, messageY,
+                       textWidth + padding * 2, textHeight + padding * 2, 4);
+        ctx.stroke();
+
+        // Текст сообщения (обрезаем если слишком длинный)
+        let displayText = messageText;
+        const maxWidth = 150;
+        if (textWidth > maxWidth) {
+            displayText = messageText.substring(0, 20) + '...';
+        }
+
+        ctx.fillStyle = `rgba(255, 255, 255, ${this.messageAlpha})`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(displayText, messageX + padding, messageY + (textHeight + padding * 2) / 2);
+
+        // Индикатор времени (полоска внизу)
+        if (this.currentMessage) {
+            const elapsed = Date.now() - this.messageStartTime;
+            const timeProgress = 1 - (elapsed / this.currentMessage.displayTime);
+
+            ctx.fillStyle = this.color;
+            const barWidth = (textWidth + padding * 2) * Math.max(0, timeProgress);
+            ctx.fillRect(messageX, messageY + textHeight + padding * 2 - 2, barWidth, 2);
+        }
+
+        // Соединительная линия к информационному блоку
+        ctx.strokeStyle = this.color + '55';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+
+        switch(side) {
+            case 'top':
+                ctx.moveTo(messageX + (textWidth + padding * 2) / 2, messageY + textHeight + padding * 2);
+                ctx.lineTo(blockX + blockHeight / 2, blockY);
+                break;
+            case 'bottom':
+                ctx.moveTo(messageX + (textWidth + padding * 2) / 2, messageY);
+                ctx.lineTo(blockX + blockHeight / 2, blockY + blockHeight);
+                break;
+            case 'left':
+                ctx.moveTo(messageX + textWidth + padding * 2, messageY + (textHeight + padding * 2) / 2);
+                ctx.lineTo(blockX, blockY + blockHeight / 2);
+                break;
+            case 'right':
+                ctx.moveTo(messageX, messageY + (textHeight + padding * 2) / 2);
+                ctx.lineTo(blockX + blockHeight, blockY + blockHeight / 2);
+                break;
+        }
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     // 🔥 НОВЫЙ МЕТОД: Находим лучшую позицию с учетом предпочтительной стороны

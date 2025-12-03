@@ -405,7 +405,7 @@ class Game {
             case 'INVINCIBILITY': this.player.activateShield(10000); break;
             case 'AUTO_AIM': this.player.activateAutoAim(15000); break;
             case 'FORTIFY': this.fortifyBase(30000); break;
-            case 'TIME_STOP': this.activateTimeStop(8000); break;
+            case 'TIME_STOP': this.activateTimeStop(999000); break;
         }
         this.updateStatusIndicators();
     }
@@ -684,7 +684,6 @@ class Game {
 
                     } else if (bullet1.owner === 'enemy' && bullet2.owner === 'enemy') {
                         // 2. Вражеские пули между собой - уничтожаются без урона
-                        console.log('🤝 ВРАЖЕСКИЕ ПУЛИ СТОЛКНУЛИСЬ!');
                         this.handleBulletCollision(bullet1, bullet2, 'enemy_vs_enemy');
 
                     } else if (bullet1.owner === 'player' && bullet2.owner === 'player') {
@@ -939,8 +938,6 @@ class Game {
                 }
 
                 if (bulletBounds.intersects(enemy.getBounds())) {
-                    console.log(`💥 Вражеская пуля попала в союзника ${enemy.username}!`);
-
                     // Визуальный эффект (без урона)
                     this.effectManager.addBulletExplosion(
                         bullet.position.x,
@@ -1819,44 +1816,42 @@ class Game {
     }
 
     restartGame() {
-        if (confirm('Начать новую игру? Весь прогресс будет сброшен.')) {
-            try {
-                this.clearAllLevelStats();
-                this.levelLeader = null;
+        try {
+            this.clearAllLevelStats();
+            this.levelLeader = null;
 
-                const levelComplete = document.getElementById('levelComplete');
-                const gameOver = document.getElementById('gameOver');
-                const levelLeaderStats = document.getElementById('levelLeaderStats');
-                const gameOverLeaderStats = document.getElementById('gameOverLeaderStats');
+            const levelComplete = document.getElementById('levelComplete');
+            const gameOver = document.getElementById('gameOver');
+            const levelLeaderStats = document.getElementById('levelLeaderStats');
+            const gameOverLeaderStats = document.getElementById('gameOverLeaderStats');
 
-                if (levelComplete) levelComplete.style.display = 'none';
-                if (gameOver) gameOver.style.display = 'none';
-                if (levelLeaderStats) levelLeaderStats.style.display = 'none';
-                if (gameOverLeaderStats) gameOverLeaderStats.style.display = 'none';
+            if (levelComplete) levelComplete.style.display = 'none';
+            if (gameOver) gameOver.style.display = 'none';
+            if (levelLeaderStats) levelLeaderStats.style.display = 'none';
+            if (gameOverLeaderStats) gameOverLeaderStats.style.display = 'none';
 
-            } catch (error) {
-                console.log("⚠️ Ошибка при скрытии элементов:", error);
-            }
-
-            this.resetPlayerProgress();
-            this.level = 1;
-            this.score = 0;
-            this.lives = 3;
-            this.gameOver = false;
-            this.baseDestroyed = false;
-            this.showGameOverScreen = false;
-            this.levelComplete = false;
-            this.showLevelCompleteScreen = false;
-
-            this.clearRoundTracker();
-
-            if (this.soundManager) {
-                this.soundManager.stopLoop('engineIdle');
-                this.soundManager.stopLoop('engineMoving');
-            }
-
-            this.initLevel();
+        } catch (error) {
+            console.log("⚠️ Ошибка при скрытии элементов:", error);
         }
+
+        this.resetPlayerProgress();
+        this.level = 1;
+        this.score = 0;
+        this.lives = 3;
+        this.gameOver = false;
+        this.baseDestroyed = false;
+        this.showGameOverScreen = false;
+        this.levelComplete = false;
+        this.showLevelCompleteScreen = false;
+
+        this.clearRoundTracker();
+
+        if (this.soundManager) {
+            this.soundManager.stopLoop('engineIdle');
+            this.soundManager.stopLoop('engineMoving');
+        }
+
+        this.initLevel();
     }
 
     clearAllLevelStats() {

@@ -43,6 +43,24 @@ class TikTokIntegration {
         this.connection.on('chat', data => {
             console.log(`💬 ${data.nickname}: ${data.comment}`);
 
+            // 🔥 ОБРАБАТЫВАЕМ ВСЕ СООБЩЕНИЯ ЧАТА
+            if (this.viewerSystem && this.viewerSystem.handleChatMessage) {
+                this.viewerSystem.handleChatMessage(
+                    data.uniqueId,
+                    data.nickname,
+                    data.comment
+                );
+            }
+
+            // Также добавляем зрителя в активные
+            if (this.viewerSystem && this.viewerSystem.addActiveViewer) {
+                this.viewerSystem.addActiveViewer(
+                    data.uniqueId,
+                    data.nickname,
+                    data.profilePictureUrl || ''
+                );
+            }
+
             // Если комментарий содержит команду для спавна танка
             if (data.comment.toLowerCase().includes('!танк') ||
                 data.comment.toLowerCase().includes('!tank')) {
@@ -64,6 +82,15 @@ class TikTokIntegration {
         this.connection.on('like', data => {
             console.log(`💖 ${data.nickname} поставил(а) лайк! (всего: ${data.totalLikeCount})`);
 
+            // ДОБАВЛЯЕМ В ЛАЙКЕРЫ
+            if (this.viewerSystem && this.viewerSystem.addLikeViewer) {
+                this.viewerSystem.addLikeViewer(
+                    data.uniqueId,
+                    data.nickname,
+                    data.profilePictureUrl || ''
+                );
+            }
+
             // Передаем лайк в систему зрителей
             if (this.viewerSystem && this.viewerSystem.handleLikeFromViewer) {
                 this.viewerSystem.handleLikeFromViewer(
@@ -77,6 +104,15 @@ class TikTokIntegration {
         // === ПОДАРКИ ===
         this.connection.on('gift', data => {
             console.log(`🎁 ${data.nickname} отправил(а) подарок: ${data.giftName} (x${data.repeatCount})`);
+
+            // ДОБАВЛЯЕМ В ДАРИТЕЛИ
+            if (this.viewerSystem && this.viewerSystem.addGiftViewer) {
+                this.viewerSystem.addGiftViewer(
+                    data.uniqueId,
+                    data.nickname,
+                    data.profilePictureUrl || ''
+                );
+            }
 
             // Обрабатываем только одиночные подарки (не комбо)
             if (data.repeatEnd || data.repeatCount === 1) {
@@ -94,6 +130,15 @@ class TikTokIntegration {
         this.connection.on('member', data => {
             console.log(`👋 ${data.nickname} присоединился(ась) к стриму`);
 
+            // ДОБАВЛЯЕМ В АКТИВНЫЕ
+            if (this.viewerSystem && this.viewerSystem.addActiveViewer) {
+                this.viewerSystem.addActiveViewer(
+                    data.uniqueId,
+                    data.nickname,
+                    data.profilePictureUrl || ''
+                );
+            }
+
             // Автоматически создаем танк для новых зрителей (опционально)
             if (this.viewerSystem && this.viewerSystem.spawnViewerTank) {
                 setTimeout(() => {
@@ -109,6 +154,15 @@ class TikTokIntegration {
         // === ПОДПИСКИ ===
         this.connection.on('subscribe', data => {
             console.log(`⭐ ${data.nickname} подписался(ась)!`);
+
+            // ДОБАВЛЯЕМ В ПОДПИСЧИКИ
+            if (this.viewerSystem && this.viewerSystem.addSubscriberViewer) {
+                this.viewerSystem.addSubscriberViewer(
+                    data.uniqueId,
+                    data.nickname,
+                    data.profilePictureUrl || ''
+                );
+            }
 
             // Можно добавить специальный бонус за подписку
             if (this.viewerSystem && this.viewerSystem.handleGiftFromViewer) {

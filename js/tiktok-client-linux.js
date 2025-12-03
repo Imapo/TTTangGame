@@ -38,7 +38,34 @@ class TikTokClient {
     }
 
     handleMessage(data) {
-        if (!this.game.viewerSystem) return;
+        if (!this.game.viewerSystem) {
+            console.log('❌ viewerSystem не доступен!');
+            return;
+        }
+
+        // 🔥 ДИАГНОСТИКА: выводим ID зрителя и список всех танков
+        console.log(`🔍 Получено сообщение типа: ${data.type}`);
+        console.log(`   Зритель: ${data.username} (ID: ${data.userId})`);
+
+        if (this.game.viewerSystem && this.game.viewerSystem.game && this.game.viewerSystem.game.enemyManager) {
+            const allTanks = this.game.viewerSystem.game.enemyManager.enemies;
+            const viewerTanks = allTanks.filter(tank =>
+            (tank.enemyType === 'VIEWER' || tank.isViewerTank) && !tank.isDestroyed
+            );
+
+            console.log(`📊 СТАТИСТИКА ТАНКОВ:`);
+            console.log(`   Всего танков на поле: ${allTanks.length}`);
+            console.log(`   Танков зрителей: ${viewerTanks.length}`);
+
+            if (viewerTanks.length > 0) {
+                viewerTanks.forEach((tank, index) => {
+                    console.log(`   ${index + 1}. "${tank.username}" (ID: ${tank.userId || 'нет ID'})`);
+                    console.log(`      userId танка: ${tank.userId}`);
+                    console.log(`      userId зрителя: ${data.userId}`);
+                    console.log(`      Совпадение: ${tank.userId === data.userId ? '✅ ДА' : '❌ НЕТ'}`);
+                });
+            }
+        }
 
         switch (data.type) {
             case 'gift':
@@ -88,14 +115,56 @@ class TikTokClient {
                 break;
 
             case 'chat':
+                // 🔥 ОБНОВЛЕННАЯ ЛОГИКА ДЛЯ СООБЩЕНИЙ ЧАТА
+                console.log(`💬 ${data.username}: ${data.message}`);
+
+                // 🔥 ТЕСТОВЫЕ СООБЩЕНИЯ С ЭМОДЗИ
+                if (data.message === '!testemoji') {
+                    data.message = 'Привет! 😊 👍 🎮 💀 🏆';
+                }
+
                 // Добавляем в активные зрители при любом сообщении
                 this.game.viewerSystem.addActiveViewer(
                     data.userId,
                     data.username,
                     data.avatar || ''
                 );
-                console.log(`💬 ${data.username}: ${data.message}`);
-                break;
+
+                // 🔥 ВАЖНО: Вызываем handleChatMessage если метод существует
+                if (this.game.viewerSystem.handleChatMessage) {
+                    console.log(`🔄 Вызываем handleChatMessage для ${data.username}`);
+                    this.game.viewerSystem.handleChatMessage(
+                        data.userId,
+                        data.username,
+                        data.message
+                    );
+                } else {
+                    console.log(`❌ У viewerSystem нет метода handleChatMessage!`);
+                    console.log(`   Доступные методы у viewerSystem:`);
+                    Object.getOwnPropertyNames(Object.getPrototypeOf(this.game.viewerSystem)).forEach(method => {
+                        if (method !== 'constructor') {
+                            console.log(`   - ${method}`);
+                        }
+                    });
+                }
+
+                // Проверяем команды для спавна танка
+                if (data.message.toLowerCase().includes('!танк') ||
+                    data.message.toLowerCase().includes('!tank')) {
+                    console.log(`🎮 Команда на спавн танка от ${data.username}`);
+
+                if (this.game.viewerSystem.spawnViewerTank) {
+                    this.game.viewerSystem.spawnViewerTank(
+                        data.userId,
+                        data.username,
+                        data.avatar || ''
+                    );
+                }
+                    }
+                    break;
+
+            default:
+                console.log(`⚠️ Неизвестный тип сообщения: ${data.type}`);
         }
     }
 

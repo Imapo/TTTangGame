@@ -230,7 +230,7 @@ const BONUS_TYPES = {
         symbol: '⏰',
         color: '#00FFFF',
         sound: 'timeStop',
-        duration: 8000
+        duration: 999000
     }
 };
 const BONUS_TANK_CHANCE = 0.2;
