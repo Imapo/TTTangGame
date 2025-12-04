@@ -21,6 +21,12 @@ class Tank {
         this.messageFadeState = 'SHOW';  // Состояние: SHOW, FADE_OUT, FADE_IN
         this.messageFadeProgress = 0;    // Прогресс плавного перехода
         this.messageTimer = null;        // Таймер для исчезновения
+        // 🔥 ДОБАВИТЬ ЭТИ СВОЙСТВА ДЛЯ ЗРИТЕЛЕЙ:
+        this.isViewerTank = false; // Будет true для танков зрителей
+        this.hasViewerBonus = false; // Есть ли бонус
+        this.viewerBonusType = null; // Тип бонуса
+        this.isSubscriber = false; // Подписчик ли
+        this.viewerName = ''; // Имя для отображения
 
         if (type === 'player') {
             this.playerLevel = level;
@@ -223,7 +229,7 @@ class Tank {
             const levelMultiplier = level === 1 ? 1 : 1.2;
 
             // УСИЛЕННАЯ ВЕРСИЯ СЛУЧАЙНОГО ТИПА
-            this.health = powerConfig.health * 2; // ← Умножаем здоровье типа на 2
+            this.health = powerConfig.health * 1; // ← Умножаем здоровье типа на 2
 
             // Для HEAVY: 3 × 2 = 6 HP
             // Для других: 1 × 2 = 2 HP
@@ -1069,8 +1075,6 @@ class Tank {
     }
 
     // Drawing methods
-    // В классе Tank добавляем/изменяем методы:
-
     draw(ctx) {
         if (this.isDestroyed) return;
 
@@ -1954,110 +1958,6 @@ class Tank {
         ctx.globalAlpha = 1.0;
     }
 
-    drawEnemyInfo(ctx) {
-        if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
-
-        console.log(`🎨 Отрисовка инфо для "${this.username}"`);
-        console.log(`   Сообщение: ${this.currentMessage ? this.currentMessage.message : 'нет'}`);
-
-        this.drawUnifiedEnemyInfoAtPosition(ctx, this.position.x, this.position.y);
-    }
-
-    drawUnifiedEnemyInfo(ctx) {
-        const username = this.username.toUpperCase();
-        const hearts = '❤️'.repeat(this.health);
-        const infoText = `${username} ${hearts}`;
-
-        ctx.font = 'bold 12px Arial';
-        const textWidth = ctx.measureText(infoText).width;
-        const textHeight = 14;
-
-        // 🔥 РАСЧЕТ РАЗМЕРА БЛОКА С УЧЕТОМ СООБЩЕНИЯ
-        let blockHeight = textHeight + 16; // базовый блок
-        let messageText = '';
-        let messageWidth = 0;
-
-        // 🔥 ПРОВЕРЯЕМ ЕСТЬ ЛИ ТЕКУЩЕЕ СООБЩЕНИЕ
-        if (this.currentMessage && this.messageAlpha > 0.05) {
-            messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
-
-            // Обрезаем слишком длинные сообщения
-            if (messageText.length > 25) {
-                messageText = messageText.substring(0, 22) + '...';
-            }
-
-            ctx.font = 'normal 10px Arial';
-            messageWidth = ctx.measureText(messageText).width;
-            blockHeight += 20; // Добавляем место для сообщения
-        }
-
-        const padding = 8;
-        const blockWidth = Math.max(textWidth, messageWidth) + padding * 2;
-
-        // 🔥 ПОЗИЦИЯ БЛОКА (остаётся как было)
-        const blockX = -this.size - blockWidth - 25;
-        const blockY = -this.size - blockHeight - 15;
-
-        // 1. ФОН БЛОКА
-        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
-
-        // 2. ОБВОДКА ЦВЕТОМ ТАНКА
-        ctx.strokeStyle = this.color + 'CC';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
-
-        // 3. ИМЯ ЗРИТЕЛЯ И ЗДОРОВЬЕ
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(infoText, blockX + 8, blockY + 14);
-
-        // 4. 🔥 СООБЩЕНИЕ ЧАТА (если есть)
-        if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
-            // Разделительная линия
-            ctx.strokeStyle = this.color + '77';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(blockX + 4, blockY + 24);
-            ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
-            ctx.stroke();
-
-            // Текст сообщения с плавным исчезновением
-            ctx.fillStyle = `rgba(255, 255, 255, ${this.messageAlpha})`;
-            ctx.font = 'normal 10px Arial';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(messageText, blockX + 8, blockY + 34);
-
-            // 🔥 ИНДИКАТОР ВРЕМЕНИ (полоска прогресса)
-            if (this.currentMessage) {
-                const elapsed = Date.now() - this.currentMessage.timestamp;
-                const timeProgress = 1 - Math.min(elapsed / 5000, 1); // 5 секунд
-
-                // Фон полоски
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
-
-                // Прогресс (сжимающаяся полоска)
-                ctx.fillStyle = this.color;
-                const barWidth = (blockWidth - 16) * timeProgress;
-                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, barWidth, 3);
-            }
-        }
-
-        // 5. ИКОНКА (остаётся как было)
-        this.drawEnemyIcon(ctx, blockX, blockY, blockHeight);
-
-        // 6. ЛИНИЯ ОТ БЛОКА К ТАНКУ (остаётся как было)
-        this.drawEnemyConnectionLine(ctx, blockX, blockY, blockWidth, blockHeight);
-    }
-
     drawEnemyIcon(ctx, blockX, blockY, blockHeight) {
         const iconSize = blockHeight - 4;
         const iconX = blockX - iconSize - 8;
@@ -2183,35 +2083,6 @@ class Tank {
         }
     }
 
-    drawIcon(ctx, x, y, size) {
-        ctx.fillStyle = this.color;
-        ctx.font = `bold ${Math.floor(size * 0.5)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle'; // Важно: выравнивание по центру по вертикали
-
-        const icon = this.getEnemyIcon();
-
-        // Основной текст
-        ctx.fillStyle = this.color;
-        ctx.fillText(icon, x + size/2, y + size/2 + 1);
-    }
-
-    getEnemyIcon() {
-        if (this.enemyType === 'VIEWER' || this.isViewerTank) {
-            return '📷'; // Иконка камеры для зрителей (fallback)
-        }
-
-        // Иконки для ИИ противников
-        const icons = {
-            'BASIC': '🔴',    // Обычный
-            'FAST': '⚡',     // Быстрый
-            'HEAVY': '🛡️',   // Тяжелый
-            'SNIPER': '🎯'    // Снайпер
-        };
-
-        return icons[this.enemyType] || '👤';
-    }
-
     drawEnemyInfo(ctx) {
         if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
 
@@ -2230,49 +2101,200 @@ class Tank {
 
     drawUnifiedEnemyInfoAtPosition(ctx, tankX, tankY) {
         const username = this.username.toUpperCase();
-        const hearts = '❤️'.repeat(this.health);
-        const infoText = `${username} ${hearts}`;
 
+        // 🔥 1. ОБЪЯВЛЯЕМ ИКОНКИ БОНУСОВ ОДИН РАЗ
+        const BONUS_ICONS = {
+            'EXTRA_LIFE': '❤️',
+            'SPEED_BOOST': '⚡',
+            'RAPID_FIRE': '🔥',
+            'POWER_SHOT': '💥',
+            'SHIELD': '🛡️',
+            'AUTO_AIM': '🎯'
+        };
+
+        let bonusText = '';
+        let bonusWidth = 0;
+        let bonusIcon = '⭐'; // Значение по умолчанию
+
+        if (this.isViewerTank && this.hasViewerBonus) {
+            bonusIcon = BONUS_ICONS[this.viewerBonusType] || '⭐';
+            bonusText = `[${bonusIcon}]`;
+        }
+
+        // 🔥 2. ПОДСЧИТАЕМ РЕАЛЬНЫЕ ШИРИНЫ
+        ctx.save();
+
+        // Ширина бонуса (если есть)
+        if (bonusText) {
+            ctx.font = '11px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+            bonusWidth = ctx.measureText(bonusText).width + 2; // +2 пробел после
+        }
+
+        // Ширина имени
         ctx.font = 'bold 12px Arial';
-        const textWidth = ctx.measureText(infoText).width;
+        const nameWidth = ctx.measureText(username).width;
+
+        // Ширина сердечек
+        const heartChar = '♥';
+        ctx.font = 'bold 12px Arial';
+        const heartWidth = ctx.measureText(heartChar).width;
+        const heartsWidth = this.health * heartWidth;
+
+        // Общая ширина содержимого
+        let totalWidth = bonusWidth + nameWidth + heartsWidth + 8; // +8 для пробелов
         const textHeight = 14;
 
-        // РАСЧИТЫВАЕМ РАЗМЕР БЛОКА С УЧЕТОМ СООБЩЕНИЯ
-        let blockHeight = textHeight + 16; // базовый блок (8px padding сверху и снизу)
+        // 🔥 3. ПРОВЕРИМ СООБЩЕНИЕ
+        let blockHeight = textHeight + 16;
         let messageText = '';
         let messageWidth = 0;
 
-        // ПРОВЕРЯЕМ ЕСТЬ ЛИ СООБЩЕНИЕ
         if (this.currentMessage && this.messageAlpha > 0.05) {
-            // 🔥 ТОЛЬКО ТЕКСТ СООБЩЕНИЯ (без имени)
             messageText = this.currentMessage.message;
 
-            // 🔥 ОБРЕЗАЕМ С УЧЕТОМ ЭМОДЗИ (теперь можно больше)
             if (this.getTextLengthWithEmojis(messageText) > 35) {
                 messageText = this.truncateTextWithEmojis(messageText, 35);
             }
 
-            // 🔥 РАСЧЕТ ШИРИНЫ С УЧЕТОМ ЭМОДЗИ
             messageWidth = this.measureTextWithEmojis(ctx, messageText);
-            blockHeight += 20; // Добавляем место для сообщения
+            blockHeight += 20;
         }
 
-        const padding = 8;
-        const blockWidth = Math.max(textWidth, messageWidth) + padding * 2;
+        ctx.restore();
 
-        // ПОЗИЦИОНИРОВАНИЕ БЛОКА
+        // 🔥 4. РАССЧИТАЕМ РАЗМЕРЫ БЛОКА
+        const padding = 8;
+        const blockWidth = Math.max(totalWidth, messageWidth) + padding * 2;
+
+        // 🔥 5. НАЙДЕМ ПОЗИЦИЮ БЛОКА
         const {blockX, blockY, preferredSide} = this.findBestInfoPosition(
             tankX, tankY, blockWidth, blockHeight
         );
 
-        // 1. Отрисовка иконки
+        // 🔥 6. ОТРИСУЕМ БЛОК
         this.drawEnemyIconAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, preferredSide);
 
-        // 2. ОТРИСОВКА БЛОКА С СООБЩЕНИЕМ
-        this.drawInfoBlockWithMessage(ctx, blockX, blockY, blockWidth, blockHeight, infoText, messageText, preferredSide);
+        // Фон блока
+        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
+        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
 
-        // 3. Линия от блока к танку
+        ctx.fillStyle = gradient;
+        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
+
+        // Обводка
+        ctx.strokeStyle = this.color + 'CC';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
+
+        // 🔥 7. ОТРИСУЕМ СОДЕРЖИМОЕ
+        let currentX = blockX + 8;
+        const textY = blockY + 14;
+
+        // 7.1 ИКОНКА БОНУСА (если есть)
+        if (bonusText) {
+            ctx.font = '11px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+
+            // Рисуем скобки серым, иконку белым
+            ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
+            ctx.fillText('[', currentX, textY);
+            currentX += ctx.measureText('[').width;
+
+            // Иконка (УЖЕ ОПРЕДЕЛЕНА ВЫШЕ - bonusIcon)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillText(bonusIcon, currentX, textY);
+            currentX += ctx.measureText(bonusIcon).width;
+
+            // Правая скобка
+            ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
+            ctx.fillText(']', currentX, textY);
+            currentX += ctx.measureText(']').width + 2; // Пробел
+        }
+
+        // 7.2 ИМЯ
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(username, currentX, textY);
+        currentX += ctx.measureText(username).width + 4; // Пробел
+
+        // 7.3 СЕРДЕЧКИ ЗДОРОВЬЯ
+        // 🔥 ОШИБКА: используем heartChar ('♥'), а рисуем '❤️'
+        // Исправляем:
+        ctx.font = '12px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+        ctx.fillStyle = '#FF4444';
+        for (let i = 0; i < this.health; i++) {
+            ctx.fillText('❤️', currentX, textY);
+            currentX += heartWidth; // Используем заранее рассчитанную ширину
+        }
+
+        // 🔥 8. СООБЩЕНИЕ (если есть)
+        if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
+            // Разделительная линия
+            ctx.strokeStyle = this.color + '77';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(blockX + 4, blockY + 24);
+            ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
+            ctx.stroke();
+
+            // Определяем цвет
+            let textColor = `rgba(255, 255, 255, ${this.messageAlpha})`;
+            if (messageText.toLowerCase().includes('!танк') || messageText.toLowerCase().includes('!tank')) {
+                textColor = `rgba(0, 255, 0, ${this.messageAlpha})`;
+            } else if (messageText.includes('!') || messageText.includes('!!')) {
+                textColor = `rgba(255, 200, 0, ${this.messageAlpha})`;
+            } else if (messageText.includes('?')) {
+                textColor = `rgba(100, 200, 255, ${this.messageAlpha})`;
+            }
+
+            ctx.fillStyle = textColor;
+
+            // Рисуем сообщение
+            const messageParts = this.splitTextWithEmojis(messageText);
+            let msgX = blockX + 8;
+            const msgY = blockY + 34;
+
+            for (const part of messageParts) {
+                if (this.isEmoji(part)) {
+                    ctx.font = '16px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+                    ctx.fillText(part, msgX, msgY);
+                    msgX += 20;
+                } else {
+                    ctx.font = 'normal 10px Arial';
+                    ctx.fillText(part, msgX, msgY);
+                    msgX += ctx.measureText(part).width;
+                }
+            }
+
+            // Индикатор времени
+            if (this.currentMessage) {
+                const elapsed = Date.now() - this.currentMessage.timestamp;
+                const timeProgress = 1 - Math.min(elapsed / 5000, 1);
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
+
+                ctx.fillStyle = this.color;
+                const barWidth = (blockWidth - 16) * timeProgress;
+                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, barWidth, 3);
+            }
+        }
+
+        // 🔥 9. ЛИНИЯ К ТАНКУ
         this.drawEnemyConnectionLineToTank(ctx, blockX, blockY, blockWidth, blockHeight, tankX, tankY, preferredSide);
+    }
+
+
+
+    measureEmojiTextWidth(ctx, text) {
+        if (!text) return 0;
+
+        // Простое измерение: каждый эмодзи ~14px
+        return text.length * 14;
     }
 
     // 🔥 НОВЫЙ МЕТОД: Расчет ширины текста с учетом эмодзи
@@ -2310,91 +2332,6 @@ class Tank {
         return length;
     }
 
-    // 🔥 НОВЫЙ МЕТОД: Отрисовка блока информации с сообщением
-    drawInfoBlockWithMessage(ctx, blockX, blockY, blockWidth, blockHeight, infoText, messageText, side) {
-        // Фон блока
-        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
-
-        ctx.fillStyle = gradient;
-        ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
-
-        // Обводка блока цветом танка
-        ctx.strokeStyle = this.color + 'CC';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
-
-        // ИМЯ ЗРИТЕЛЯ И ЗДОРОВЬЕ
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 12px Arial';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(infoText, blockX + 8, blockY + 14);
-
-        // 🔥 СООБЩЕНИЕ ЧАТА (если есть)
-        if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
-            // Разделительная линия
-            ctx.strokeStyle = this.color + '77';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(blockX + 4, blockY + 24);
-            ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
-            ctx.stroke();
-
-            // 🔥 ПРОВЕРЯЕМ КОМАНДЫ И МЕНЯЕМ ЦВЕТ
-            let textColor = `rgba(255, 255, 255, ${this.messageAlpha})`;
-
-            // Команды для танка
-            if (messageText.toLowerCase().includes('!танк') || messageText.toLowerCase().includes('!tank')) {
-                textColor = `rgba(0, 255, 0, ${this.messageAlpha})`; // Зеленый для команд
-            }
-            // Крики/восклицания
-            else if (messageText.includes('!') || messageText.includes('!!')) {
-                textColor = `rgba(255, 200, 0, ${this.messageAlpha})`; // Желтый для восклицаний
-            }
-            // Вопросы
-            else if (messageText.includes('?')) {
-                textColor = `rgba(100, 200, 255, ${this.messageAlpha})`; // Голубой для вопросов
-            }
-
-            ctx.fillStyle = textColor;
-
-            // РАЗДЕЛЯЕМ ТЕКСТ НА ЧАСТИ ДЛЯ ПРАВИЛЬНОЙ ОТРИСОВКИ ЭМОДЗИ
-            const messageParts = this.splitTextWithEmojis(messageText);
-            let currentX = blockX + 8;
-            const messageY = blockY + 34;
-
-            for (const part of messageParts) {
-                if (this.isEmoji(part)) {
-                    // ОТРИСОВКА ЭМОДЗИ (большим шрифтом)
-                    ctx.font = '16px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-                    ctx.fillText(part, currentX, messageY);
-                    currentX += 20; // Ширина эмодзи
-                } else {
-                    // ОТРИСОВКА ОБЫЧНОГО ТЕКСТА
-                    ctx.font = 'normal 10px Arial';
-                    ctx.fillText(part, currentX, messageY);
-                    currentX += ctx.measureText(part).width;
-                }
-            }
-
-            // ИНДИКАТОР ВРЕМЕНИ (полоска внизу)
-            if (this.currentMessage) {
-                const elapsed = Date.now() - this.currentMessage.timestamp;
-                const timeProgress = 1 - Math.min(elapsed / 5000, 1); // 5 секунд
-
-                // Фон полоски
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
-                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
-
-                // Прогресс (сжимающаяся полоска)
-                ctx.fillStyle = this.color;
-                const barWidth = (blockWidth - 16) * timeProgress;
-                ctx.fillRect(blockX + 8, blockY + blockHeight - 6, barWidth, 3);
-            }
-        }
-    }
 
     // 🔥 ПРОВЕРКА ЯВЛЯЕТСЯ ЛИ СИМВОЛ ЭМОДЗИ
     isEmoji(character) {
@@ -2792,23 +2729,10 @@ class Tank {
         ctx.fill();
 
         // Отрисовка иконки или аватарки
-        if (this.shouldDrawAvatar()) {
-            this.drawAvatarImageAtPosition(ctx, iconX, iconY, iconSize);
-        } else {
-            this.drawIconAtPosition(ctx, iconX, iconY, iconSize);
-        }
+
+        this.drawAvatarImageAtPosition(ctx, iconX, iconY, iconSize);
 
         ctx.restore();
-    }
-
-    drawIconAtPosition(ctx, x, y, size) {
-        ctx.fillStyle = this.color;
-        ctx.font = `bold ${Math.floor(size * 0.5)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
-        const icon = this.getEnemyIcon();
-        ctx.fillText(icon, x + size/2, y + size/2 + 1);
     }
 
     drawAvatarImageAtPosition(ctx, x, y, size) {

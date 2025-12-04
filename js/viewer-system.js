@@ -427,6 +427,155 @@ class ViewerSystem {
         };
     }
 
+    // === ВЫБОР ТИПА ТАНКА ДЛЯ ЗРИТЕЛЯ ===
+    getViewerTankType(userId, username) {
+        // 1. Приоритет для дарителей подарков
+        const isGifter = this.viewerPools.gifts.some(v => v.userId === userId);
+        if (isGifter && Math.random() < 0.6) {
+            return 'HEAVY'; // Дарители получают тяжелые танки
+        }
+
+        // 2. Приоритет для подписчиков
+        const isSubscriber = this.viewerPools.subscribers.some(v => v.userId === userId);
+        if (isSubscriber && Math.random() < 0.5) {
+            return 'SNIPER'; // Подписчики получают снайперов
+        }
+
+        // 3. Приоритет для лайкеров
+        const isLiker = this.viewerPools.likes.some(v => v.userId === userId);
+        if (isLiker && Math.random() < 0.4) {
+            return 'FAST'; // Лайкеры получают быстрые танки
+        }
+
+        // 4. Случайный выбор из доступных типов
+        const availableTypes = ['BASIC', 'FAST', 'HEAVY', 'SNIPER'];
+
+        // Веса в зависимости от уровня игры
+        const level = this.game.level;
+        let weights = [0.4, 0.3, 0.2, 0.1]; // По умолчанию
+
+        if (level > 5) {
+            weights = [0.2, 0.3, 0.3, 0.2]; // Больше тяжелых и снайперов
+        } else if (level > 3) {
+            weights = [0.3, 0.3, 0.25, 0.15];
+        }
+
+        // Взвешенный случайный выбор
+        const rand = Math.random();
+        let cumulative = 0;
+
+        for (let i = 0; i < availableTypes.length; i++) {
+            cumulative += weights[i];
+            if (rand <= cumulative) {
+                return availableTypes[i];
+            }
+        }
+
+        return 'BASIC'; // Фолбэк
+    }
+
+    // === МОДИФИКАЦИЯ ХАРАКТЕРИСТИК ДЛЯ ЗРИТЕЛЕЙ ===
+    modifyViewerTankStats(tank, username) {
+        const baseConfig = ENEMY_TYPES[tank.enemyType];
+
+        // 1. БОНУС ОТ АКТИВНОСТИ В ЧАТЕ
+        const chatActivity = this.getViewerChatActivity(username);
+        if (chatActivity > 0) {
+            // +5% к скорости за каждое сообщение (макс +20%)
+            tank.speed *= (1 + Math.min(chatActivity * 0.05, 0.2));
+        }
+
+        // 2. УНИКАЛЬНЫЙ ЦВЕТ ПО USER ID
+        tank.viewerColor = this.getViewerColor(tank.userId);
+
+        // 3. ИМЯ НАД ТАНКОМ
+        tank.displayName = username;
+
+        // 4. ШАНС НА БОНУСНЫЕ ХАРАКТЕРИСТИКИ (30%)
+        if (Math.random() < 1) {
+            this.applyRandomViewerBonus(tank, username);
+        }
+
+        // 5. УСИЛЕНИЕ ОТ УРОВНЯ ИГРЫ
+        const levelBonus = Math.max(0, this.game.level - 1) * 0.05; // +5% за уровень
+        tank.speed *= (1 + levelBonus);
+        tank.reloadTime *= (1 - levelBonus * 0.3); // Быстрее перезарядка
+
+        // 6. ДОПОЛНИТЕЛЬНЫЕ ЖИЗНИ НА ВЫСОКИХ УРОВНЯХ
+        if (this.game.level >= 5) {
+            tank.health += 1;
+        }
+        if (this.game.level >= 8) {
+            tank.health += 1;
+        }
+
+        console.log(`🎮 Танк зрителя ${username}: ${tank.enemyType}, HP: ${tank.health}, Speed: ${tank.speed.toFixed(2)}`);
+    }
+
+    // === СЛУЧАЙНЫЙ БОНУС ДЛЯ ЗРИТЕЛЯ ===
+    applyRandomViewerBonus(tank, username) {
+        const bonuses = [
+            {
+                name: 'EXTRA_LIFE',
+                chance: 0.4,
+                apply: (t) => {
+                    t.health = Math.min(t.health + 1, 5);
+                    return '❤️ +1 жизнь';
+                }
+            },
+            {
+                name: 'SPEED_BOOST',
+                chance: 0.3,
+                apply: (t) => {
+                    t.speed *= 1.25;
+                    t.bonusSpeedTimer = 20000;
+                    return '⚡ +25% скорости';
+                }
+            },
+            {
+                name: 'RAPID_FIRE',
+                chance: 0.2,
+                apply: (t) => {
+                    t.reloadTime *= 0.7;
+                    t.bonusRapidFireTimer = 15000;
+                    return '🔥 +30% скорострельности';
+                }
+            },
+            {
+                name: 'POWER_SHOT',
+                chance: 0.1,
+                apply: (t) => {
+                    t.bulletPower += 1;
+                    t.bulletSpeed *= 1.2;
+                    return '💥 Мощный выстрел';
+                }
+            }
+        ];
+
+        const randomBonus = bonuses[Math.floor(Math.random() * bonuses.length)];
+        const message = randomBonus.apply(tank);
+
+        tank.hasViewerBonus = true;
+        tank.viewerBonusType = randomBonus.name;
+
+        // Визуальный эффект
+        this.createFloatingText(
+            tank.position.x,
+            tank.position.y - 30,
+            `🎁 ${username}: ${message}`,
+            '#FFD700'
+        );
+
+        this.game.effectManager.addExplosion(tank.position.x, tank.position.y, 'bonus');
+    }
+
+    // === АКТИВНОСТЬ В ЧАТЕ ===
+    getViewerChatActivity(username) {
+        // Можно добавить систему подсчета сообщений в будущем
+        // Пока возвращаем случайное значение для теста
+        return Math.floor(Math.random() * 5);
+    }
+
     // === ОБНОВЛЯЕМ executeSpawn (где вызывается этот метод) ===
     executeSpawn(userId, username, avatarUrl) {
         const spawnPoint = this.game.enemyManager.getNextSpawnPoint();
@@ -464,17 +613,22 @@ class ViewerSystem {
                 return;
             }
 
-            // Создаем танк зрителя
-            const viewerTank = new Tank(position.x, position.y, "enemy", this.game.level, 'VIEWER');
+            // 🔥 ВЫБИРАЕМ ТИП ТАНКА ДЛЯ ЗРИТЕЛЯ
+            const viewerTankType = this.getViewerTankType(userId, username);
 
-            // Кастомизация для зрителя
+            // 🔥 СОЗДАЕМ ТАНК С ВЫБРАННЫМ ТИПОМ
+            const viewerTank = new Tank(position.x, position.y, "enemy", 1, viewerTankType);
+
+            // 🔥 ОСНОВНЫЕ НАСТРОЙКИ
             viewerTank.username = username;
             viewerTank.userId = userId;
             viewerTank.avatarUrl = avatarUrl;
             viewerTank.viewerName = username;
             viewerTank.color = this.getViewerColor(userId);
-            viewerTank.health = 2;
             viewerTank.isViewerTank = true;
+
+            // 🔥 ПРИМЕНЯЕМ МОДИФИКАТОРЫ ДЛЯ ЗРИТЕЛЯ
+            this.modifyViewerTankStats(viewerTank, username);
 
             // 🔴 ВАЖНО: ПРИМЕНЯЕМ ЭФФЕКТ "СТОП-ВРЕМЕНИ" ЕСЛИ ОН АКТИВЕН
             // ТОЧНО ТАК ЖЕ КАК ДЛЯ ИИ ТАНКОВ!
