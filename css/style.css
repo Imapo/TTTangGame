@@ -210,7 +210,8 @@ border:2px solid #FFD700
     position:absolute;
     top:50px;
     left:10px;
-    z-index:100
+    z-index:100;
+    display: none!important;
 }
 
 .invincibility-indicator,.fortify-indicator {
@@ -328,7 +329,10 @@ background:#333
     display:flex;
     align-items:center;
     justify-content:center;
-    transition:background .3s
+    transition:background .3s;
+    position: absolute;
+    right: 0px;
+    top: 0px;
 }
 
 .close-stats-btn:hover {
@@ -812,7 +816,7 @@ max-width:120px
 }
 
 .stat-value {
-    font-size:24px;
+    font-size:18px;
     font-weight:700;
     color:#f1c40f
 }
@@ -996,4 +1000,106 @@ background: #cccccc;
 cursor: not-allowed;
 transform: none;
 box-shadow: none;
+}
+
+/* Добавьте в ваш CSS файл */
+#gameCanvas {
+cursor: default;
+}
+
+#gameCanvas.wreck-hover {
+cursor: pointer !important;
+}
+
+/* Анимация мигания активного инфо-блока */
+@keyframes wreck-pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1.0; }
+    100% { opacity: 0.7; }
+}
+
+.wreck-active {
+    animation: wreck-pulse 1s infinite;
+}
+
+.hidden-force {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Стили для автоматического таймера */
+.auto-timer {
+    margin: 20px auto;
+    padding: 15px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 10px;
+    text-align: center;
+    border: 2px solid #4CAF50;
+}
+
+.level-complete .auto-timer {
+    border-color: #4CAF50;
+}
+
+.game-over .auto-timer {
+    border-color: #F44336;
+}
+
+.timer-text {
+    color: white;
+    font-size: 16px;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.timer-count {
+    color: #FFD700;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.timer-progress {
+    height: 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    overflow: hidden;
+    position: relative;
+}
+
+.timer-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #4CAF50, #8BC34A);
+    width: 100%;
+    transition: width 0.1s linear;
+    border-radius: 5px;
+}
+
+.game-over .timer-progress-bar {
+    background: linear-gradient(90deg, #F44336, #FF9800);
+}
+
+.cancel-timer-btn {
+    background: rgba(255, 68, 68, 0.8);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 15px;
+    margin-top: 10px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    transition: all 0.3s;
+    width: 100%;
+}
+
+.cancel-timer-btn:hover {
+    background: rgba(255, 68, 68, 1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(255, 68, 68, 0.3);
+}
+
+.cancel-timer-btn:active {
+    transform: translateY(0);
 }
