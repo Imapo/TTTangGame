@@ -79,9 +79,305 @@ class Game {
         this.exitTeleport = null;
         this.entryTeleport = null;
         this.playerEnteredLevel = true;
+        this.levelManuallyClosed = false;
+        this.levelComplete = false;
+        this.showLevelCompleteScreen = false;
+        this.showLevelCompleteStats = false;
+        this.showGameOverScreen = false;
+        this.gameOver = false;
 
         this.playerStats = this.loadPlayerStats();
         this.initLevel();
+    }
+
+    resetLevelState() {
+        console.log('🔄 Полный сброс состояния уровня');
+
+        // Сбрасываем флаги завершения
+        this.levelComplete = false;
+        this.levelManuallyClosed = false;
+
+        // Сбрасываем счетчики врагов
+        this.enemiesDestroyed = 0;
+        this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL || 20;
+
+        // Очищаем всех врагов
+        if (this.enemyManager) {
+            this.enemyManager.enemies = [];
+            this.enemyManager.spawnAnimations = [];
+            this.enemyManager.destroyedEnemies = 0;
+            this.enemyManager.destroyedEnemiesStats = [];
+        }
+
+        // Очищаем пули
+        this.bullets = [];
+
+        // Сбрасываем систему зрителей
+        if (this.viewerSystem) {
+            this.viewerSystem.resetForNewRound();
+        }
+
+        // Очищаем эффекты
+        if (this.effectManager) {
+            this.effectManager.clear();
+        }
+
+        // Очищаем бонусы
+        if (this.bonusManager) {
+            this.bonusManager.clear();
+        }
+
+        console.log('✅ Состояние уровня сброшено');
+    }
+
+    // 🔥 НОВЫЕ МЕТОДЫ ДЛЯ ОБРАТНОГО ОТСЧЕТА
+
+    startLevelCompleteCountdown() {
+        console.log('⏱️ Запуск обратного отсчета для завершения уровня');
+
+        const timerElement = document.getElementById('levelCompleteTimer');
+        const countElement = timerElement ? timerElement.querySelector('.timer-count') : null;
+        const progressBar = timerElement ? timerElement.querySelector('.timer-progress-bar') : null;
+
+        if (!timerElement || !countElement || !progressBar) {
+            console.error('❌ Не найдены элементы таймера для levelComplete');
+            return;
+        }
+
+        // 🔥 Гарантируем что элемент видим
+        timerElement.style.display = 'block';
+
+        // Сбрасываем стили
+        countElement.textContent = '5';
+        countElement.style.color = '#FFD700';
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'linear-gradient(90deg, #4CAF50, #8BC34A)';
+
+        let countdown = 5; // 5 секунд
+
+        // Останавливаем предыдущий таймер если есть
+        if (this.levelCompleteCountdown) {
+            clearInterval(this.levelCompleteCountdown);
+        }
+
+        this.levelCompleteCountdown = setInterval(() => {
+            countdown--;
+
+            // Обновляем отображение
+            countElement.textContent = countdown;
+            progressBar.style.width = `${(countdown / 5) * 100}%`;
+
+            // Меняем цвет при малом времени
+            if (countdown <= 2) {
+                countElement.style.color = '#FF4444';
+                progressBar.style.background = 'linear-gradient(90deg, #FF4444, #FF9800)';
+            }
+
+            // Когда время вышло
+            if (countdown <= 0) {
+                this.stopLevelCompleteCountdown();
+                this.startNextLevel();
+            }
+
+        }, 1000);
+    }
+
+    stopLevelCompleteCountdown() {
+        console.log('⏹️ Остановка обратного отсчета для завершения уровня');
+
+        if (this.levelCompleteCountdown) {
+            clearInterval(this.levelCompleteCountdown);
+            this.levelCompleteCountdown = null;
+        }
+
+        // Скрываем таймер
+        const timerElement = document.getElementById('levelCompleteTimer');
+        if (timerElement) {
+            timerElement.style.display = 'none';
+        }
+    }
+
+    startGameOverCountdown() {
+        console.log('⏱️ Запуск обратного отсчета для Game Over');
+
+        const timerElement = document.getElementById('gameOverTimer');
+        const countElement = timerElement ? timerElement.querySelector('.timer-count') : null;
+        const progressBar = timerElement ? timerElement.querySelector('.timer-progress-bar') : null;
+
+        if (!timerElement || !countElement || !progressBar) {
+            console.error('❌ Не найдены элементы таймера для gameOver');
+            return;
+        }
+
+        // 🔥 Гарантируем что элемент видим
+        timerElement.style.display = 'block';
+
+        // Сбрасываем стили
+        countElement.textContent = '5';
+        countElement.style.color = '#FFD700';
+        progressBar.style.width = '100%';
+        progressBar.style.background = 'linear-gradient(90deg, #F44336, #FF9800)';
+
+        let countdown = 5; // 5 секунд
+
+        // Останавливаем предыдущий таймер если есть
+        if (this.gameOverCountdown) {
+            clearInterval(this.gameOverCountdown);
+        }
+
+        this.gameOverCountdown = setInterval(() => {
+            countdown--;
+
+            // Обновляем отображение
+            countElement.textContent = countdown;
+            progressBar.style.width = `${(countdown / 5) * 100}%`;
+
+            // Меняем цвет при малом времени
+            if (countdown <= 2) {
+                countElement.style.color = '#FF4444';
+                progressBar.style.background = 'linear-gradient(90deg, #FF4444, #FF9800)';
+            }
+
+            // Когда время вышло
+            if (countdown <= 0) {
+                this.stopGameOverCountdown();
+                this.restartGame();
+            }
+
+        }, 1000);
+    }
+
+    stopGameOverCountdown() {
+        console.log('⏹️ Остановка обратного отсчета для Game Over');
+
+        if (this.gameOverCountdown) {
+            clearInterval(this.gameOverCountdown);
+            this.gameOverCountdown = null;
+        }
+
+        // Скрываем таймер
+        const timerElement = document.getElementById('gameOverTimer');
+        if (timerElement) {
+            timerElement.style.display = 'none';
+        }
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: Прямой переход на следующий уровень без окна статистики
+    forceNextLevelSilent() {
+        console.log('🚀 Прямой переход на следующий уровень (без статистики)');
+
+        // 🔥 ВАЖНО: Сбрасываем все флаги
+        this.levelManuallyClosed = false;
+        this.levelComplete = false;
+
+        // Сначала завершаем текущий уровень если нужно
+        if (!this.levelComplete) {
+            this.completeLevelOnClose();
+        }
+
+        // Закрываем все окна
+        window.closeGameScreens();
+
+        // Ждем немного чтобы окна успели закрыться
+        setTimeout(() => {
+            try {
+                // Записываем текущий уровень как завершенный
+                this.recordLevelCompleted();
+                this.clearLevelStatsFromStorage();
+
+                // Сохраняем прогресс игрока
+                if (this.player) {
+                    this.playerLevel = this.player.playerLevel;
+                    this.playerExperience = this.player.experience;
+                    this.savePlayerProgress();
+                }
+
+                // Увеличиваем уровень
+                this.level++;
+
+                // 🔥 ВАЖНО: Полностью переинициализируем уровень
+                this.initLevel();
+
+                console.log(`🎮 Перешел на уровень ${this.level} без показа статистики`);
+
+                // Добавляем визуальный эффект
+                if (this.effectManager) {
+                    this.effectManager.addExplosion(CANVAS_WIDTH/2, CANVAS_HEIGHT/2, 'levelup');
+                    this.screenShake = 15;
+                }
+
+            } catch (error) {
+                console.error('❌ Ошибка при переходе на следующий уровень:', error);
+            }
+        }, 100);
+    }
+
+    resetWindowState() {
+        console.log('🔄 Сброс состояния окон');
+
+        // Сбрасываем все флаги связанные с окнами
+        this.levelManuallyClosed = false;
+        this.levelComplete = false;
+        this.showLevelCompleteScreen = false;
+        this.showLevelCompleteStats = false;
+        this.showGameOverScreen = false;
+        this.gameOver = false;
+        this.baseDestroyed = false;
+
+        // Закрываем все окна физически
+        window.closeGameScreens();
+
+        // Гарантируем что окна скрыты
+        setTimeout(() => {
+            const levelComplete = document.getElementById('levelComplete');
+            const gameOver = document.getElementById('gameOver');
+
+            if (levelComplete) {
+                levelComplete.style.display = 'none';
+                levelComplete.classList.remove('force-visible');
+            }
+
+            if (gameOver) {
+                gameOver.style.display = 'none';
+                gameOver.classList.remove('force-visible');
+            }
+        }, 50);
+    }
+
+    // 🔥 ЕЩЕ ОДИН МЕТОД: Завершение текущего уровня с показом статистики (для обычной игры)
+    completeCurrentLevel() {
+        console.log('✅ Завершение текущего уровня со статистикой');
+
+        // Сбрасываем флаг ручного закрытия
+        this.levelManuallyClosed = false;
+
+        // Устанавливаем флаги завершения
+        this.levelComplete = true;
+        this.enemiesDestroyed = this.totalEnemies || 20;
+        this.enemiesToSpawn = 0;
+
+        // Очищаем всех врагов
+        if (this.enemyManager) {
+            this.enemyManager.enemies = [];
+            this.enemyManager.spawnAnimations = [];
+        }
+
+        // Сбрасываем данные зрителей
+        if (this.viewerSystem) {
+            this.viewerSystem.resetForNewRound();
+        }
+
+        // Показываем окно завершения
+        this.showLevelComplete();
+    }
+
+    getActiveEnemiesCount() {
+        if (!this.enemyManager || !this.enemyManager.enemies) return 0;
+
+        // 🔥 СЧИТАЕМ ТОЛЬКО АКТИВНЫХ ВРАГОВ (НЕ огарки)
+        return this.enemyManager.enemies.filter(enemy =>
+        !enemy.isDestroyed || !enemy.isWreck
+        ).length;
     }
 
     initTikTokIntegration() {
@@ -306,6 +602,18 @@ class Game {
         <button id="debugApplyLevel" style="width: 100%; padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; margin-bottom: 5px;">Применить уровень</button>
         <button id="debugSpawnEnemy" style="width: 100%; padding: 8px; background: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer;">Заспавнить врага</button>
         </div>
+
+        <!-- УПРАВЛЕНИЕ ИГРОЙ - ИСПРАВЛЕННЫЕ КНОПКИ -->
+        <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
+        <h4 style="margin: 0 0 8px 0; color: #FF9800;">Управление игрой:</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+        <button onclick="restartGameFromDebug(); event.stopPropagation(); return false;" style="padding: 8px; background: #F44336; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">🔄 Начать заново</button>
+        <button onclick="goToNextLevelFromDebug(); event.stopPropagation(); return false;" style="padding: 8px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">🚀 Следующий уровень</button>
+        <button onclick="completeLevelWithStats(); event.stopPropagation(); return false;" style="padding: 8px; background: #2196F3; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 5px;">📊 Завершить уровень (со статистикой)</button>
+        </div>
+        </div>
+
+
         <div style="margin-bottom: 10px; border-top: 1px solid #444; padding-top: 10px;">
         <h4 style="margin: 0 0 8px 0; color: #FF9800;">Бонусы:</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
@@ -345,6 +653,76 @@ class Game {
 
         document.body.appendChild(debugMenu);
         this.setupDebugEventListeners();
+    }
+
+    setupDebugEventListeners() {
+        document.getElementById('debugApplyLevel').addEventListener('click', () => {
+            const selectedLevel = parseInt(document.getElementById('debugLevelSelect').value);
+            this.setGameLevel(selectedLevel);
+        });
+
+        document.getElementById('debugSpawnEnemy').addEventListener('click', () => this.debugSpawnTestEnemy());
+
+        // УДАЛИТЕ старые обработчики и добавьте атрибуты onclick в HTML выше
+
+        document.getElementById('debugShowVision').addEventListener('change', (e) => this.debugShowVision = e.target.checked);
+        document.getElementById('debugShowAILog').addEventListener('change', (e) => this.debugAILog = e.target.checked);
+        document.getElementById('debugGodMode').addEventListener('change', (e) => {
+            this.debugGodMode = e.target.checked;
+            if (this.debugGodMode && this.player) this.player.activateShield(999999);
+        });
+
+            document.getElementById('debugAddLife').addEventListener('click', () => this.debugAddLife());
+            document.getElementById('debugToggleMenu').addEventListener('click', () => {
+                const menu = document.getElementById('debugMenu');
+                menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+            });
+
+            document.querySelectorAll('.debugBonusBtn').forEach(btn => {
+                btn.addEventListener('click', (e) => this.debugAddBonus(e.target.dataset.bonus));
+            });
+
+            document.getElementById('debugResetStats').addEventListener('click', () => {
+                if (confirm('Точно сбросить всю статистику?')) this.resetPlayerStats();
+            });
+
+                document.getElementById('debugShowZoneBorders').addEventListener('change', (e) => ZONE_SYSTEM.SHOW_ZONE_BORDERS = e.target.checked);
+                document.getElementById('debugShowZoneNumbers').addEventListener('change', (e) => ZONE_SYSTEM.SHOW_ZONE_NUMBERS = e.target.checked);
+                document.getElementById('debugShowZoneInfo').addEventListener('change', (e) => this.debugShowZoneInfo = e.target.checked);
+                document.getElementById('debugShowBaseZones').addEventListener('change', (e) => window.BASE_ZONE_SYSTEM.SHOW_BASE_ZONES = e.target.checked);
+                document.getElementById('debugShowMemory').addEventListener('change', (e) => {
+                    if (this.enemyManager && this.enemyManager.enemies) {
+                        this.enemyManager.enemies.forEach(enemy => {
+                            if (enemy.ai) enemy.ai.debugShowMemory = e.target.checked;
+                        });
+                    }
+                });
+    }
+
+    // НОВЫЙ МЕТОД: ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА СЛЕДУЮЩИЙ УРОВЕНЬ
+    forceNextLevel() {
+        console.log('🚀 Принудительный переход на следующий уровень');
+
+        // Помечаем текущий уровень как завершенный
+        this.levelComplete = true;
+        this.enemiesDestroyed = TOTAL_ENEMIES_PER_LEVEL;
+        this.enemiesToSpawn = 0;
+
+        // Завершаем уровень
+        this.closeLevelStats();
+        this.startNextLevel();
+    }
+
+    closeLevelStats() {
+        console.log('closeLevelStats вызван');
+
+        // Просто вызываем глобальную функцию
+        window.closeGameScreens();
+
+        // Сбрасываем состояние
+        this.showLevelCompleteStats = false;
+        this.showLevelCompleteScreen = false;
+        this.showGameOverScreen = false;
     }
 
     setupDebugEventListeners() {
@@ -405,9 +783,63 @@ class Game {
             case 'INVINCIBILITY': this.player.activateShield(10000); break;
             case 'AUTO_AIM': this.player.activateAutoAim(15000); break;
             case 'FORTIFY': this.fortifyBase(30000); break;
-            case 'TIME_STOP': this.activateTimeStop(999000); break;
+            case 'TIME_STOP':
+                // Если стоп-время уже активно - размораживаем
+                if (this.timeStopActive) {
+                    this.deactivateTimeStop();
+                    console.log('⏰ Стоп-время отменено');
+                } else {
+                    // Иначе замораживаем
+                    this.activateTimeStop(999000); // 999 секунд
+                }
+                break;
         }
         this.updateStatusIndicators();
+    }
+
+    deactivateTimeStop() {
+        if (!this.timeStopActive) return;
+
+        console.log('🔥 Размораживаю время...');
+
+        // 1. Размораживаем всех врагов
+        this.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isFrozen) {
+                enemy.isFrozen = false;
+                enemy.speed = enemy.originalSpeed || 2;
+                enemy.canShoot = enemy.originalCanShoot || true;
+
+                // Очищаем таймеры заморозки
+                delete enemy.freezeStartTime;
+                delete enemy.freezeDuration;
+
+                // Эффект разморозки
+                if (this.effectManager) {
+                    this.effectManager.addExplosion(
+                        enemy.position.x,
+                        enemy.position.y,
+                        'unfreeze'
+                    );
+                }
+            }
+        });
+
+        // 3. Останавливаем звуки стоп-времени
+        if (this.soundManager) {
+            this.soundManager.stopTimeStop();
+            // Дополнительный звук разморозки
+            this.soundManager.play('timeResume');
+        }
+
+        // 4. Сбрасываем состояние
+        this.timeStopActive = false;
+        this.timeStopStartTime = 0;
+        this.timeResumePlayed = false;
+
+        // 5. Визуальный эффект разморозки на весь экран
+        this.screenShake = 15;
+
+        console.log('✅ Время восстановлено!');
     }
 
     debugAddLife() {
@@ -451,7 +883,25 @@ class Game {
     }
 
     initLevel() {
+        console.log(`🎮 Инициализация уровня ${this.level}`);
+
+        // 🔥 ВАЖНО: Полный сброс всех флагов состояния
+        this.levelComplete = false;
+        this.levelManuallyClosed = false;
+        this.gameOver = false;
+        this.baseDestroyed = false;
+        this.showGameOverScreen = false;
+        this.showLevelCompleteScreen = false;
+        this.showLevelCompleteStats = false;
+
+        // Сбрасываем счетчики
+        this.enemiesDestroyed = 0;
+        this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL || 20;
+
+        // Инициализируем карту
         this.map = new GameMap(this.level);
+
+        // Создаем игрока
         this.player = new Tank(224, 750);
         this.destroyedViewerTanks = new Set();
 
@@ -472,62 +922,113 @@ class Game {
         this.entryTeleport = null;
 
         if (this.enemyManager) this.enemyManager.clearStats();
+        // Очищаем все системы
         this.enemyManager.clear();
         this.bonusManager.clear();
         this.effectManager.clear();
-
         this.bullets = [];
         this.screenShake = 0;
+
+        // Сбрасываем укрепление базы
         this.baseFortified = false;
         this.baseFortifyTime = 0;
         this.baseFortifyDuration = 0;
         this.originalBaseWalls = [];
         this.levelLeader = null;
 
-        this.enemiesDestroyed = 0;
-        this.enemiesToSpawn = TOTAL_ENEMIES_PER_LEVEL;
-        this.levelComplete = false;
-        this.gameOver = false;
-        this.showGameOverScreen = false;
-        this.showLevelCompleteScreen = false;
-        this.baseDestroyed = false;
+        // 🔥 ВАЖНО: Сбрасываем счетчики в EnemyManager
+        if (this.enemyManager) {
+            this.enemyManager.destroyedEnemies = 0;
+            this.enemyManager.destroyedEnemiesStats = [];
+        }
 
+        // Сбрасываем стоп-время
         this.timeStopActive = false;
         this.timeStopStartTime = 0;
         this.timeStopDuration = 12000;
         this.timeResumePlayed = false;
 
+        // Обновляем UI
         this.updateUI();
-        this.updateStatusIndicators();
-        this.soundManager.updateEngineSound(false, true);
+        //this.updateStatusIndicators();
+
+        if (this.soundManager) {
+            this.soundManager.updateEngineSound(false, true);
+        }
+
         this.updatePlayerStats();
 
+        // Скрываем все окна
         document.getElementById('levelComplete').style.display = 'none';
         document.getElementById('gameOver').style.display = 'none';
+
+        // Очищаем трекер раунда
         this.clearRoundTracker();
+
+        console.log(`✅ Уровень ${this.level} инициализирован`);
     }
 
-    activateTimeStop() {
+    // 🔥 НОВЫЙ МЕТОД: Полное завершение уровня при закрытии окна
+    completeLevelOnClose() {
+        console.log('🔚 Полное завершение уровня при закрытии окна');
+
+        // Помечаем уровень как завершенный
+        this.levelComplete = true;
+
+        // Останавливаем спавн новых врагов
+        this.enemiesToSpawn = 0;
+
+        // Удаляем всех существующих врагов
+        if (this.enemyManager) {
+            // Уничтожаем всех врагов с эффектами
+            this.enemyManager.enemies.forEach(enemy => {
+                if (!enemy.isDestroyed) {
+                    // Эффект уничтожения
+                    this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
+                    this.soundManager.play('tankExplosion');
+                }
+            });
+
+            // Очищаем массивы
+            this.enemyManager.enemies = [];
+            this.enemyManager.spawnAnimations = [];
+        }
+
+        // Очищаем пули
+        this.bullets = [];
+
+        // Останавливаем все анимации и таймеры
+        if (this.enemyManager.stopSpawning) {
+            this.enemyManager.stopSpawning();
+        }
+
+        console.log('✅ Уровень полностью завершен');
+    }
+
+    activateTimeStop(duration = null) {
+        // Используем переданную длительность или дефолтную
+        const freezeDuration = duration !== null ? duration : this.timeStopDuration;
+
         if (this.timeStopActive) {
             this.timeResumePlayed = false;
-            const newEndTime = Date.now() + this.timeStopDuration;
+            const newEndTime = Date.now() + freezeDuration;
 
             // Замораживаем существующих врагов
             this.enemyManager.enemies.forEach(enemy => {
                 if (enemy.isFrozen) {
                     // Продлеваем заморозку существующим врагам
-                    enemy.freezeDuration = this.timeStopDuration;
+                    enemy.freezeDuration = freezeDuration;
                     enemy.freezeStartTime = Date.now();
                 } else {
                     // Замораживаем новых врагов
-                    enemy.freeze(this.timeStopDuration);
+                    enemy.freeze(freezeDuration);
                 }
             });
 
-            // 🔥 ЗАМОРАЖИВАЕМ АНИМАЦИИ СПАВНА (но не отменяем их!)
+            // Замораживаем анимации спавна
             this.enemyManager.spawnAnimations.forEach(animation => {
                 if (!animation.isFrozen) {
-                    animation.freeze(this.timeStopDuration);
+                    animation.freeze(freezeDuration);
                 }
             });
 
@@ -537,17 +1038,20 @@ class Game {
 
         this.timeStopActive = true;
         this.timeStopStartTime = Date.now();
+        this.timeStopDuration = freezeDuration; // Сохраняем текущую длительность
         this.timeResumePlayed = false;
 
         // Замораживаем всех врагов
-        this.enemyManager.enemies.forEach(enemy => enemy.freeze(this.timeStopDuration));
+        this.enemyManager.enemies.forEach(enemy => enemy.freeze(freezeDuration));
 
-        // 🔥 ЗАМОРАЖИВАЕМ АНИМАЦИИ СПАВНА
+        // Замораживаем анимации спавна
         this.enemyManager.spawnAnimations.forEach(animation => {
-            animation.freeze(this.timeStopDuration);
+            animation.freeze(freezeDuration);
         });
 
         if (this.soundManager) this.soundManager.playTimeStop();
+
+        console.log(`⏰ Стоп-время активировано на ${freezeDuration / 1000} секунд`);
     }
 
     update() {
@@ -584,7 +1088,11 @@ class Game {
             this.updateBaseFortification();
             this.bonusManager.update();
             this.map.update(allTanks);
-            this.checkLevelCompletion();
+
+            // 🔥 ПРОВЕРЯЕМ ЗАВЕРШЕНИЕ ТОЛЬКО ЕСЛИ НЕ БЫЛО РУЧНОГО ЗАКРЫТИЯ
+            if (!this.levelManuallyClosed) {
+                this.checkLevelCompletion();
+            }
         }
 
         // Обновляем систему зрителей
@@ -646,6 +1154,39 @@ class Game {
         if (this.player.isDestroyed && this.viewerSystem.playerFrozen) {
             this.viewerSystem.unfreezeOnDeath();
         }
+
+        // 🔥 ОБНОВЛЯЕМ ОГАРКИ
+        this.updateWrecks();
+
+        // 🔥 ПРОВЕРЯЕМ НАВЕДЕНИЕ МЫШКИ
+        if (this.mousePosition) {
+            this.checkAllWreckHovers(this.mousePosition.x, this.mousePosition.y);
+        }
+    }
+
+    // 🔥 ОБНОВЛЕНИЕ ВСЕХ ОГАРКОВ
+    updateWrecks() {
+        this.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.updateWreckState) {
+                enemy.updateWreckState();
+            }
+        });
+    }
+
+    // 🔥 ПРОВЕРКА НАВЕДЕНИЯ МЫШКИ НА ВСЕ ОГАРКИ
+    checkAllWreckHovers(mouseX, mouseY) {
+        let anyHovered = false;
+
+        // Проверяем всех врагов
+        this.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.isDestroyed && enemy.checkInfoBlockHover) {
+                const hovered = enemy.checkInfoBlockHover(mouseX, mouseY);
+                if (hovered) anyHovered = true;
+            }
+        });
+
+        // Меняем курсор при наведении
+        this.canvas.style.cursor = anyHovered ? 'pointer' : 'default';
     }
 
     updateBullets() {
@@ -826,53 +1367,81 @@ class Game {
         return true;
     }
 
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД handlePlayerBulletCollision
     handlePlayerBulletCollision(bullet, index, bulletBounds) {
         for (let j = this.enemyManager.enemies.length - 1; j >= 0; j--) {
             const enemy = this.enemyManager.enemies[j];
+
+            // 🔥 ПРОПУСКАЕМ ОГАРКИ - ПО НИМ НЕЛЬЗЯ СТРЕЛЯТЬ
+            if (enemy.isWreck && enemy.isDestroyed) {
+                console.log(`🎯 Пуля прошла мимо огарка ${enemy.username}`);
+                continue;
+            }
+
             if (bulletBounds.intersects(enemy.getBounds())) {
                 const healthBefore = enemy.health;
                 const isHeavyTank = enemy.enemyType === 'HEAVY';
                 const isViewerTank = enemy.enemyType === 'VIEWER' || enemy.isViewerTank;
                 const hadBonus = enemy.hasBonus;
                 const bonusType = enemy.bonusType;
+
                 const destructionResult = enemy.takeDamage();
 
-                // ЗВУК ПРИ ПОПАДАНИИ В ТАНК С НЕСКОЛЬКИМИ ЖИЗНЯМИ
+                // ЗВУК ПРИ ПОПАДАНИИ
                 if ((isViewerTank && healthBefore > 1 && enemy.health > 0) ||
                     (isHeavyTank && enemy.health > 0)) {
                     this.soundManager.play('heavyTankHit');
                 this.effectManager.addHitEffect(enemy.position.x, enemy.position.y);
-
                     }
 
+                    // 🔥 ОБРАБОТКА УНИЧТОЖЕНИЯ
                     if (destructionResult === true || destructionResult === 'bonus') {
-                        // ДОБАВЛЯЕМ В СПИСОК УНИЧТОЖЕННЫХ
-                        if (isViewerTank) {
-                            if (!this.destroyedViewerTanks) this.destroyedViewerTanks = new Set();
-                            this.destroyedViewerTanks.add(enemy.userId);
-                            console.log(`🗑️ Танк зрителя ${enemy.username} добавлен в список уничтоженных`);
-                        }
-
-                        this.markEnemyDestroyed(enemy);
-                        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
-                        this.screenShake = enemy.enemyType === 'HEAVY' ? 25 : 20;
-                        this.soundManager.play('tankExplosion');
-
-                        if (isViewerTank) {
-                            this.streamManager?.sendChatMessage(`💀 Танк зрителя ${enemy.username} был уничтожен!`);
-                        } else {
-                            this.recordEnemyKill();
-                            this.player.addExperience(enemy.enemyType);
-                            this.playerExperience = this.player.experience;
-                            this.playerLevel = this.player.playerLevel;
-                            this.savePlayerProgress();
-                        }
-
-                        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
+                        // ОБЫЧНЫЙ ВРАГ
+                        this.processRegularEnemyDestruction(enemy, hadBonus, bonusType);
                         this.enemyManager.enemies.splice(j, 1);
+
+                        // 🔥 УВЕЛИЧИВАЕМ СЧЕТЧИК
                         this.enemiesDestroyed++;
                         this.score += 100;
                         this.updateUI();
+
+                        this.bullets.splice(index, 1);
+                        return false;
+
+                    } else if (destructionResult === 'wreck') {
+                        // 🔥 ТАНК ЗРИТЕЛЯ ПРЕВРАЩАЕТСЯ В ОГАРОК
+                        console.log(`🔥 Танк зрителя ${enemy.username} превращен в огарок`);
+
+                        // 🔥 ВАЖНО: УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ ТОЛЬКО 1 РАЗ
+                        this.enemiesDestroyed++;
+                        this.score += 100;
+                        this.updateUI();
+
+                        // 🔥 ДОБАВЬТЕ ЭТО: Увеличиваем счётчик в EnemyManager тоже
+                        if (this.enemyManager) {
+                            this.enemyManager.destroyedEnemies = (this.enemyManager.destroyedEnemies || 0) + 1;
+                        }
+
+                        // Добавляем в список уничтоженных
+                        if (isViewerTank) {
+                            if (!this.destroyedViewerTanks) this.destroyedViewerTanks = new Set();
+                            this.destroyedViewerTanks.add(enemy.userId);
+                        }
+
+                        this.markEnemyDestroyed(enemy);
+
+                        // Эффект превращения
+                        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'wreck');
+                        this.screenShake = 15;
+                        this.soundManager.play('tankExplosion');
+
+                        // Если был бонус - спавним
+                        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
+
+                        // 🔥 НЕ УДАЛЯЕМ ИЗ МАССИВА! Танк теперь огарок
+
+                        this.bullets.splice(index, 1);
+                        return false;
                     }
 
                     this.bullets.splice(index, 1);
@@ -880,6 +1449,49 @@ class Game {
             }
         }
         return true;
+    }
+
+
+
+    // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ УНИЧТОЖЕНИЯ ОБЫЧНЫХ ВРАГОВ
+    processRegularEnemyDestruction(enemy, hadBonus, bonusType) {
+        this.markEnemyDestroyed(enemy);
+        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
+        this.screenShake = enemy.enemyType === 'HEAVY' ? 25 : 20;
+        this.soundManager.play('tankExplosion');
+
+        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
+        this.recordEnemyKill();
+        this.player.addExperience(enemy.enemyType);
+        this.playerExperience = this.player.experience;
+        this.playerLevel = this.player.playerLevel;
+        this.savePlayerProgress();
+    }
+
+    turnIntoWreck() {
+        if (this.isDestroyed || this.type !== 'enemy' || !this.isViewerTank) return;
+
+        console.log(`💀 Танк ${this.username} превращается в огарок`);
+
+        this.isDestroyed = true;
+        this.isWreck = true;
+        this.wreckAlpha = 0.7;
+        this.infoBlockAlpha = this.infoBlockMaxAlpha || 1.0;
+
+        // Останавливаем движение и стрельбу
+        this.speed = 0;
+        this.canShoot = false;
+
+        // Сбрасываем все активные эффекты
+        this.hasBonus = false;
+        this.isInvincible = false;
+        this.hasAutoAim = false;
+        this.isFrozen = false;
+
+        // Удаляем щит если есть
+        this.shield = null;
+
+        console.log(`🔥 ${this.username} теперь огарок. Инфо-блок будет тускнеть`);
     }
 
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
@@ -1068,6 +1680,31 @@ class Game {
             });
 
                 this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+                // 🔥 ДОБАВЛЯЕМ ОБРАБОТЧИКИ МЫШИ
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mousePosition = {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                    };
+                });
+
+                this.canvas.addEventListener('mouseleave', () => {
+                    this.mousePosition = null;
+                    this.canvas.style.cursor = 'default';
+
+                    // Сбрасываем все hover состояния
+                    this.resetAllWreckHovers();
+                });
+    }
+
+    // 🔥 СБРОС ВСЕХ HOVER СОСТОЯНИЙ
+    resetAllWreckHovers() {
+        this.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.isDestroyed) {
+                enemy.infoBlockHovered = false;
+            }
+        });
     }
 
     getCurrentDirection() {
@@ -1329,25 +1966,51 @@ class Game {
         this.updateStatusIndicator('fortifyIndicator', 'fortifyTime', this.baseFortified, Math.max(0, remainingTime));
     }
 
+    // В классе Game:
+    getAllEnemiesCount() {
+        // 🔥 СЧИТАЕМ ТОЛЬКО ЖИВЫХ ВРАГОВ
+        return this.enemyManager.enemies.length;
+    }
+
+    getTotalDestroyedCount() {
+        // 🔥 ОГАРКИ + УНИЧТОЖЕННЫЕ ОБЫЧНЫЕ ВРАГИ
+        const wreckCount = this.enemyManager.wrecks ? this.enemyManager.wrecks.length : 0;
+        const destroyedCount = this.enemyManager.destroyedEnemies || 0;
+        return wreckCount + destroyedCount;
+    }
+
     checkLevelCompletion() {
-        if ((this.playerEnteredLevel || this.level === 1) &&
-            this.enemiesDestroyed >= TOTAL_ENEMIES_PER_LEVEL &&
-            this.enemyManager.enemies.length === 0 &&
-            this.enemyManager.spawnAnimations.length === 0 &&
-            !this.levelComplete) {
+        // 🔥 ПРОВЕРКА: Не проверяем завершение если игра уже окончена, уровень завершен или был вручную закрыт
+        if (this.gameOver || this.levelComplete || this.levelManuallyClosed) {
+            return;
+        }
 
+        const enemiesLeft = this.enemiesToSpawn > 0 ? this.enemiesToSpawn : 0;
+        const activeEnemies = this.getActiveEnemiesCount();
+
+        console.log(`🎯 Проверка завершения: врагов осталось спавнить ${enemiesLeft}, активно ${activeEnemies}`);
+
+        if (enemiesLeft === 0 &&
+            activeEnemies === 0 &&
+            this.enemyManager.spawnAnimations.length === 0) {
+
+            console.log('✅ УРОВЕНЬ ЗАВЕРШЕН! Все враги уничтожены');
+
+        // Устанавливаем флаг только один раз
+        if (!this.levelComplete) {
             this.levelComplete = true;
-        this.levelCompleteTimer = 0;
+            this.levelCompleteTimer = 0;
 
-        // Сбрасываем данные зрителей
-        this.viewerSystem.resetForNewRound();
+            // Сбрасываем данные зрителей
+            this.viewerSystem.resetForNewRound();
 
-        setTimeout(() => {
-            this.calculateLevelLeader();
-            if (!this.levelLeader) this.findHonoraryLeader();
-            this.showLevelCompleteStats = true;
-            this.showLevelComplete(); // Здесь уже есть кнопка
-        }, 1000);
+            setTimeout(() => {
+                this.calculateLevelLeader();
+                if (!this.levelLeader) this.findHonoraryLeader();
+                this.showLevelCompleteStats = true;
+                this.showLevelComplete();
+            }, 1000);
+        }
             }
     }
 
@@ -1508,20 +2171,120 @@ class Game {
     }
 
     showLevelComplete() {
+        console.log('🟢 Показываю окно завершения уровня');
+
         this.showLevelCompleteScreen = true;
+        this.levelComplete = true;
+
         const levelCompleteElement = document.getElementById("levelComplete");
         if (levelCompleteElement) {
-            document.getElementById("destroyedTanks").textContent = this.enemiesDestroyed;
-            document.getElementById("levelScore").textContent = this.score;
+            // Добавляем класс force-visible и показываем
+            levelCompleteElement.classList.add('force-visible');
+            levelCompleteElement.style.display = "block";
+
+            // 🔥 ВАЖНО: Сбрасываем состояние таймера
+            const timerElement = document.getElementById('levelCompleteTimer');
+            if (timerElement) {
+                // Показываем элемент
+                timerElement.style.display = 'block';
+
+                // Сбрасываем текст
+                const timerText = timerElement.querySelector('.timer-text');
+                if (timerText) {
+                    timerText.innerHTML = 'Автоматический переход через: <span class="timer-count">5</span>с';
+                    timerText.style.color = 'white';
+                }
+
+                // Сбрасываем прогресс-бар
+                const progressBar = timerElement.querySelector('.timer-progress-bar');
+                if (progressBar) {
+                    progressBar.style.width = '100%';
+                    progressBar.style.background = 'linear-gradient(90deg, #4CAF50, #8BC34A)';
+                }
+
+                // Показываем кнопку отмены
+                const cancelBtn = timerElement.querySelector('.cancel-timer-btn');
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'block';
+                }
+            }
+
 
             if (!this.levelLeader) this.calculateLevelLeader();
             this.showLevelLeaderStats();
-            levelCompleteElement.style.display = "block";
 
-            if (this.soundManager) this.soundManager.stopLoop("engineIdle");
+            // Останавливаем звук двигателя
+            if (this.soundManager) {
+                this.soundManager.stopLoop("engineIdle");
+                this.soundManager.stopLoop("engineMoving");
+            }
 
-            // 🔥 ДОБАВЛЯЕМ КНОПКУ "НАЧАТЬ СЛЕДУЮЩИЙ РАУНД"
+            // Добавляем кнопку следующего уровня
             this.addNextLevelButton();
+
+            // 🔥 ЗАПУСКАЕМ ОБРАТНЫЙ ОТСЧЕТ
+            setTimeout(() => {
+                this.startLevelCompleteCountdown();
+            }, 500);
+
+            console.log('✅ Окно levelComplete показано');
+        }
+    }
+
+    showGameOver() {
+        console.log('🔴 Показываю окно проигрыша');
+        this.showGameOverScreen = true;
+        this.gameOver = true;
+
+        const gameOverScreen = document.getElementById('gameOver');
+        if (gameOverScreen) {
+            // Добавляем класс force-visible и показываем
+            gameOverScreen.classList.add('force-visible');
+            gameOverScreen.style.display = 'block';
+
+            // 🔥 ВАЖНО: Сбрасываем состояние таймера
+            const timerElement = document.getElementById('gameOverTimer');
+            if (timerElement) {
+                // Показываем элемент
+                timerElement.style.display = 'block';
+
+                // Сбрасываем текст
+                const timerText = timerElement.querySelector('.timer-text');
+                if (timerText) {
+                    timerText.innerHTML = 'Новая игра через: <span class="timer-count">5</span>с';
+                    timerText.style.color = 'white';
+                }
+
+                // Сбрасываем прогресс-бар
+                const progressBar = timerElement.querySelector('.timer-progress-bar');
+                if (progressBar) {
+                    progressBar.style.width = '100%';
+                    progressBar.style.background = 'linear-gradient(90deg, #F44336, #FF9800)';
+                }
+
+                // Показываем кнопку отмены
+                const cancelBtn = timerElement.querySelector('.cancel-timer-btn');
+                if (cancelBtn) {
+                    cancelBtn.style.display = 'block';
+                }
+            }
+
+            this.calculateLevelLeader();
+            if (!this.levelLeader) this.findHonoraryLeader();
+            this.showGameOverLeaderStats();
+
+            // Останавливаем звуки
+            if (this.soundManager) {
+                this.soundManager.stopLoop('engineIdle');
+                this.soundManager.stopLoop('engineMoving');
+            }
+
+            // 🔥 ЗАПУСКАЕМ ОБРАТНЫЙ ОТСЧЕТ
+            setTimeout(() => {
+                this.startGameOverCountdown();
+            }, 500);
+
+            console.log('✅ Окно gameOver показано');
         }
     }
 
@@ -1530,25 +2293,20 @@ class Game {
         const leaderContent = document.getElementById("leaderContent");
         if (!leaderContent) return;
 
-        // Проверяем, не добавлена ли уже кнопка
-        if (document.getElementById("nextLevelBtn")) return;
+        // Удаляем старую кнопку если есть
+        const oldButton = document.getElementById("nextLevelBtn");
+        if (oldButton) oldButton.remove();
 
         const buttonHTML = `
-        <div style="margin-top: 20px; text-align: center;">
-        <button id="nextLevelBtn" style="
-        background: linear-gradient(45deg, #4CAF50, #45a049);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 15px 40px;
-        font-size: 18px;
-        font-weight: bold;
-        cursor: pointer;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        transition: all 0.3s;
-        margin: 20px auto;
-        display: block;
-        ">
+        <div class="auto-timer" id="levelCompleteTimer">
+        <div class="timer-text">Автоматический переход через: <span class="timer-count">5</span>с</div>
+        <div class="timer-progress">
+        <div class="timer-progress-bar"></div>
+        </div>
+        <button class="cancel-timer-btn" onclick="cancelAutoTransition('level')">✕ Отменить авто-переход</button>
+        </div>
+        <div class="game-over-actions">
+        <button id="nextLevelBtn">
         🎮 НАЧАТЬ СЛЕДУЮЩИЙ РАУНД
         </button>
         <div style="color: #bdc3c7; font-size: 12px; margin-top: 10px;">
@@ -1559,18 +2317,28 @@ class Game {
 
         leaderContent.insertAdjacentHTML('beforeend', buttonHTML);
 
-        // Добавляем обработчик события
-        document.getElementById("nextLevelBtn").addEventListener("click", () => {
+        // Добавляем обработчик
+        document.getElementById("nextLevelBtn").addEventListener("click", (e) => {
+            e.stopPropagation();
+            console.log('Кнопка "Следующий раунд" нажата');
             this.startNextLevel();
         });
     }
 
     // 🔥 НОВЫЙ МЕТОД ЗАПУСКА СЛЕДУЮЩЕГО УРОВНЯ
     startNextLevel() {
+        console.log('🚀 Запуск следующего уровня');
+
+         this.resetAllTimers();
+
+        // Останавливаем таймер
+        this.stopLevelCompleteCountdown();
+
         // Скрываем экран завершения уровня
         const levelCompleteScreen = document.getElementById('levelComplete');
         if (levelCompleteScreen) {
             levelCompleteScreen.style.display = 'none';
+            levelCompleteScreen.classList.remove('force-visible');
         }
 
         // Сбрасываем флаги
@@ -1587,13 +2355,12 @@ class Game {
         this.playerExperience = this.player.experience;
         this.savePlayerProgress();
 
-        // Увеличиваем уровень и инициализируем
+        // Увеличиваем уровень
         this.level++;
 
         // Перезапускаем уровень
         this.initLevel();
 
-        // Сообщаем о начале нового раунда
         console.log(`🎮 Начинаем раунд ${this.level}!`);
     }
 
@@ -1631,26 +2398,6 @@ class Game {
         // Вместо телепорта - предлагаем начать следующий раунд
         if (!this.gameOver) {
             this.showLevelComplete();
-        }
-    }
-
-    showGameOver() {
-        this.showGameOverScreen = true;
-        const gameOverScreen = document.getElementById('gameOver');
-
-        document.getElementById('finalScore').textContent = this.score;
-        document.getElementById('finalLevel').textContent = this.level;
-
-        this.calculateLevelLeader();
-        if (!this.levelLeader) this.findHonoraryLeader();
-        this.showGameOverLeaderStats();
-
-        setTimeout(() => this.forceShowGameOverStats(), 100);
-        gameOverScreen.style.display = 'block';
-
-        if (this.soundManager) {
-            this.soundManager.stopLoop('engineIdle');
-            this.soundManager.stopLoop('engineMoving');
         }
     }
 
@@ -1816,42 +2563,54 @@ class Game {
     }
 
     restartGame() {
-        try {
-            this.clearAllLevelStats();
-            this.levelLeader = null;
+        console.log('=== ПОЛНЫЙ ПЕРЕЗАПУСК ИГРЫ ===');
 
-            const levelComplete = document.getElementById('levelComplete');
-            const gameOver = document.getElementById('gameOver');
-            const levelLeaderStats = document.getElementById('levelLeaderStats');
-            const gameOverLeaderStats = document.getElementById('gameOverLeaderStats');
+        this.resetAllTimers();
 
-            if (levelComplete) levelComplete.style.display = 'none';
-            if (gameOver) gameOver.style.display = 'none';
-            if (levelLeaderStats) levelLeaderStats.style.display = 'none';
-            if (gameOverLeaderStats) gameOverLeaderStats.style.display = 'none';
+        // Останавливаем таймеры
+        this.stopLevelCompleteCountdown();
+        this.stopGameOverCountdown();
 
-        } catch (error) {
-            console.log("⚠️ Ошибка при скрытии элементов:", error);
-        }
+        // Закрываем все окна
+        window.closeGameScreens();
 
-        this.resetPlayerProgress();
-        this.level = 1;
-        this.score = 0;
-        this.lives = 3;
-        this.gameOver = false;
-        this.baseDestroyed = false;
-        this.showGameOverScreen = false;
-        this.levelComplete = false;
-        this.showLevelCompleteScreen = false;
+        // Ждем небольшое время
+        setTimeout(() => {
+            try {
+                // Сбрасываем состояние
+                this.clearAllLevelStats();
+                this.levelLeader = null;
 
-        this.clearRoundTracker();
+                this.level = 1;
+                this.score = 0;
+                this.lives = 3;
+                this.gameOver = false;
+                this.baseDestroyed = false;
+                this.levelComplete = false;
+                this.showGameOverScreen = false;
+                this.showLevelCompleteScreen = false;
 
-        if (this.soundManager) {
-            this.soundManager.stopLoop('engineIdle');
-            this.soundManager.stopLoop('engineMoving');
-        }
+                this.clearRoundTracker();
 
-        this.initLevel();
+                // Останавливаем звуки
+                if (this.soundManager) {
+                    this.soundManager.stopAll();
+                }
+
+                // Инициализируем уровень заново
+                this.initLevel();
+
+                // Обновляем UI
+                this.updateUI();
+                this.updatePlayerStats();
+
+                console.log('✅ Игра успешно перезапущена');
+
+            } catch (error) {
+                console.error('❌ Ошибка при перезапуске:', error);
+                alert('Ошибка перезапуска: ' + error.message);
+            }
+        }, 50);
     }
 
     clearAllLevelStats() {
@@ -1865,11 +2624,15 @@ class Game {
         }
     }
 
+
+
     updateUI() {
         document.getElementById('score').textContent = this.score;
         document.getElementById('lives').textContent = this.lives;
         document.getElementById('level').textContent = this.level;
-        document.getElementById('tanksLeft').textContent = TOTAL_ENEMIES_PER_LEVEL - this.enemiesDestroyed;
+
+        // 🔥 ПРОСТОЕ РЕШЕНИЕ: используем enemiesToSpawn
+        document.getElementById('tanksLeft').textContent = this.enemiesToSpawn;
     }
 
     updatePlayerStats() {
@@ -2047,6 +2810,9 @@ class Game {
             this.drawPlayerStats(this.ctx);
         }
 
+        // 🔥 ОТРИСОВЫВАЕМ ОГАРКИ ПОСЛЕ ЖИВЫХ ТАНКОВ
+        this.drawWrecks(this.ctx);
+
         // СНАЧАЛА эффекты
         this.viewerSystem.drawEffects(this.ctx);
 
@@ -2064,6 +2830,15 @@ class Game {
         this.drawPlayerStats(this.ctx);
 
         if (this.debugShowVision) this.drawDebugVision(this.ctx);
+    }
+
+    // 🔥 МЕТОД ОТРИСОВКИ ВСЕХ ОГАРКОВ
+    drawWrecks(ctx) {
+        this.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.isDestroyed) {
+                enemy.draw(ctx);
+            }
+        });
     }
 
     drawDebugVision(ctx) {
@@ -2302,13 +3077,6 @@ class Game {
         if (this.baseDestroyed) {
             this.ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-            this.ctx.fillStyle = '#FF4444';
-            this.ctx.font = '24px Courier New';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText('БАЗА УНИЧТОЖЕНА!', this.canvas.width / 2, this.canvas.height / 2 - 20);
-            this.ctx.font = '16px Courier New';
-            this.ctx.fillText('Миссия провалена', this.canvas.width / 2, this.canvas.height / 2 + 10);
         }
     }
 
@@ -2393,6 +3161,51 @@ class Game {
         };
         return colors[giftType] || '#FFFFFF';
     }
+
+
+    debugForceLevelComplete() {
+        console.log('🔧 Принудительное завершение уровня (тест)');
+
+        // Сбрасываем все флаги
+        this.resetWindowState();
+
+        // Устанавливаем условия завершения
+        this.enemiesToSpawn = 0;
+        this.enemiesDestroyed = this.totalEnemies || 20;
+
+        // Очищаем врагов
+        if (this.enemyManager) {
+            this.enemyManager.enemies = [];
+            this.enemyManager.spawnAnimations = [];
+        }
+
+        // Запускаем проверку завершения
+        this.checkLevelCompletion();
+    }
+
+    resetAllTimers() {
+        console.log('🔄 Сброс всех таймеров');
+
+        // Останавливаем таймеры
+        this.stopLevelCompleteCountdown();
+        this.stopGameOverCountdown();
+
+        // Сбрасываем элементы таймеров
+        const levelTimer = document.getElementById('levelCompleteTimer');
+        const gameOverTimer = document.getElementById('gameOverTimer');
+
+        if (levelTimer) {
+            levelTimer.style.display = 'none';
+            const cancelBtn = levelTimer.querySelector('.cancel-timer-btn');
+            if (cancelBtn) cancelBtn.style.display = 'block';
+        }
+
+        if (gameOverTimer) {
+            gameOverTimer.style.display = 'none';
+            const cancelBtn = gameOverTimer.querySelector('.cancel-timer-btn');
+            if (cancelBtn) cancelBtn.style.display = 'block';
+        }
+    }
 }
 
 // Глобальная функция для тестирования чата - ВНЕ класса Game
@@ -2409,7 +3222,7 @@ window.testChat = (id, name, avatar, command) => {
     }
 };
 
-// === ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ВЗАИМОДЕЙСТВИЯ ===
+
 // === ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ВЗАИМОДЕЙСТВИЯ ===
 window.testChat = (id, name, avatar, command) => {
     if (!game || !game.viewerSystem) {
@@ -2461,73 +3274,197 @@ window.testChat = (id, name, avatar, command) => {
                     }
 };
 
-// Добавьте в конец game.js
-window.testFriendlyFire = () => {
-    if (!game) {
-        console.log('❌ Игра не инициализирована');
+// === ИНИЦИАЛИЗАЦИЯ ИГРЫ ===
+let game = null; // Глобальная переменная
+
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        console.log('🚀 Инициализация игры...');
+        game = new Game();
+        console.log('✅ Игра успешно инициализирована');
+
+        // Экспортируем глобально для отладки
+        window.game = game;
+
+    } catch (error) {
+        console.error('❌ Ошибка инициализации игры:', error);
+        alert('Ошибка запуска игры: ' + error.message);
+    }
+});
+
+window.closeGameScreens = () => {
+    console.log('🔴 Закрытие всех игровых окон');
+
+    // Останавливаем все таймеры
+    if (window.game) {
+        if (window.game.stopLevelCompleteCountdown) {
+            window.game.stopLevelCompleteCountdown();
+        }
+        if (window.game.stopGameOverCountdown) {
+            window.game.stopGameOverCountdown();
+        }
+    }
+
+    // Получаем элементы окон
+    const levelComplete = document.getElementById('levelComplete');
+    const gameOver = document.getElementById('gameOver');
+
+    // Убираем класс force-visible
+    if (levelComplete) {
+        console.log('Закрываю окно levelComplete');
+        levelComplete.classList.remove('force-visible');
+        levelComplete.style.display = 'none';
+    }
+
+    if (gameOver) {
+        console.log('Закрываю окно gameOver');
+        gameOver.classList.remove('force-visible');
+        gameOver.style.display = 'none';
+    }
+
+    // Убираем класс force-visible у всех похожих элементов
+    document.querySelectorAll('.force-visible').forEach(el => {
+        el.classList.remove('force-visible');
+    });
+
+    // НЕ скрываем таймеры здесь - они скроются вместе с родительскими окнами
+
+    // Сбрасываем флаги показа
+    if (window.game) {
+        console.log('Сбрасываю флаги показа окон');
+        window.game.showLevelCompleteScreen = false;
+        window.game.showGameOverScreen = false;
+    }
+
+    console.log('✅ Окна закрыты');
+};
+
+window.restartGameFromDebug = () => {
+    console.log('🔄 Перезапуск игры из дебаг-меню');
+
+    // Сначала закрываем все окна
+    window.closeGameScreens();
+
+    // Ждем 100ms и перезапускаем
+    setTimeout(() => {
+        if (window.game) {
+            console.log('Вызываю game.restartGame()');
+            window.game.restartGame();
+        } else {
+            console.error('❌ game не определен!');
+            alert('Игра не загружена. Обновите страницу (F5).');
+        }
+    }, 100);
+};
+
+window.goToNextLevelFromDebug = () => {
+    console.log('🚀 Переход на следующий уровень из дебаг-меню');
+
+    if (!window.game) {
+        console.error('❌ game не определен!');
+        alert('Игра не загружена. Обновите страницу (F5).');
         return;
     }
 
-    console.log('🎯 Тест дружественного огня между врагами');
+    // 🔥 УПРОЩЕННАЯ ЛОГИКА: Всегда прямой переход без статистики
+    console.log('Прямой переход на следующий уровень');
+    window.game.forceNextLevelSilent();
+};
 
-    // Очищаем
-    game.enemyManager.enemies = [];
-    game.bullets = [];
+// 🔥 Функция для завершения уровня со статистикой (отдельная кнопка)
+window.completeLevelWithStats = () => {
+    console.log('✅ Завершение уровня со статистикой');
 
-    // Создаем двух врагов рядом
-    const enemy1 = new Tank(300, 400, 'enemy', 1, 'BASIC');
-    const enemy2 = new Tank(350, 400, 'enemy', 1, 'BASIC');
-
-    enemy1.username = 'Враг-1';
-    enemy2.username = 'Враг-2';
-    enemy1.canShoot = true;
-    enemy2.canShoot = true;
-    enemy1.reloadTime = 0;
-    enemy2.reloadTime = 0;
-
-    // Добавляем врагов
-    game.enemyManager.enemies.push(enemy1, enemy2);
-
-    // Создаем пулю от врага 1 в направлении врага 2
-    const bullet = new Bullet(
-        320, 400, // Немного правее врага 1
-        DIRECTIONS.RIGHT,
-        'enemy',
-        enemy1,
-        false,
-        null,
-        1,
-        8
-    );
-
-    game.bullets.push(bullet);
-
-    console.log('✅ Созданы 2 врага и пуля от одного к другому');
-    console.log(`📍 Враг 1: (${enemy1.position.x}, ${enemy1.position.y})`);
-    console.log(`📍 Враг 2: (${enemy2.position.x}, ${enemy2.position.y})`);
-    console.log(`📍 Пуля: (${bullet.position.x}, ${bullet.position.y}) → ВПРАВО`);
-    console.log('📏 Расстояние пули до врага 2:', Math.abs(bullet.position.x - enemy2.position.x));
-
-    // Запускаем проверку столкновений вручную
-    console.log('🔄 Проверяем столкновения...');
-
-    // Проверяем столкновение пули с врагом 2
-    const bulletBounds = bullet.getBounds();
-    const enemyBounds = enemy2.getBounds();
-
-    console.log('📐 Пересечение bounds:', bulletBounds.intersects(enemyBounds));
-
-    // Запускаем обработку столкновений
-    game.processBulletCollisions(bullet, 0);
-
-    console.log('📊 Результат:');
-    console.log('  - Количество пуль:', game.bullets.length);
-    console.log('  - Здоровье врага 2:', enemy2.health);
-    console.log('  - Уничтожен ли враг 2:', enemy2.isDestroyed);
-
-    if (game.bullets.length === 0 && enemy2.health === 1 && !enemy2.isDestroyed) {
-        console.log('🎉 УСПЕХ! Дружественный огонь работает: пуля уничтожена, урона нет!');
-    } else {
-        console.log('❌ Проблема с логикой дружественного огня');
+    if (!window.game) {
+        console.error('❌ game не определен!');
+        return;
     }
+
+    if (window.game.levelComplete) {
+        alert('Уровень уже завершен!');
+        return;
+    }
+
+    // Завершаем текущий уровень
+    window.game.completeCurrentLevel();
+};
+
+window.skipLevel = () => {
+    console.log('⏭️ Быстрый пропуск уровня');
+
+    if (!window.game) {
+        console.error('❌ game не определен!');
+        return;
+    }
+
+    // Прямой переход без вопросов
+    window.game.forceNextLevelSilent();
+};
+
+window.testLevelComplete = () => {
+    if (window.game) {
+        window.game.debugForceLevelComplete();
+    } else {
+        alert('Игра не инициализирована');
+    }
+};
+
+// Функция отмены автоматического перехода
+window.cancelAutoTransition = (type) => {
+    console.log(`⏹️ Отмена автоматического перехода для ${type}`);
+
+    if (!window.game) return;
+
+    // Останавливаем соответствующий таймер
+    if (type === 'level') {
+        window.game.stopLevelCompleteCountdown();
+        const levelTimer = document.getElementById('levelCompleteTimer');
+        if (levelTimer) {
+            // Вместо скрытия элемента, просто показываем сообщение об отмене
+            const timerText = levelTimer.querySelector('.timer-text');
+            if (timerText) {
+                timerText.innerHTML = '❌ Авто-переход отменен';
+                timerText.style.color = '#FF4444';
+            }
+
+            // Скрываем кнопку отмены
+            const cancelBtn = levelTimer.querySelector('.cancel-timer-btn');
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
+
+            // Через 1.5 секунды скрываем таймер
+            setTimeout(() => {
+                if (levelTimer && levelTimer.parentElement) {
+                    levelTimer.style.display = 'none';
+                }
+            }, 1500);
+        }
+    } else if (type === 'gameOver') {
+        window.game.stopGameOverCountdown();
+        const gameOverTimer = document.getElementById('gameOverTimer');
+        if (gameOverTimer) {
+            // Вместо скрытия элемента, просто показываем сообщение об отмене
+            const timerText = gameOverTimer.querySelector('.timer-text');
+            if (timerText) {
+                timerText.innerHTML = '❌ Авто-переход отменен';
+                timerText.style.color = '#FF4444';
+            }
+
+            // Скрываем кнопку отмены
+            const cancelBtn = gameOverTimer.querySelector('.cancel-timer-btn');
+            if (cancelBtn) {
+                cancelBtn.style.display = 'none';
+            }
+
+            // Через 1.5 секунды скрываем таймер
+            setTimeout(() => {
+                if (gameOverTimer && gameOverTimer.parentElement) {
+                    gameOverTimer.style.display = 'none';
+                }
+            }, 1500);
+        }
+    }
+
+    console.log(`✅ Авто-переход отменен для ${type}`);
 };

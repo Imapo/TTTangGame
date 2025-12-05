@@ -5,7 +5,22 @@ class Tank {
         this.type = type;
         this.enemyType = enemyType;
         this.size = TILE_SIZE - 8;
+        // 🔥 НОВЫЕ СВОЙСТВА ДЛЯ ОГАРКОВ И ИНФО-БЛОКА
         this.isDestroyed = false;
+        // 🔥 ДОБАВЛЯЕМ СВОЙСТВА ДЛЯ ОГАРКОВ
+        this.isWreck = false;
+        this.wreckAlpha = 1.0;
+        this.infoBlockAlpha = 1.0;
+        this.infoBlockFadeSpeed = 0.001;
+        this.infoBlockChatActivated = false;
+        this.infoBlockChatTimer = 0;
+        this.infoBlockHovered = false;
+        this.infoBlockMaxAlpha = 1.0;
+        this.infoBlockMinAlpha = 0.3;
+        // 🔥 НОВЫЕ СВОЙСТВА ДЛЯ СООБЩЕНИЙ ОГАРКОВ
+        this.wreckChatMessage = null; // Отдельное сообщение для огарка
+        this.wreckMessageAlpha = 1.0;
+        this.wreckMessageTimer = 0; // Таймер для сообщения огарка
         this.canShoot = true;
         this.hasBonus = false;
         this.isFrozen = false;
@@ -58,10 +73,164 @@ class Tank {
         this.initCommonProperties();
     }
 
-    addChatMessage(username, message) {
-        console.log(`💬 Танк "${this.username}" получает: "${message}" от ${username}`);
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД turnIntoWreck
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД turnIntoWreck
+    turnIntoWreck() {
+        if (this.isDestroyed || this.type !== 'enemy' || !this.isViewerTank) return;
 
-        // 🔥 ПРОСТО ЗАМЕНЯЕМ СТАРОЕ СООБЩЕНИЕ НОВЫМ
+        this.isDestroyed = true;
+        this.isWreck = true;
+        this.wreckAlpha = 0.7;
+        this.infoBlockAlpha = this.infoBlockMaxAlpha;
+
+        // Останавливаем движение и стрельбу
+        this.speed = 0;
+        this.canShoot = false;
+
+        // Сбрасываем все активные эффекты
+        this.hasBonus = false;
+        this.isInvincible = false;
+        this.hasAutoAim = false;
+        this.isFrozen = false;
+
+        // Удаляем щит если есть
+        this.shield = null;
+    }
+
+    // 🔥 ПЕРЕПИСАННЫЙ МЕТОД updateWreckState
+    updateWreckState() {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        // 1. ОБНОВЛЯЕМ ТАЙМЕР АКТИВНОСТИ ОТ ЧАТА
+        if (this.infoBlockChatActivated && this.infoBlockChatTimer > 0) {
+            this.infoBlockChatTimer--;
+
+            if (this.infoBlockChatTimer <= 0) {
+                this.infoBlockChatActivated = false;
+            } else {
+                // Пока активен от чата - максимальная яркость
+                this.infoBlockAlpha = this.infoBlockMaxAlpha;
+            }
+        }
+
+        // 2. ОБРАБОТКА НАВЕДЕНИЯ МЫШКИ
+        if (this.infoBlockHovered) {
+            // При наведении мыши - яркий блок
+            this.infoBlockAlpha = this.infoBlockMaxAlpha;
+            return;
+        }
+
+        // 3. ПЛАВНОЕ ЗАТУХАНИЕ (если не активен и не наведен)
+        if (!this.infoBlockChatActivated && !this.infoBlockHovered) {
+            this.infoBlockAlpha = Math.max(
+                this.infoBlockMinAlpha,
+                this.infoBlockAlpha - this.infoBlockFadeSpeed
+            );
+        }
+
+        // 5. ОБНОВЛЯЕМ ОРИГИНАЛЬНЫЕ СООБЩЕНИЯ (если есть)
+        if (this.currentMessage) {
+            this.updateChatMessages();
+        }
+    }
+
+    // 🔥 УПРОЩЕННЫЙ МЕТОД activateInfoBlockByChat
+    activateInfoBlockByChat() {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        // Просто активируем блок на 5 секунд
+        this.infoBlockChatActivated = true;
+        this.infoBlockChatTimer = 300; // 5 секунд
+        this.infoBlockAlpha = this.infoBlockMaxAlpha;
+    }
+
+    // 🔥 ПРОВЕРКА НАВЕДЕНИЯ МЫШКИ НА ИНФО-БЛОК
+    checkInfoBlockHover(mouseX, mouseY) {
+        if (!this.isWreck || !this.isDestroyed || !mouseX || !mouseY) return false;
+
+        // Получаем границы информационного блока
+        const blockBounds = this.getInfoBlockBounds();
+
+        // 🔥 ПРОСТАЯ ПРОВЕРКА ТОЧКИ В ПРЯМОУГОЛЬНИКЕ
+        const hovered = (
+            mouseX >= blockBounds.x &&
+            mouseX <= blockBounds.x + blockBounds.width &&
+            mouseY >= blockBounds.y &&
+            mouseY <= blockBounds.y + blockBounds.height
+        );
+
+        // Обновляем состояние только если изменилось
+        if (hovered !== this.infoBlockHovered) {
+            this.infoBlockHovered = hovered;
+        }
+
+        return hovered;
+    }
+
+    // 🔥 ГРАНИЦЫ ИНФОРМАЦИОННОГО БЛОКА
+    getInfoBlockBounds() {
+        if (!this.username) return { x: 0, y: 0, width: 0, height: 0 };
+
+        // Берем реальные размеры из метода drawUnifiedEnemyInfoAtPosition
+        // Примерные размеры (на основе вашего кода):
+        const username = this.username.toUpperCase();
+
+        // Создаем временный canvas для измерения
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+
+        // Измеряем ширину имени
+        tempCtx.font = 'bold 12px Arial';
+        const nameWidth = tempCtx.measureText(username).width;
+
+        // Измеряем ширину сердечек здоровья
+        tempCtx.font = '12px "Segoe UI Emoji"';
+        const heartWidth = tempCtx.measureText('❤️').width;
+        const heartsWidth = this.health * heartWidth;
+
+        // Ширина бонуса если есть
+        let bonusWidth = 0;
+        if (this.isViewerTank && this.hasViewerBonus) {
+            bonusWidth = 20 + 2; // Примерная ширина иконки бонуса + отступ
+        }
+
+        // Общая ширина содержимого
+        let totalWidth = bonusWidth + nameWidth + heartsWidth + 8;
+        const textHeight = 14;
+
+        // Учитываем сообщение если есть
+        let blockHeight = textHeight + 16;
+        if (this.currentMessage && this.messageAlpha > 0.05) {
+            blockHeight += 20;
+        }
+
+        const padding = 8;
+        const blockWidth = Math.max(totalWidth, 100) + padding * 2; // Минимум 100px
+
+        // Позиция блока (на основе логики findBestInfoPosition)
+        const { blockX, blockY } = this.findBestInfoPositionForWreck();
+
+        return {
+            x: blockX,
+            y: blockY,
+            width: blockWidth,
+            height: blockHeight
+        };
+    }
+
+    // 🔥 УПРОЩЕННЫЙ МЕТОД ДЛЯ ПОЗИЦИОНИРОВАНИЯ БЛОКА ОГАРКА
+    findBestInfoPositionForWreck() {
+        // Для огарков всегда располагаем блок сверху
+        return {
+            blockX: this.position.x - 90, // Половина от примерной ширины
+            blockY: this.position.y - this.size - 100,
+            preferredSide: 'top'
+        };
+    }
+
+    // 🔥 УПРОЩЕННЫЙ МЕТОД addChatMessage (одинаковый для всех танков)
+    addChatMessage(username, message) {
+        // 🔥 ДЛЯ ВСЕХ ТАНКОВ - ОДИНАКОВАЯ ЛОГИКА
         this.currentMessage = {
             username: username,
             message: message,
@@ -70,14 +239,25 @@ class Tank {
 
         this.messageAlpha = 1.0;
         this.messageFadeState = 'SHOW';
+        this.messageFadeProgress = 0;
 
-        // 🔥 СБРАСЫВАЕМ ТАЙМЕР ИСЧЕЗНОВЕНИЯ
-        clearTimeout(this.messageTimer);
+        // 🔥 ДЛЯ ОГАРКОВ - АКТИВИРУЕМ БЛОК
+        if (this.isWreck && this.isDestroyed) {
+            this.activateInfoBlockByChat();
+            console.log(`🔥 Огарок ${this.username} активирован сообщением`);
+        }
 
-        // 🔥 ЗАПУСКАЕМ НОВЫЙ ТАЙМЕР НА 5 СЕКУНД
-        this.messageTimer = setTimeout(() => {
-            this.startMessageFadeOut();
-        }, 5000);
+        // 🔥 ДЛЯ ЖИВЫХ ТАНКОВ - ТАЙМЕР ИСЧЕЗНОВЕНИЯ
+        if (!this.isWreck) {
+            clearTimeout(this.messageTimer);
+            this.messageTimer = setTimeout(() => {
+                this.startMessageFadeOut();
+            }, 5000);
+        } else {
+            // 🔥 ДЛЯ ОГАРКОВ - НЕ ЗАПУСКАЕМ ТАЙМЕР ИСЧЕЗНОВЕНИЯ
+            clearTimeout(this.messageTimer);
+            this.messageTimer = null;
+        }
     }
 
     // Показать следующее сообщение из очереди
@@ -92,10 +272,6 @@ class Tank {
         this.messageAlpha = 1.0;
         this.messageFadeState = 'SHOW';
         this.messageFadeProgress = 0;
-
-        console.log(`💬 Танк ${this.username}: показываем сообщение`);
-        console.log(`   От: ${this.currentMessage.username}`);
-        console.log(`   Текст: "${this.currentMessage.message}"`);
     }
 
     // Обновление состояния сообщений
@@ -106,17 +282,30 @@ class Tank {
         }
     }
 
-    // 🔥 ОБНОВЛЕНИЕ СОСТОЯНИЯ СООБЩЕНИЙ
+    // 🔥 УПРОЩЕННЫЙ МЕТОД updateChatMessages
     updateChatMessages() {
         if (!this.currentMessage) return;
 
-        // Плавное исчезновение
+        // 🔥 ДЛЯ ОГАРКОВ - СООБЩЕНИЕ СВЯЗАНО С ЯРКОСТЬЮ БЛОКА
+        if (this.isWreck && this.isDestroyed) {
+            // Прозрачность сообщения = прозрачность блока
+            this.messageAlpha = this.infoBlockAlpha;
+
+            // Если блок активен (от чата или наведения) - сообщение видно
+            if (this.infoBlockChatActivated || this.infoBlockHovered) {
+                this.messageAlpha = 1.0;
+            }
+
+            // 🔥 НЕ ЗАТУХАЕМ САМОСТОЯТЕЛЬНО - только с блоком
+            return;
+        }
+
+        // 🔥 ДЛЯ ЖИВЫХ ТАНКОВ - ОРИГИНАЛЬНАЯ ЛОГИКА
         if (this.messageFadeState === 'FADE_OUT') {
-            this.messageFadeProgress += 0.02; // ~1 секунда на исчезновение
+            this.messageFadeProgress += 0.02;
             this.messageAlpha = 1 - this.messageFadeProgress;
 
             if (this.messageFadeProgress >= 1) {
-                // Полностью убираем сообщение
                 this.currentMessage = null;
                 this.messageAlpha = 1.0;
                 this.messageFadeState = 'SHOW';
@@ -191,18 +380,9 @@ class Tank {
 
     // Метод для диагностики сообщений
     debugChatMessages() {
-        console.log(`🐛 ДИАГНОСТИКА ЧАТА ТАНКА "${this.username}":`);
-        console.log(`   userId: "${this.userId}"`);
-        console.log(`   isViewerTank: ${this.isViewerTank}`);
-        console.log(`   enemyType: ${this.enemyType}`);
-        console.log(`   Текущее сообщение: ${this.currentMessage ? `"${this.currentMessage.username}: ${this.currentMessage.message}"` : 'нет'}`);
-        console.log(`   messageAlpha: ${this.messageAlpha}`);
-        console.log(`   messageFadeState: ${this.messageFadeState}`);
-        console.log(`   Сообщений в очереди: ${this.chatMessages.length}`);
 
         this.chatMessages.forEach((msg, index) => {
             const elapsed = Date.now() - msg.timestamp;
-            console.log(`   Очередь ${index}: "${msg.username}: ${msg.message}" (${Math.floor(elapsed/1000)}с назад)`);
         });
     }
 
@@ -240,12 +420,6 @@ class Tank {
             this.bulletSpeed = powerConfig.bulletSpeed; // скорость пуль типа
             this.bulletPower = 1;
             this.canDestroyConcrete = false;
-
-            console.log(`🎮 Танк зрителя (тип: ${this.viewerPowerType}):`);
-            console.log(`   Базовое здоровье типа: ${powerConfig.health}`);
-            console.log(`   Усиленное здоровье: ${this.health} (×2)`);
-            console.log(`   Перезарядка: ${this.reloadTime} (быстрее в 1.5 раза)`);
-            console.log(`   Скорость: ${this.speed}`);
 
             // Для звука используем viewerPowerType
             // originalEnemyType остаётся 'VIEWER' для идентификации как зритель
@@ -449,6 +623,15 @@ class Tank {
     }
 
     update() {
+        if (this.isWreck && this.isDestroyed) {
+            // 🔥 ОГАРКИ ОБНОВЛЯЮТ ТОЛЬКО СОСТОЯНИЕ БЛОКА
+            this.updateWreckState();
+
+            // 🔥 ОБНОВЛЯЕМ СООБЩЕНИЯ ЧАТА ДАЖЕ ДЛЯ ОГАРКОВ
+            this.updateChatMessages();
+            return;
+        }
+
         if (this.isDestroyed) return;
 
         this.updateBaseZoneStatus();
@@ -755,13 +938,26 @@ class Tank {
         return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT) : (dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP);
     }
 
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД takeDamage
     takeDamage() {
+        // 🔥 ОГАРКИ НЕ МОГУТ ПОЛУЧАТЬ УРОН
+        if (this.isWreck && this.isDestroyed) {
+            return false;
+        }
+
         if (this.hasShield() || this.isInvincible) return false;
 
         this.health--;
         if (this.health <= 0) {
-            this.isDestroyed = true;
-            return this.hasBonus ? 'bonus' : true;
+            // 🔥 ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ - ПРЕВРАЩАЕМ В ОГАРОК
+            if (this.type === 'enemy' && (this.isViewerTank || this.enemyType === 'VIEWER')) {
+                this.turnIntoWreck();
+                return 'wreck'; // Специальный тип
+            } else {
+                // Обычные враги уничтожаются полностью
+                this.isDestroyed = true;
+                return this.hasBonus ? 'bonus' : true;
+            }
         }
         return false;
     }
@@ -1076,6 +1272,18 @@ class Tank {
 
     // Drawing methods
     draw(ctx) {
+        // 🔥 ОГАРКИ
+        if (this.isWreck && this.isDestroyed) {
+            this.drawWreck(ctx);
+
+            // 🔥 ИНФОРМАЦИОННЫЙ БЛОК (только если достаточно видим)
+            if (this.infoBlockAlpha > 0.1) {
+                this.drawEnemyInfoWithAlpha(ctx);
+            }
+            return;
+        }
+
+        // 🔥 УНИЧТОЖЕННЫЕ (НЕ огарки)
         if (this.isDestroyed) return;
 
         this.drawTracks(ctx);
@@ -1134,6 +1342,120 @@ class Tank {
         if (this.type === 'enemy' && this.username) this.drawEnemyInfo(ctx);
         if (this.isFrozen && this.freezeProgress > 0) this.drawFreezeEffect(ctx);
         if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) this.drawPatrolEffects(ctx);
+    }
+
+    // 🔥 ОТРИСОВКА ОГАРКА (УПРОЩЕННАЯ МОДЕЛЬ)
+    drawWreck(ctx) {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        // 🔥 ФИКСИРОВАННАЯ ПРОЗРАЧНОСТЬ ОГАРКА
+        ctx.globalAlpha = this.wreckAlpha;
+
+        // Простая обугленная модель
+        const halfSize = this.size / 2;
+
+        // Корпус
+        ctx.fillStyle = '#2C2C2C';
+        ctx.fillRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        // Гусеницы
+        ctx.fillStyle = '#1A1A1A';
+        ctx.fillRect(-halfSize * 0.9, -halfSize * 0.3, this.size * 0.2, this.size * 0.6);
+        ctx.fillRect(halfSize * 0.7, -halfSize * 0.3, this.size * 0.2, this.size * 0.6);
+
+        // Башня
+        ctx.fillStyle = '#333';
+        const turretRadius = this.size / 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 🔥 СВЕЧЕНИЕ ПРИ АКТИВНОСТИ ОТ ЧАТА
+        if (this.infoBlockChatActivated) {
+            const pulse = (Math.sin(Date.now() * 0.005) + 1) * 0.3;
+            ctx.fillStyle = `rgba(255, 200, 0, ${0.3 + pulse * 0.2})`;
+            ctx.beginPath();
+            ctx.arc(0, 0, turretRadius * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    // 🔥 УПРОЩЕННЫЙ МЕТОД drawEnemyInfoWithAlpha
+    drawEnemyInfoWithAlpha(ctx) {
+        if (!this.username || this.infoBlockAlpha <= 0.01) return;
+
+        ctx.save();
+
+        // 🔥 ПРИМЕНЯЕМ ПРОЗРАЧНОСТЬ БЛОКА
+        ctx.globalAlpha = this.infoBlockAlpha;
+
+        // 🔥 ВЫЗЫВАЕМ СУЩЕСТВУЮЩИЙ МЕТОД - ОН САМ ОТРИСУЕТ СООБЩЕНИЕ ИЗ currentMessage
+        this.drawUnifiedEnemyInfoAtPosition(ctx, this.position.x, this.position.y);
+
+        ctx.restore();
+    }
+
+    // 🔥 МЕТОД ДЛЯ ОТРИСОВКИ СООБЩЕНИЙ ОГАРКА
+    drawWreckChatMessage(ctx) {
+        if (!this.wreckChatMessage || this.wreckMessageAlpha <= 0.01) return;
+
+        // Позиция для сообщения (под основным блоком)
+        const messageY = this.position.y - this.size - 60;
+
+        // Текст сообщения
+        const messageText = `${this.wreckChatMessage.username}: ${this.wreckChatMessage.message}`;
+
+        // Подготавливаем контекст
+        ctx.save();
+        ctx.translate(this.position.x, messageY);
+
+        // 🔥 ПРИМЕНЯЕМ ПРОЗРАЧНОСТЬ СООБЩЕНИЯ
+        ctx.globalAlpha = this.wreckMessageAlpha;
+
+        // Шрифт
+        ctx.font = 'bold 11px Arial';
+        const textWidth = ctx.measureText(messageText).width;
+        const textHeight = 14;
+        const padding = 6;
+
+        // Позиционируем по центру
+        const messageX = -textWidth / 2;
+
+        // Фон сообщения
+        ctx.fillStyle = `rgba(0, 0, 0, 0.7)`;
+        this.roundRect(ctx, messageX - padding, -textHeight,
+                       textWidth + padding * 2, textHeight + padding * 2, 5);
+        ctx.fill();
+
+        // Обводка цветом танка
+        ctx.strokeStyle = this.color + Math.floor(this.wreckMessageAlpha * 255).toString(16).padStart(2, '0');
+        ctx.lineWidth = 1;
+        this.roundRect(ctx, messageX - padding, -textHeight,
+                       textWidth + padding * 2, textHeight + padding * 2, 5);
+        ctx.stroke();
+
+        // Текст сообщения
+        ctx.fillStyle = `rgba(255, 255, 255, 1)`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(messageText, messageX, 0);
+
+        // 🔥 ИНДИКАТОР ВРЕМЕНИ (полоска внизу)
+        if (this.wreckMessageTimer > 0) {
+            const totalTime = 300; // 5 секунд
+            const timeProgress = this.wreckMessageTimer / totalTime;
+
+            ctx.fillStyle = this.color;
+            ctx.fillRect(messageX - padding, padding - 2,
+                         (textWidth + padding * 2) * Math.max(0, timeProgress), 2);
+        }
+
+        ctx.restore();
     }
 
     // === ТВОЙ ОРИГИНАЛЬНЫЙ ДИЗАЙН ТАНКА ИГРОКА ===
@@ -2085,11 +2407,6 @@ class Tank {
 
     drawEnemyInfo(ctx) {
         if (this.type !== 'enemy' || this.isDestroyed || !this.username) return;
-
-        // ОТЛАДОЧНАЯ ИНФОРМАЦИЯ В КОНСОЛЬ
-        if ((this.enemyType === 'VIEWER' || this.isViewerTank) && !this.avatarLoaded && !this.avatarError) {
-            console.log(`🔄 Танк ${this.username}: avatarLoaded=${this.avatarLoaded}, avatarError=${this.avatarError}, avatarUrl=${this.avatarUrl}`);
-        }
 
         ctx.save();
 

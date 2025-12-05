@@ -189,6 +189,10 @@ class SoundManager {
 
     // Очистка ресурсов
     destroy() {
+        if (this.debugStatsInterval) {
+            clearInterval(this.debugStatsInterval);
+            this.debugStatsInterval = null;
+        }
         this.stopAll();
         this.sounds.clear();
     }

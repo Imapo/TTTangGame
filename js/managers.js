@@ -8,10 +8,37 @@ class EnemyManager {
         this.currentSpawnIndex = 0;
         this.lastRespawnTime = Date.now();
         this.destroyedEnemiesStats = [];
+        this.wrecks = [];
 
         // 🔥 ДОБАВЛЯЕМ ИНИЦИАЛИЗАЦИЮ СЧЕТЧИКА
         this.destroyedEnemies = 0;
         this.totalEnemies = 20; // Общее количество врагов на уровень
+    }
+
+    // 🔥 МЕТОД ДЛЯ ПРЕВРАЩЕНИЯ ТАНКА В ОГАРОК
+    turnIntoWreck(enemy) {
+        if (!enemy || enemy.isWreck) return;
+
+        enemy.turnIntoWreck();
+
+        // 🔥 ПЕРЕМЕЩАЕМ В МАССИВ ОГАРКОВ
+        const index = this.enemies.indexOf(enemy);
+        if (index !== -1) {
+            this.enemies.splice(index, 1);
+            this.wrecks.push(enemy);
+
+            // 🔥 УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ - ДОБАВЬТЕ ЭТУ СТРОКУ
+            this.destroyedEnemies = (this.destroyedEnemies || 0) + 1;
+
+            // 🔥 Также увеличиваем счётчик в игре
+            if (this.game) {
+                this.game.enemiesDestroyed = (this.game.enemiesDestroyed || 0) + 1;
+                if (this.game.updateUI) {
+                    this.game.updateUI();
+                }
+            }
+
+        }
     }
 
     // Получаем количество обычных врагов (не зрителей)
@@ -75,22 +102,47 @@ class EnemyManager {
     }
 
     spawnEnemy() {
-        if (this.game.enemiesToSpawn <= 0) return null;
+        // 🔥 ПРОВЕРЯЕМ СНАЧАЛА, МОЖНО ЛИ СПАВНИТЬ
+        const activeEnemies = this.enemies.filter(enemy =>
+        !enemy.isDestroyed || !enemy.isWreck
+        ).length;
+
+        const totalSpawned = (this.destroyedEnemies || 0) + activeEnemies;
+
+        if (totalSpawned >= TOTAL_ENEMIES_PER_LEVEL) {
+            return null;
+        }
+
+        if (activeEnemies >= MAX_ENEMIES_ON_SCREEN) {
+            return null;
+        }
+
+        if (this.game.enemiesToSpawn <= 0) {
+            return null;
+        }
 
         const spawnPoint = this.getNextSpawnPoint();
         this.spawnAnimations.push(new SpawnAnimation(spawnPoint.x, spawnPoint.y));
         this.showSpawnNotification();
-        this.game.enemiesToSpawn--;
-        this.game.updateUI();
 
         return spawnPoint;
     }
 
     completeSpawnAnimation(position) {
-        // ДОБАВЛЯЕМ ПРОВЕРКУ ПЕРЕД СОЗДАНИЕМ ЛЮБОГО ТАНКА
-        const totalSpawnedSoFar = this.destroyedEnemies + this.enemies.length;
-        if (totalSpawnedSoFar >= 20) {
-            console.log(`🚫 ДОСТИГНУТ ЛИМИТ 20 ТАНКОВ! Не создаем нового врага.`);
+        // 🔥 ПРАВИЛЬНЫЙ ПОДСЧЕТ АКТИВНЫХ ВРАГОВ (без огарков)
+        const activeEnemies = this.enemies.filter(enemy =>
+        !enemy.isDestroyed || !enemy.isWreck
+        );
+
+        const totalSpawnedSoFar = (this.destroyedEnemies || 0) + activeEnemies.length;
+
+        // 🔥 ИСПОЛЬЗУЕМ КОНСТАНТЫ
+        if (totalSpawnedSoFar >= TOTAL_ENEMIES_PER_LEVEL) {
+            return;
+        }
+
+        // 🔥 ПРОВЕРКА ЛИМИТА ПОЛЯ
+        if (activeEnemies.length >= MAX_ENEMIES_ON_SCREEN) {
             return;
         }
 
@@ -121,17 +173,29 @@ class EnemyManager {
             });
         }
 
-        // 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: ЗАМОРАЖИВАЕМ НОВЫХ ВРАГОВ ПРИ АКТИВНОМ СТОП-ВРЕМЕНИ
+        // 🔥 ЗАМОРАЖИВАЕМ ПРИ СТОП-ВРЕМЕНИ
         if (this.game.timeStopActive) {
             const remainingTime = this.game.timeStopDuration - (Date.now() - this.game.timeStopStartTime);
             if (remainingTime > 0) {
                 enemy.freeze(remainingTime);
-                console.log(`⏰ Новый враг "${username}" заморожен на ${remainingTime}мс`);
             }
         }
 
         this.enemies.push(enemy);
-        console.log(`👾 Враг "${username}" (${enemyType}) создан`);
+
+        // 🔥 ОБНОВЛЯЕМ enemiesToSpawn В ИГРЕ
+        if (this.game && this.game.enemiesToSpawn > 0) {
+            this.game.enemiesToSpawn--;
+            if (this.game.updateUI) {
+                this.game.updateUI();
+            }
+        }
+    }
+
+    getActiveEnemiesCount() {
+        return this.enemies.filter(enemy =>
+        !enemy.isDestroyed || !enemy.isWreck
+        ).length;
     }
 
     getRandomEnemyType() {
@@ -172,37 +236,101 @@ class EnemyManager {
     }
 
     update() {
-        // ПЕРЕМЕЩАЕМ ОБЪЯВЛЕНИЕ allTanks В НАЧАЛО МЕТОДА
-        const allTanks = [this.game.player, ...this.enemies];
-        const allFragments = this.game.getAllFragments();
+        // 🔥 РАЗДЕЛЯЕМ ОБРАБОТКУ НА ДВА ЭТАПА
 
-        // Обновляем врагов
-        this.enemies.forEach(enemy => {
-            enemy.update();
-            enemy.updateEnemyAI(this.game.map, allTanks, allFragments, this.game.player);
-        });
+        // 1. ОБНОВЛЯЕМ ВСЕХ ВРАГОВ
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
 
-        // Сохраняем статистику уничтоженных врагов
-        this.enemies.filter(enemy => enemy.isDestroyed).forEach(enemy => {
-            if (enemy.levelStats?.totalScore > 0) {
-                this.destroyedEnemiesStats.push({
-                    enemy: enemy,
-                    stats: {...enemy.levelStats}
-                });
+            // 🔥 ОГАРКИ - только update()
+            if (enemy.isWreck && enemy.isDestroyed) {
+                enemy.update();
+
+                // 🔥 ПРОВЕРЯЕМ, НЕ ПОРА ЛИ УДАЛИТЬ ОГАРОК (полностью затух)
+                if (enemy.infoBlockAlpha <= 0.01 && enemy.wreckAlpha <= 0.01) {
+                    this.enemies.splice(i, 1);
+                }
+                continue;
             }
-        });
 
-        // УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ
-        const newlyDestroyed = this.enemies.filter(enemy => enemy.isDestroyed).length;
-        if (newlyDestroyed > 0) {
-            this.destroyedEnemies = (this.destroyedEnemies || 0) + newlyDestroyed;
+            // 🔥 ЖИВЫЕ ВРАГИ - полное обновление
+            if (!enemy.isDestroyed) {
+                enemy.update();
+            }
         }
 
-        // Удаляем уничтоженных врагов
-        this.enemies = this.enemies.filter(enemy => !enemy.isDestroyed);
+        // 2. СОЗДАЕМ СПИСОК АКТИВНЫХ ТАНКОВ ДЛЯ ИИ (без огарков)
+        const activeEnemies = this.enemies.filter(e =>
+        !e.isDestroyed || !e.isWreck
+        );
+        const activeTanks = [this.game.player, ...activeEnemies];
+        const allFragments = this.game.getAllFragments();
 
-        // Обрабатываем столкновения (теперь allTanks объявлена)
-        this.handleTankCollisions(allTanks);
+        // 3. ОБНОВЛЯЕМ ИИ ТОЛЬКО ДЛЯ ЖИВЫХ ВРАГОВ
+        for (const enemy of this.enemies) {
+            if (!enemy.isDestroyed && !enemy.isWreck) {
+                enemy.updateEnemyAI(this.game.map, activeTanks, allFragments, this.game.player);
+            }
+        }
+
+        // 4. ОБРАБАТЫВАЕМ УНИЧТОЖЕНИЯ
+        const enemiesToRemove = [];
+
+        for (let i = this.enemies.length - 1; i >= 0; i--) {
+            const enemy = this.enemies[i];
+
+            // 🔥 УДАЛЯЕМ ТОЛЬКО НЕ-ОГАРКОВ
+            if (enemy.isDestroyed && !enemy.isWreck) {
+                // Сохраняем статистику
+                if (enemy.levelStats?.totalScore > 0) {
+                    this.destroyedEnemiesStats.push({
+                        enemy: enemy,
+                        stats: {...enemy.levelStats}
+                    });
+                }
+
+                // 🔥 ВАЖНО: УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ
+                this.destroyedEnemies = (this.destroyedEnemies || 0) + 1;
+
+                // 🔥 ОБНОВЛЯЕМ СЧЕТЧИК В ИГРЕ
+                if (this.game) {
+                    // Сообщаем игре об уничтожении
+                    if (this.game.markEnemyDestroyed) {
+                        this.game.markEnemyDestroyed(enemy);
+                    }
+
+                    // Увеличиваем счетчик уничтоженных в игре
+                    this.game.enemiesDestroyed = (this.game.enemiesDestroyed || 0) + 1;
+
+                    // Обновляем UI
+                    if (this.game.updateUI) {
+                        this.game.updateUI();
+                    }
+                }
+
+                enemiesToRemove.push(i);
+            }
+        }
+
+        // 🔥 УДАЛЯЕМ ПОМЕЧЕННЫХ ВРАГОВ
+        for (const index of enemiesToRemove.sort((a, b) => b - a)) {
+            this.enemies.splice(index, 1);
+        }
+
+        // 5. ОБРАБОТКА СТОЛКНОВЕНИЙ (только активные танки)
+        this.handleTankCollisions(activeTanks);
+
+        // 🔥 ДЕБАГ
+        this.debugInfo();
+    }
+
+    debugInfo() {
+        if (this.game?.frameCount % 120 !== 0) return;
+
+        const active = this.enemies.filter(e => !e.isDestroyed || !e.isWreck).length;
+        const wrecks = this.enemies.filter(e => e.isWreck).length;
+        const total = active + wrecks;
+
     }
 
     getAllEnemiesStats() {
@@ -232,12 +360,21 @@ class EnemyManager {
         }
     }
 
-    updateRespawns() {
-        const totalEnemiesOnScreen = this.enemies.length + this.spawnAnimations.length;
+    getTotalEnemiesOnScreen() {
+        // 🔥 Считаем ТОЛЬКО живых врагов (не огарки, не уничтоженные)
+        return this.enemies.filter(enemy =>
+        !enemy.isDestroyed || (enemy.isWreck && enemy.isDestroyed)  // 🔥 ИСКЛЮЧАЕМ ОГАРКИ
+        ).length;
+    }
 
+    updateRespawns() {
+        // 🔥 ИСПРАВЛЕНИЕ: Считаем ТОЛЬКО живых врагов (не огарки, не уничтоженные)
+        const aliveEnemies = this.getAliveEnemiesCount();
+        const wrecksCount = this.getWrecksCount();
+
+        const totalEnemiesOnScreen = aliveEnemies + this.spawnAnimations.length;
         // Удаляем завершенные анимации и создаем врагов
         this.spawnAnimations = this.spawnAnimations.filter((animation, index) => {
-            // Не обновляем замороженные анимации
             if (!animation.isFrozen) {
                 animation.update(this.game.deltaTime);
             }
@@ -249,9 +386,8 @@ class EnemyManager {
             return true;
         });
 
-        // 🔥 ИСПРАВЛЕНИЕ: УБИРАЕМ ПРОВЕРКУ НА timeStopActive
-        // Враги должны спавниться даже во время стоп-времени, но сразу замораживаться
-        const canSpawn = totalEnemiesOnScreen < MAX_ENEMIES_ON_SCREEN &&
+        // 🔥 ИСПРАВЛЕНИЕ: Используем aliveEnemies вместо this.enemies.length
+        const canSpawn = aliveEnemies < MAX_ENEMIES_ON_SCREEN &&
         this.game.enemiesToSpawn > 0 &&
         !this.game.levelComplete &&
         !this.game.baseDestroyed &&
@@ -262,7 +398,6 @@ class EnemyManager {
             if (this.game.viewerSystem && this.shouldSpawnViewerInstead()) {
                 const spawned = this.game.viewerSystem.trySpawnViewerTank();
                 if (spawned) {
-                    console.log('🎮 Спавн зрителя вместо обычного врага');
                     this.lastRespawnTime = Date.now();
                     this.game.enemiesToSpawn--;
                     this.game.updateUI();
@@ -274,6 +409,27 @@ class EnemyManager {
             this.spawnEnemy();
             this.lastRespawnTime = Date.now();
         }
+    }
+
+    getAliveEnemiesCount() {
+        return this.enemies.filter(enemy =>
+        !enemy.isDestroyed || (enemy.isWreck && enemy.isDestroyed)  // 🔥 ЭТО ОШИБКА!
+        ).length;
+    }
+
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД:
+    getAliveEnemiesCount() {
+        // Живые враги = НЕ уничтоженные И НЕ огарки
+        return this.enemies.filter(enemy =>
+        !enemy.isDestroyed && !enemy.isWreck
+        ).length;
+    }
+
+    getWrecksCount() {
+        // Огарки = уничтоженные И являются огарками
+        return this.enemies.filter(enemy =>
+        enemy.isDestroyed && enemy.isWreck
+        ).length;
     }
 
     // 🔥 РЕШАЕМ: КОГДА СПАВНИТЬ ЗРИТЕЛЯ ВМЕСТО ОБЫЧНОГО ВРАГА

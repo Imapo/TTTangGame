@@ -24,50 +24,66 @@ class ViewerSystem {
         this.initGiftSystem();
     }
 
+    // 🔥 ПРОВЕРКА НАВЕДЕНИЯ МЫШКИ НА ВСЕ ОГАРКИ
+    checkWreckHovers(mouseX, mouseY) {
+        if (!mouseX || !mouseY) return;
+
+        let anyHovered = false;
+
+        // Проверяем все танки врагов
+        this.game.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.isDestroyed && enemy.checkInfoBlockHover) {
+                const hovered = enemy.checkInfoBlockHover(mouseX, mouseY);
+                if (hovered) anyHovered = true;
+            }
+        });
+
+        // Меняем курсор при наведении
+        this.game.canvas.style.cursor = anyHovered ? 'pointer' : 'default';
+    }
+
+    // 🔥 ОБНОВЛЕНИЕ ВСЕХ ОГАРКОВ
+    updateWrecks() {
+        this.game.enemyManager.enemies.forEach(enemy => {
+            if (enemy.isWreck && enemy.isDestroyed) {
+                // Обновляем состояние огарка
+                enemy.updateWreckState();
+            }
+        });
+    }
+
     // === МЕТОД ОБРАБОТКИ СООБЩЕНИЙ ИЗ ЧАТА ===
+    // В методе handleChatMessage ViewerSystem:
     handleChatMessage(userId, username, message) {
-        console.log(`💬 [ViewerSystem.handleChatMessage] ${username} (${userId}): ${message}`);
+        console.log(`💬 [ViewerSystem.handleChatMessage] ${username}: ${message}`);
 
-        // Добавляем зрителя в активные
-        this.addActiveViewer(userId, username, '');
-
-        // Ищем танк этого зрителя на поле
-        console.log(`🔍 Ищем танк для userID: ${userId}`);
+        // Ищем танк этого зрителя
         const viewerTank = this.findViewerTankByUserId(userId);
 
         if (viewerTank) {
-            console.log(`✅ Найден танк: "${viewerTank.username}"`);
-            console.log(`   Тип танка: ${viewerTank.enemyType}, isViewerTank: ${viewerTank.isViewerTank}`);
-            console.log(`   Метод addChatMessage доступен: ${!!viewerTank.addChatMessage}`);
+            console.log(`✅ Найден танк: "${viewerTank.username}" (isWreck: ${viewerTank.isWreck})`);
 
-            // Добавляем сообщение в танк
+            // 🔥 ВАЖНО: вызываем addChatMessage для ВСЕХ танков (и живых и огарков)
             if (viewerTank.addChatMessage) {
                 viewerTank.addChatMessage(username, message);
-                console.log(`💬 Сообщение добавлено в танк "${viewerTank.username}"`);
 
-                // 🔥 ДИАГНОСТИКА: вызываем метод debugChatMessages если он есть
-                if (viewerTank.debugChatMessages) {
-                    viewerTank.debugChatMessages();
+                // 🔥 ДЛЯ ОГАРКОВ - ДОПОЛНИТЕЛЬНЫЙ ЭФФЕКТ
+                if (viewerTank.isWreck) {
+                    console.log(`💬 Сообщение отправлено огарку ${viewerTank.username}`);
+
+                    // Визуальный эффект для огарка
+                    if (this.game.effectManager) {
+                        this.game.effectManager.addExplosion(
+                            viewerTank.position.x,
+                            viewerTank.position.y,
+                            'chatActivate'
+                        );
+                    }
                 }
-            } else {
-                console.log(`❌ У танка нет метода addChatMessage!`);
             }
         } else {
-            console.log(`❌ Танк зрителя ${username} не найден на поле`);
-            console.log(`   Возможные причины:`);
-            console.log(`   1. Танк еще не создан`);
-            console.log(`   2. Танк уже уничтожен`);
-            console.log(`   3. userId не совпадает`);
-
-            // 🔥 Создаем танк автоматически, если его нет?
-            if (message.toLowerCase().includes('!танк') || message.toLowerCase().includes('!tank')) {
-                console.log(`🎮 Автоматически создаем танк для ${username}`);
-                this.spawnViewerTank(userId, username, '');
-            }
+            console.log(`❌ Танк зрителя ${username} не найден`);
         }
-
-        // Проверяем, есть ли команды в сообщении
-        this.checkChatCommands(userId, username, message);
     }
 
     checkChatCommands(userId, username, message) {
@@ -90,6 +106,7 @@ class ViewerSystem {
     }
 
     // === ПОИСК ТАНКА ЗРИТЕЛЯ ПО USER ID ===
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД findViewerTankByUserId
     findViewerTankByUserId(userId) {
         if (!this.game || !this.game.enemyManager) {
             console.log(`❌ Не могу искать танк: game или enemyManager не доступны`);
@@ -97,38 +114,27 @@ class ViewerSystem {
         }
 
         const allTanks = this.game.enemyManager.enemies;
-        console.log(`🔍 Поиск танка для userId: ${userId}`);
-        console.log(`   Всего танков: ${allTanks.length}`);
 
-        // Ищем живой танк зрителя с нужным userId
+        // 🔥 ИЩЕМ ВСЕ ТАНКИ ЗРИТЕЛЕЙ (включая огарки)
         for (let i = 0; i < allTanks.length; i++) {
             const tank = allTanks[i];
 
-            // Пропускаем уничтоженные танки
-            if (tank.isDestroyed) continue;
-
+            // 🔥 ВАЖНОЕ ИЗМЕНЕНИЕ: НЕ ПРОВЕРЯЕМ isDestroyed!
             const isViewer = tank.enemyType === 'VIEWER' || tank.isViewerTank;
 
             if (isViewer && tank.userId === userId) {
-                console.log(`   ✅ Найден танк на позиции ${i}: "${tank.username}"`);
-                console.log(`      userId танка: "${tank.userId}"`);
-                console.log(`      userId зрителя: "${userId}"`);
-                console.log(`      Совпадение: ${tank.userId === userId}`);
                 return tank;
             }
         }
 
-        console.log(`❌ Танк с userId: "${userId}" не найден`);
 
-        // Выводим список всех танков зрителей для отладки
+        // 🔥 ДОПОЛНИТЕЛЬНЫЙ ПОИСК: посмотрим все танки для отладки
         const viewerTanks = allTanks.filter(tank =>
-        (tank.enemyType === 'VIEWER' || tank.isViewerTank) && !tank.isDestroyed
+        tank.enemyType === 'VIEWER' || tank.isViewerTank
         );
 
         if (viewerTanks.length > 0) {
-            console.log(`   Доступные танки зрителей:`);
             viewerTanks.forEach((tank, index) => {
-                console.log(`   ${index}. "${tank.username}" - userId: "${tank.userId}"`);
             });
         } else {
             console.log(`   На поле нет танков зрителей`);
@@ -213,8 +219,6 @@ class ViewerSystem {
         if (pool.length > this.maxPoolSize) {
             pool.pop();
         }
-
-        console.log(`📊 ${poolName}: ${pool.length}/${this.maxPoolSize}`);
     }
 
     // === ВЫБОР СЛУЧАЙНОГО ЗРИТЕЛЯ ПО ПРИОРИТЕТУ ===
@@ -254,8 +258,12 @@ class ViewerSystem {
 
     // === СПАВН ТАНКА ЗРИТЕЛЯ ===
     spawnViewerTankInsteadOfRegular() {
-        // 🔥 ПРОВЕРЯЕМ ЛИМИТ ПОЛЯ
-        if (this.game.enemyManager.enemies.length >= MAX_ENEMIES_ON_SCREEN) {
+        // 🔥 ПРОВЕРЯЕМ ЛИМИТ ПОЛЯ - ТОЛЬКО ЖИВЫХ
+        const aliveEnemies = this.game.enemyManager.enemies.filter(enemy =>
+        !enemy.isWreck && !enemy.isDestroyed
+        ).length;
+
+        if (aliveEnemies >= MAX_ENEMIES_ON_SCREEN) {
             return false;
         }
 
@@ -324,9 +332,11 @@ class ViewerSystem {
             return;
         }
 
-        // ПРОВЕРКА НА ДУБЛИКАТ
+        // 🔥 ИСПРАВЛЕНИЕ: Проверяем ТОЛЬКО живые танки
         const existingViewerTank = this.game.enemyManager.enemies.find(enemy =>
-        (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) && enemy.userId === userId
+        (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) &&
+        enemy.userId === userId &&
+        !enemy.isWreck && !enemy.isDestroyed  // 🔥 ПРОВЕРЯЕМ ТОЛЬКО ЖИВЫЕ
         );
 
         if (existingViewerTank) {
@@ -340,6 +350,16 @@ class ViewerSystem {
             return;
         }
 
+        // Проверяем общий лимит поля
+        const aliveEnemies = this.game.enemyManager.enemies.filter(enemy =>
+        !enemy.isWreck && !enemy.isDestroyed
+        ).length;
+
+        if (aliveEnemies >= MAX_ENEMIES_ON_SCREEN) {
+            console.log(`🚫 Лимит поля: ${aliveEnemies}/${MAX_ENEMIES_ON_SCREEN}`);
+            return;
+        }
+
         // ДОБАВЛЯЕМ В ОНЛАЙН И СПАВНИМ
         this.addOnlineViewer(userId, username, avatarUrl);
         this.executeSpawn(userId, username, avatarUrl);
@@ -347,9 +367,13 @@ class ViewerSystem {
 
     // === СЛУЧАЙНЫЙ ВЫБОР ПРИ ОБЫЧНОМ СПАВНЕ ===
     trySpawnRandomViewer() {
-        // 🔥 ПРОВЕРЯЕМ ЛИМИТ ПОЛЯ
-        if (this.game.enemyManager.enemies.length >= MAX_ENEMIES_ON_SCREEN) {
-            console.log('🚫 Лимит поля достигнут');
+        // 🔥 ПРОВЕРЯЕМ ЛИМИТ ПОЛЯ - ТОЛЬКО ЖИВЫХ
+        const aliveEnemies = this.game.enemyManager.enemies.filter(enemy =>
+        !enemy.isWreck && !enemy.isDestroyed
+        ).length;
+
+        if (aliveEnemies >= MAX_ENEMIES_ON_SCREEN) {
+            console.log('🚫 Лимит поля достигнут (живых)');
             return false;
         }
 
@@ -361,7 +385,8 @@ class ViewerSystem {
             const wasDestroyed = this.destroyedViewerTanks.has(viewer.userId);
             const isOnField = this.game.enemyManager.enemies.find(enemy =>
             (enemy.enemyType === 'VIEWER' || enemy.isViewerTank) &&
-            enemy.userId === viewer.userId
+            enemy.userId === viewer.userId &&
+            !enemy.isWreck && !enemy.isDestroyed  // 🔥 ПРОВЕРЯЕМ ТОЛЬКО ЖИВЫЕ
             );
 
             console.log(`🔍 ${viewer.username}: уничтожен=${wasDestroyed}, на поле=${!!isOnField}`);
@@ -394,17 +419,24 @@ class ViewerSystem {
 
     // === ПРОСТАЯ ПРОВЕРКА ДОСТУПНОСТИ ===
     canSpawnViewerTank() {
-        // 1. Проверяем лимит поля
-        if (this.game.enemyManager.enemies.length >= MAX_ENEMIES_ON_SCREEN) {
+        // 1. Проверяем лимит поля - считаем ТОЛЬКО живых врагов (не огарки)
+        const aliveEnemies = this.game.enemyManager.enemies.filter(enemy =>
+        !enemy.isWreck && !enemy.isDestroyed
+        ).length;
+
+        if (aliveEnemies >= MAX_ENEMIES_ON_SCREEN) {
+            console.log(`🚫 canSpawnViewerTank: живых врагов=${aliveEnemies}, лимит=${MAX_ENEMIES_ON_SCREEN}`);
             return false;
         }
 
         // 2. Проверяем лимит раунда
-        const totalCreated = (this.game.enemyManager.destroyedEnemies || 0) + this.game.enemyManager.enemies.length;
+        const totalCreated = (this.game.enemyManager.destroyedEnemies || 0) + aliveEnemies;
         if (totalCreated >= TOTAL_ENEMIES_PER_LEVEL) {
+            console.log(`🚫 canSpawnViewerTank: всего создано=${totalCreated}, лимит=${TOTAL_ENEMIES_PER_LEVEL}`);
             return false;
         }
 
+        console.log(`✅ canSpawnViewerTank: можно спавнить (живых=${aliveEnemies}, создано=${totalCreated})`);
         return true;
     }
 
@@ -771,11 +803,6 @@ class ViewerSystem {
         this.currentViewerTanks = this.game.enemyManager.enemies.filter(e =>
         e.isViewerTank || e.enemyType === 'VIEWER'
         ).length;
-
-        console.log(`🎯 Раунд: ${totalCreated}/${TOTAL_PER_LEVEL}, осталось: ${remainingInRound}`);
-        console.log(`🎯 Поле: ${onFieldCount}/${MAX_ON_FIELD}, свободно: ${freeFieldSlots}`);
-        console.log(`🎯 Для зрителей: ${availableForViewers} слотов`);
-        console.log(`🎮 Лимит зрителей: ${this.currentViewerTanks}/${this.maxViewerTanks}`);
     }
 
     getRemainingEnemiesFromCounter() {
@@ -798,15 +825,6 @@ class ViewerSystem {
     debugTankInfo(remainingEnemies, totalSpawnedSoFar) {
         const regularTanks = this.game.enemyManager.enemies.filter(e => !e.isViewerTank).length;
         const viewerTanks = this.game.enemyManager.enemies.filter(e => e.isViewerTank).length;
-
-        console.log('🐛 ДЕТАЛЬНЫЙ ДЕБАГ:');
-        console.log(`- Всего создано: ${totalSpawnedSoFar}`);
-        console.log(`- Осталось создать: ${remainingEnemies}`);
-        console.log(`- На поле: ${this.game.enemyManager.enemies.length} танков`);
-        console.log(`  → Обычных: ${regularTanks}`);
-        console.log(`  → Зрителей: ${viewerTanks}`);
-        console.log(`- Текущие зрители: ${this.currentViewerTanks}/${this.maxViewerTanks}`);
-        console.log(`- В очереди: ${this.pendingSpawns.length}`);
     }
 
     // === СИСТЕМА АВАТАРОК ===
