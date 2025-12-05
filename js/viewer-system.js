@@ -160,8 +160,6 @@ class ViewerSystem {
         // ДОБАВЛЯЕМ В ИГРАВШИХ В РАУНДЕ
         this.usedInRound.add(selectedViewer.userId);
 
-        console.log(`🎮 Спавним танк зрителя: ${selectedViewer.username}`);
-
         // ИСПОЛЬЗУЕМ СУЩЕСТВУЮЩУЮ СИСТЕМУ СПАВНА
         this.spawnViewerTank(
             selectedViewer.userId,
@@ -278,7 +276,6 @@ class ViewerSystem {
         // 🔥 ДОБАВЛЯЕМ В ИГРАВШИХ В РАУНДЕ
         this.usedInRound.add(selectedViewer.userId);
 
-        console.log(`🎮 Спавним танк зрителя: ${selectedViewer.username}`);
 
         // 🔥 НЕПОСРЕДСТВЕННО СПАВНИМ ТАНК (без анимации через EnemyManager)
         this.executeSpawn(
@@ -651,13 +648,29 @@ class ViewerSystem {
             // 🔥 СОЗДАЕМ ТАНК С ВЫБРАННЫМ ТИПОМ
             const viewerTank = new Tank(position.x, position.y, "enemy", 1, viewerTankType);
 
-            // 🔥 ОСНОВНЫЕ НАСТРОЙКИ
             viewerTank.username = username;
             viewerTank.userId = userId;
-            viewerTank.avatarUrl = avatarUrl;
-            viewerTank.viewerName = username;
-            viewerTank.color = this.getViewerColor(userId);
             viewerTank.isViewerTank = true;
+
+            // 🔥 ВАЖНО: Проверяем и устанавливаем avatarUrl
+            if (avatarUrl && avatarUrl !== '' && avatarUrl !== 'undefined') {
+                console.log(`🎯 Устанавливаем аватарку для ${username}: ${avatarUrl}`);
+                viewerTank.avatarUrl = avatarUrl;
+
+                // 🔥 ПРЕДЗАГРУЗКА АВАТАРКИ
+                this.preloadAvatar(userId, avatarUrl);
+
+                // 🔥 НЕМЕДЛЕННО ЗАПУСКАЕМ ЗАГРУЗКУ
+                setTimeout(() => {
+                    if (viewerTank && !viewerTank.avatarLoaded && !viewerTank.avatarLoading) {
+                        console.log(`🚀 Запускаем загрузку аватарки для ${username}`);
+                        viewerTank.loadAvatar();
+                    }
+                }, 100);
+            } else {
+                console.log(`⚠️ Нет аватарки для ${username}`);
+                viewerTank.avatarError = true;
+            }
 
             // 🔥 ПРИМЕНЯЕМ МОДИФИКАТОРЫ ДЛЯ ЗРИТЕЛЯ
             this.modifyViewerTankStats(viewerTank, username);
@@ -725,13 +738,22 @@ class ViewerSystem {
         tank.takeDamage = function() {
             const result = originalTakeDamage();
 
-            if (result && this.isDestroyed) {
-                console.log(`💀 Уничтожен танк зрителя: ${username}`);
+            if (result === 'wreck') { // 🔥 ИЗМЕНЕНИЕ: проверяем на wreck
+                console.log(`💀 Танк зрителя ${username} превращен в огарок`);
 
-                // 🔥 ПРОСТО ОТМЕЧАЕМ КАК УНИЧТОЖЕННЫЙ
+                // 🔥 МГНОВЕННОЕ ЗАТЕМНЕНИЕ
+                if (this.isViewerTank) {
+                    this.wreckFadeAlpha = 0.3;
+                    this.avatarFadeAlpha = 0.2;
+                    this.nameFadeAlpha = 0.4;
+                }
+
+                // Отмечаем как уничтоженный
                 if (game.viewerSystem) {
                     game.viewerSystem.destroyedViewerTanks.add(userId);
-                    // Больше ничего не делаем - система сама будет спавнить через EnemyManager
+
+                    // 🔥 ВАЖНО: все равно можем спавнить в следующем раунде
+                    // так как destroyedViewerTanks очищается в resetForNewRound
                 }
             }
 
@@ -1660,10 +1682,33 @@ class ViewerSystem {
     resetForNewRound() {
         this.destroyedViewerTanks.clear();
         this.floatingTexts = [];
-        this.usedInRound.clear(); // 🔥 ОЧИЩАЕМ ИГРАВШИХ В РАУНДЕ
+        this.usedInRound.clear();
+
+        // 🔥 НЕ ОЧИЩАЕМ avatarCache полностью! Только удаляем старые записи
+        this.cleanupOldAvatarCache();
+
+        // 🔥 ОЧИЩАЕМ ТОЛЬКО КОЛБЭКИ
+        this.avatarLoadCallbacks.clear();
 
         console.log('🔄 Система зрителей сброшена для нового раунда');
-        this.debugPoolsInfo();
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: ОЧИСТКА СТАРЫХ АВАТАРОК
+    cleanupOldAvatarCache() {
+        const now = Date.now();
+        const keysToDelete = [];
+
+        this.avatarCache.forEach((value, key) => {
+            if (!value || (now - value.timestamp > 60000)) { // Удаляем старше 1 минуты
+                keysToDelete.push(key);
+            }
+        });
+
+        keysToDelete.forEach(key => {
+            this.avatarCache.delete(key);
+        });
+
+        console.log(`🗑️ Очищено ${keysToDelete.length} старых аватарок из кэша`);
     }
 
     debugPoolsInfo() {

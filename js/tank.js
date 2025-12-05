@@ -9,14 +9,14 @@ class Tank {
         this.isDestroyed = false;
         // 🔥 ДОБАВЛЯЕМ СВОЙСТВА ДЛЯ ОГАРКОВ
         this.isWreck = false;
-        this.wreckAlpha = 1.0;
-        this.infoBlockAlpha = 1.0;
-        this.infoBlockFadeSpeed = 0.001;
+        this.wreckAlpha = 1.0;            // Прозрачность всего танка как огарка
+        this.avatarFadeAlpha = 1.0;       // Прозрачность аватарки (особенно для зрителей)
+        this.infoBlockAlpha = 1.0;        // Прозрачность инфоблока
+        this.infoBlockMinAlpha = 0.7;     // Минимальная прозрачность инфоблока
+        this.infoBlockMaxAlpha = 1.0;     // Максимальная прозрачность инфоблока
         this.infoBlockChatActivated = false;
         this.infoBlockChatTimer = 0;
         this.infoBlockHovered = false;
-        this.infoBlockMaxAlpha = 1.0;
-        this.infoBlockMinAlpha = 0.3;
         // 🔥 НОВЫЕ СВОЙСТВА ДЛЯ СООБЩЕНИЙ ОГАРКОВ
         this.wreckChatMessage = null; // Отдельное сообщение для огарка
         this.wreckMessageAlpha = 1.0;
@@ -74,65 +74,96 @@ class Tank {
     }
 
     // 🔥 ИСПРАВЛЕННЫЙ МЕТОД turnIntoWreck
-    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД turnIntoWreck
     turnIntoWreck() {
-        if (this.isDestroyed || this.type !== 'enemy' || !this.isViewerTank) return;
+        if (this.isWreck) return;
+
+        console.log(`🔥 Танк ${this.username || this.enemyType} превращается в огарок`);
 
         this.isDestroyed = true;
         this.isWreck = true;
-        this.wreckAlpha = 0.7;
-        this.infoBlockAlpha = this.infoBlockMaxAlpha;
 
-        // Останавливаем движение и стрельбу
+        // 🔥 ИСПРАВЛЕНИЕ 1: БОЛЬШАЯ ПРОЗРАЧНОСТЬ МОДЕЛИ
+        this.wreckAlpha = 0.7;           // Было 0.3 - СЛИШКОМ ПРОЗРАЧНО!
+
+        // 🔥 ИСПРАВЛЕНИЕ 2: БОЛЕЕ СВЕТЛЫЕ ЦВЕТА ДЛЯ ЛУЧШЕЙ ВИДИМОСТИ
+        this.wreckBodyColor = '#444444';    // Серый вместо черного
+        this.wreckTrackColor = '#333333';   // Темно-серый
+        this.wreckTurretColor = '#555555';  // Средне-серый
+        this.wreckBarrelColor = '#666666';  // Светло-серый
+
+        // 🔥 ИСПРАВЛЕНИЕ 3: ИНФОБЛОК ВСЕГДА ВИДИМ
+        this.infoVisible = true;
+        this.infoAlpha = 0.2;            // Почти невидим по умолчанию
+        this.avatarAlpha = 0.15;
+
+        // 🔥 ИСПРАВЛЕНИЕ 4: СОХРАНЯЕМ ОРИГИНАЛЬНЫЕ СВОЙСТВА
+        this.originalColor = this.color;
+        this.originalUsername = this.username;
+        this.originalAvatarUrl = this.avatarUrl;
+        this.originalAvatarImage = this.avatarImage;
+        this.originalHealth = this.health;
+        this.originalEnemyType = this.enemyType;
+
+        // 🔥 СВОЙСТВА ДЛЯ ИСКОРОК
+        this.sparks = [];           // Массив искорок
+        this.sparkTimer = 0;        // Таймер для создания искорок
+        this.sparkInterval = 30;    // Каждые 0.5 секунд при 60 FPS
+        this.maxSparks = 8;         // Максимум искорок одновременно
+
+        // Цвета искорок
+        this.sparkColors = [
+            '#FF5500', // Ярко-оранжевый
+            '#FFAA00', // Желто-оранжевый
+            '#FF3300', // Красно-оранжевый
+            '#FF6600'  // Оранжевый
+        ];
+
+        this.clearAllEffects();
+
+        // 🔥 ОСТАНАВЛИВАЕМ ВСЁ
         this.speed = 0;
         this.canShoot = false;
-
-        // Сбрасываем все активные эффекты
         this.hasBonus = false;
         this.isInvincible = false;
         this.hasAutoAim = false;
         this.isFrozen = false;
-
-        // Удаляем щит если есть
+        this.isReversed = false;
         this.shield = null;
+
+        // 🔥 ОЧИЩАЕМ ЭФФЕКТЫ (это может быть причиной артефактов!)
+        this.chatMessages = [];
+        this.currentMessage = null;
+        this.messageAlpha = 0;
+        this.iceCrystals = [];      // Очищаем кристаллы льда
+        this.reverseParticles = []; // Очищаем частицы реверса
+        this.freezeParticles = [];  // Очищаем частицы заморозки
+
+        console.log(`✅ Огарок создан: прозрачность модели=${this.wreckAlpha}`);
     }
 
     // 🔥 ПЕРЕПИСАННЫЙ МЕТОД updateWreckState
     updateWreckState() {
         if (!this.isWreck || !this.isDestroyed) return;
 
-        // 1. ОБНОВЛЯЕМ ТАЙМЕР АКТИВНОСТИ ОТ ЧАТА
-        if (this.infoBlockChatActivated && this.infoBlockChatTimer > 0) {
-            this.infoBlockChatTimer--;
+        // 🔥 1. ОБНОВЛЯЕМ ИСКОРКИ
+        this.updateSparks();
 
-            if (this.infoBlockChatTimer <= 0) {
-                this.infoBlockChatActivated = false;
-            } else {
-                // Пока активен от чата - максимальная яркость
-                this.infoBlockAlpha = this.infoBlockMaxAlpha;
+        // 🔥 2. ПРОВЕРКА СООБЩЕНИЙ
+        if (this.currentMessage) {
+            const elapsed = Date.now() - this.currentMessage.timestamp;
+            if (elapsed > 8000) {
+                this.currentMessage = null;
             }
         }
 
-        // 2. ОБРАБОТКА НАВЕДЕНИЯ МЫШКИ
-        if (this.infoBlockHovered) {
-            // При наведении мыши - яркий блок
-            this.infoBlockAlpha = this.infoBlockMaxAlpha;
-            return;
-        }
-
-        // 3. ПЛАВНОЕ ЗАТУХАНИЕ (если не активен и не наведен)
-        if (!this.infoBlockChatActivated && !this.infoBlockHovered) {
-            this.infoBlockAlpha = Math.max(
-                this.infoBlockMinAlpha,
-                this.infoBlockAlpha - this.infoBlockFadeSpeed
-            );
-        }
-
-        // 5. ОБНОВЛЯЕМ ОРИГИНАЛЬНЫЕ СООБЩЕНИЯ (если есть)
-        if (this.currentMessage) {
-            this.updateChatMessages();
+        // 🔥 3. ДЕЛАЕМ ИНФОБЛОК ВИДИМЫМ ПРИ НАЛИЧИИ СООБЩЕНИЯ
+        if (this.currentMessage && this.infoAlpha < 0.5) {
+            this.infoAlpha = 0.9;
+            this.avatarAlpha = 0.8;
+            this.infoVisible = true;
         }
     }
+
 
     // 🔥 УПРОЩЕННЫЙ МЕТОД activateInfoBlockByChat
     activateInfoBlockByChat() {
@@ -228,9 +259,44 @@ class Tank {
         };
     }
 
-    // 🔥 УПРОЩЕННЫЙ МЕТОД addChatMessage (одинаковый для всех танков)
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД addChatMessage (для огарков)
     addChatMessage(username, message) {
-        // 🔥 ДЛЯ ВСЕХ ТАНКОВ - ОДИНАКОВАЯ ЛОГИКА
+        console.log(`💬 Сообщение для ${this.isWreck ? 'огарка' : 'танка'} ${this.username}: ${message}`);
+
+        // 🔥 ДЛЯ ОГАРКОВ
+        if (this.isWreck && this.isDestroyed) {
+            // 🔥 ВАЖНО: Сохраняем сообщение
+            this.currentMessage = {
+                username: username,
+                message: message,
+                timestamp: Date.now(),
+                isForWreck: true // Помечаем что для огарка
+            };
+
+            // 🔥 АКТИВИРУЕМ ИНФОБЛОК НА 8 СЕКУНД
+            this.activateWreckInfoBlock();
+
+            // 🔥 ВИЗУАЛЬНАЯ ВСПЫШКА
+            if (game && game.effectManager) {
+                game.effectManager.addExplosion(
+                    this.position.x,
+                    this.position.y,
+                    'chatActivate'
+                );
+                game.screenShake = 10;
+            }
+
+            // 🔥 ОЧИСТКА ЧЕРЕЗ 8 СЕКУНД
+            clearTimeout(this.messageTimer);
+            this.messageTimer = setTimeout(() => {
+                this.currentMessage = null;
+                console.log(`🗑️ Сообщение очищено у огарка ${this.username}`);
+            }, 8000);
+
+            return;
+        }
+
+        // 🔥 ДЛЯ ЖИВЫХ ТАНКОВ (оригинальная логика)
         this.currentMessage = {
             username: username,
             message: message,
@@ -241,23 +307,112 @@ class Tank {
         this.messageFadeState = 'SHOW';
         this.messageFadeProgress = 0;
 
-        // 🔥 ДЛЯ ОГАРКОВ - АКТИВИРУЕМ БЛОК
-        if (this.isWreck && this.isDestroyed) {
-            this.activateInfoBlockByChat();
-            console.log(`🔥 Огарок ${this.username} активирован сообщением`);
+        clearTimeout(this.messageTimer);
+        this.messageTimer = setTimeout(() => {
+            this.startMessageFadeOut();
+        }, 5000);
+    }
+
+    activateWreckInfoBlock() {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        console.log(`🔥 АКТИВАЦИЯ инфоблока огарка "${this.username}"`);
+
+        // 🔥 УСИЛЕННЫЕ ИСКОРКИ ПРИ АКТИВАЦИИ
+        for (let i = 0; i < 5; i++) {
+            this.createEnhancedSpark();
         }
 
-        // 🔥 ДЛЯ ЖИВЫХ ТАНКОВ - ТАЙМЕР ИСЧЕЗНОВЕНИЯ
-        if (!this.isWreck) {
-            clearTimeout(this.messageTimer);
-            this.messageTimer = setTimeout(() => {
-                this.startMessageFadeOut();
-            }, 5000);
-        } else {
-            // 🔥 ДЛЯ ОГАРКОВ - НЕ ЗАПУСКАЕМ ТАЙМЕР ИСЧЕЗНОВЕНИЯ
-            clearTimeout(this.messageTimer);
-            this.messageTimer = null;
+        // 🔥 1. ДЕЛАЕМ ИНФОБЛОК ВИДИМЫМ И ЯРКИМ
+        this.infoVisible = true;
+        this.infoAlpha = 0.9;        // Почти непрозрачный!
+        this.avatarAlpha = 0.8;      // Хорошо видимая аватарка
+        this.infoBlockHovered = false; // Сбрасываем hover
+
+        console.log(`🎨 Установлены прозрачности: info=${this.infoAlpha}, avatar=${this.avatarAlpha}`);
+
+        // 🔥 2. ОСТАНАВЛИВАЕМ ПРЕДЫДУЩИЙ ТАЙМЕР
+        if (this.fadeTimer) {
+            clearTimeout(this.fadeTimer);
+            console.log(`⏹️ Остановлен предыдущий таймер`);
         }
+
+        // 🔥 3. ЗАПУСКАЕМ НОВЫЙ ТАЙМЕР НА 8 СЕКУНД
+        this.fadeTimer = setTimeout(() => {
+            if (this.isWreck && this.infoVisible) {
+                console.log(`🌫️ 8 секунд прошло, начинаем затухание`);
+
+                // Возвращаем к почти невидимому состоянию
+                this.infoAlpha = 0.2;
+                this.avatarAlpha = 0.15;
+
+                // НЕ скрываем полностью, только делаем прозрачным
+                // this.infoVisible = true; // Оставляем видимым!
+            }
+        }, 8000);
+
+        // 🔥 4. ОБНОВЛЯЕМ ИНТЕРФЕЙС (если нужно)
+        if (game && game.updateUI) {
+            setTimeout(() => game.updateUI(), 10);
+        }
+    }
+
+    handleWreckHover(mouseX, mouseY) {
+        if (!this.isWreck || !this.isDestroyed || !mouseX || !mouseY) {
+            this.infoBlockHovered = false;
+            return false;
+        }
+
+        // 🔥 ПРОВЕРЯЕМ ПОПАДАНИЕ В МОДЕЛЬ ОГАРКА (а не в инфоблок)
+        const bounds = this.getBounds();
+        const hovered = (
+            mouseX >= bounds.x &&
+            mouseX <= bounds.x + bounds.width &&
+            mouseY >= bounds.y &&
+            mouseY <= bounds.y + bounds.height
+        );
+
+        if (hovered !== this.infoBlockHovered) {
+            this.infoBlockHovered = hovered;
+
+            if (hovered) {
+                console.log(`🖱️ Наведение на огарок ${this.username}`);
+                // 🔥 ПРИ НАВЕДЕНИИ ДЕЛАЕМ ИНФОБЛОК ВИДИМЫМ
+                this.infoVisible = true;
+                this.infoAlpha = 0.9;
+                this.avatarAlpha = 0.8;
+
+                // 🔥 ОСТАНАВЛИВАЕМ АВТО-ЗАТУХАНИЕ
+                if (this.fadeTimer) {
+                    clearTimeout(this.fadeTimer);
+                    this.fadeTimer = null;
+                }
+            } else {
+                console.log(`🖱️ Убрали наведение с огарка ${this.username}`);
+                // 🔥 ЧЕРЕЗ 2 СЕКУНДЫ ПОСЛЕ УХОДА - ЗАТУХАНИЕ
+                if (this.fadeTimer) {
+                    clearTimeout(this.fadeTimer);
+                }
+
+                this.fadeTimer = setTimeout(() => {
+                    if (this.isWreck && !this.infoBlockHovered) {
+                        this.infoAlpha = 0.2;
+                        this.avatarAlpha = 0.15;
+                    }
+                }, 2000);
+            }
+        }
+
+        return hovered;
+    }
+
+    startInfoFadeOut() {
+        if (!this.isWreck || !this.infoVisible) return;
+
+        console.log(`🌫️ Начинаем затухание инфоблока огарка ${this.username}`);
+
+        // 🔥 УСТАНАВЛИВАЕМ ВРЕМЯ НАЧАЛА ЗАТУХАНИЯ
+        this.infoFadeStartTime = Date.now();
     }
 
     // Показать следующее сообщение из очереди
@@ -949,15 +1104,9 @@ class Tank {
 
         this.health--;
         if (this.health <= 0) {
-            // 🔥 ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ - ПРЕВРАЩАЕМ В ОГАРОК
-            if (this.type === 'enemy' && (this.isViewerTank || this.enemyType === 'VIEWER')) {
-                this.turnIntoWreck();
-                return 'wreck'; // Специальный тип
-            } else {
-                // Обычные враги уничтожаются полностью
-                this.isDestroyed = true;
-                return this.hasBonus ? 'bonus' : true;
-            }
+            // 🔥 ВСЕ ТАНКИ ПРЕВРАЩАЮТСЯ В ОГАРКИ
+            this.turnIntoWreck();
+            return 'wreck'; // Возвращаем специальный тип
         }
         return false;
     }
@@ -1274,16 +1423,17 @@ class Tank {
     draw(ctx) {
         // 🔥 ОГАРКИ
         if (this.isWreck && this.isDestroyed) {
-            this.drawWreck(ctx);
+            // 1. Модель огарка с искорками
+            this.drawWreckModel(ctx);
 
-            // 🔥 ИНФОРМАЦИОННЫЙ БЛОК (только если достаточно видим)
-            if (this.infoBlockAlpha > 0.1) {
-                this.drawEnemyInfoWithAlpha(ctx);
+            // 2. Инфоблок (если видим)
+            if (this.infoVisible && this.infoAlpha > 0.05) {
+                this.drawWreckInfoBlock(ctx);
             }
             return;
         }
 
-        // 🔥 УНИЧТОЖЕННЫЕ (НЕ огарки)
+        // 🔥 ЖИВЫЕ ТАНКИ
         if (this.isDestroyed) return;
 
         this.drawTracks(ctx);
@@ -1344,6 +1494,496 @@ class Tank {
         if (this.type === 'enemy' && this.aiLevel === ENEMY_AI_LEVELS.BASIC) this.drawPatrolEffects(ctx);
     }
 
+    drawWreckInfoBlock(ctx) {
+        // 🔥 ЕСЛИ ИНФОБЛОК НЕВИДИМ ИЛИ СЛИШКОМ ПРОЗРАЧЕН - НЕ РИСУЕМ
+        if (!this.infoVisible || this.infoAlpha <= 0.05) {
+            return;
+        }
+
+        const username = this.originalUsername || this.username || 'Огарок';
+
+        ctx.save();
+
+        // 🔥 ПРИМЕНЯЕМ ПРОЗРАЧНОСТЬ ИНФОБЛОКА
+        ctx.globalAlpha = this.infoAlpha;
+
+        // 🔥 ПОДСЧИТАЕМ РАЗМЕРЫ
+        const textHeight = 14;
+        const padding = 6;
+
+        // Ширина имени
+        ctx.font = 'bold 12px Arial';
+        const nameWidth = ctx.measureText(username.toUpperCase()).width;
+
+        // Ширина сердечек
+        const hearts = this.originalHealth || this.health || 1;
+        const heartsWidth = hearts * 16;
+
+        // 🔥 ПРОВЕРЯЕМ ЕСТЬ ЛИ СООБЩЕНИЕ
+        let messageHeight = 0;
+        let messageWidth = 0;
+
+        if (this.currentMessage && this.currentMessage.isForWreck) {
+            messageHeight = 20;
+            const messageText = this.truncateTextWithEmojis(
+                `${this.currentMessage.username}: ${this.currentMessage.message}`,
+                30
+            );
+            messageWidth = this.measureTextWithEmojis(ctx, messageText);
+        }
+
+        const totalWidth = Math.max(nameWidth + heartsWidth + 20, messageWidth + 20);
+        const blockHeight = textHeight + padding * 2 + messageHeight;
+
+        // 🔥 ПОЗИЦИЯ (над огарком)
+        const blockX = this.position.x - totalWidth/2;
+        const blockY = this.position.y - this.size - blockHeight - 15;
+
+        // 🔥 ФОН ИНФОБЛОКА
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillRect(blockX, blockY, totalWidth, blockHeight);
+
+        // 🔥 ОБВОДКА ЦВЕТОМ ТАНКА
+        const strokeColor = this.originalColor || this.color || '#FFFFFF';
+        ctx.strokeStyle = strokeColor + Math.floor(this.infoAlpha * 255).toString(16).padStart(2, '0');
+        ctx.lineWidth = 2;
+        ctx.strokeRect(blockX, blockY, totalWidth, blockHeight);
+
+        // 🔥 ИМЯ
+        let currentX = blockX + 8;
+        const textY = blockY + textHeight/2 + padding;
+
+        ctx.font = 'bold 12px Arial';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(username.toUpperCase(), currentX, textY);
+        currentX += nameWidth + 8;
+
+        // 🔥 СЕРДЕЧКИ
+        ctx.font = '12px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+        ctx.fillStyle = '#FF4444';
+        for (let i = 0; i < hearts; i++) {
+            ctx.fillText('❤️', currentX, textY);
+            currentX += 16;
+        }
+
+        // 🔥 СООБЩЕНИЕ (если есть)
+        if (this.currentMessage && this.currentMessage.isForWreck) {
+            const messageText = this.truncateTextWithEmojis(
+                `${this.currentMessage.username}: ${this.currentMessage.message}`,
+                30
+            );
+
+            const messageY = blockY + textHeight + padding * 2 + 5;
+
+            // Разделительная линия
+            ctx.strokeStyle = strokeColor + '77';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(blockX + 4, blockY + textHeight + padding * 1.5);
+            ctx.lineTo(blockX + totalWidth - 4, blockY + textHeight + padding * 1.5);
+            ctx.stroke();
+
+            // Текст сообщения
+            ctx.fillStyle = '#FFFF00'; // Желтый для сообщений огарков
+            ctx.font = 'normal 10px Arial';
+            ctx.textAlign = 'left';
+
+            const messageParts = this.splitTextWithEmojis(messageText);
+            let msgX = blockX + 8;
+
+            for (const part of messageParts) {
+                if (this.isEmoji(part)) {
+                    ctx.font = '14px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
+                    ctx.fillText(part, msgX, messageY);
+                    msgX += 18;
+                } else {
+                    ctx.font = 'normal 10px Arial';
+                    ctx.fillText(part, msgX, messageY);
+                    msgX += ctx.measureText(part).width;
+                }
+            }
+
+            // 🔥 ИНДИКАТОР ВРЕМЕНИ СООБЩЕНИЯ
+            const elapsed = Date.now() - this.currentMessage.timestamp;
+            const timeLeft = Math.max(0, 8000 - elapsed);
+            const timeProgress = timeLeft / 8000;
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            ctx.fillRect(blockX + 8, blockY + blockHeight - 4, totalWidth - 16, 2);
+
+            ctx.fillStyle = timeProgress > 0.5 ? '#4CAF50' :
+            timeProgress > 0.2 ? '#FF9800' : '#F44336';
+            ctx.fillRect(blockX + 8, blockY + blockHeight - 4,
+                         (totalWidth - 16) * timeProgress, 2);
+        }
+
+        // 🔥 АВАТАРКА
+        if ((this.originalAvatarImage || this.avatarImage) &&
+            (this.isViewerTank || this.originalEnemyType === 'VIEWER')) {
+
+            this.drawWreckAvatar(ctx, blockX, blockY, blockHeight);
+            }
+
+            ctx.restore();
+    }
+
+    drawWreckAvatar(ctx, blockX, blockY, blockHeight) {
+        const avatarSize = blockHeight - 4;
+        const avatarX = blockX - avatarSize - 5;
+        const avatarY = blockY + (blockHeight - avatarSize) / 2;
+
+        ctx.save();
+
+        // 🔥 ПРИМЕНЯЕМ ПРОЗРАЧНОСТЬ АВАТАРКИ
+        ctx.globalAlpha = this.avatarAlpha;
+
+        // 🔥 КРУГЛАЯ МАСКА
+        const centerX = avatarX + avatarSize/2;
+        const centerY = avatarY + avatarSize/2;
+
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, avatarSize/2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // 🔥 РИСУЕМ АВАТАРКУ
+        const img = this.originalAvatarImage || this.avatarImage;
+        if (img) {
+            const aspectRatio = img.width / img.height;
+
+            let drawWidth, drawHeight, offsetX, offsetY;
+
+            if (aspectRatio > 1) {
+                drawWidth = avatarSize;
+                drawHeight = avatarSize / aspectRatio;
+                offsetX = 0;
+                offsetY = (avatarSize - drawHeight) / 2;
+            } else {
+                drawWidth = avatarSize * aspectRatio;
+                drawHeight = avatarSize;
+                offsetX = (avatarSize - drawWidth) / 2;
+                offsetY = 0;
+            }
+
+            ctx.drawImage(img, avatarX + offsetX, avatarY + offsetY, drawWidth, drawHeight);
+        } else {
+            // 🔥 ЗАГЛУШКА ЕСЛИ НЕТ АВАТАРКИ
+            ctx.fillStyle = '#666666';
+            ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize);
+
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('👤', centerX, centerY);
+        }
+
+        // 🔥 ОЧЕНЬ ПРОЗРАЧНАЯ ОБВОДКА
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, avatarSize/2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 🔥 ЛИНИЯ К ИНФОБЛОКУ
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(avatarX + avatarSize, centerY);
+        ctx.lineTo(blockX, centerY);
+        ctx.stroke();
+    }
+
+    // 🔥 ИСПРАВЛЕННЫЙ МЕТОД БЕЗ АРТЕФАКТОВ
+    drawWreckModel(ctx) {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        // 🔥 1. РИСУЕМ ТЕНЬ (СНАЧАЛА!)
+        this.drawWreckShadow(ctx);
+
+        // 🔥 2. РИСУЕМ МОДЕЛЬ ТАНКА
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        ctx.globalAlpha = this.wreckAlpha;
+
+        let angle = 0;
+        if (this.direction === DIRECTIONS.RIGHT) angle = Math.PI / 2;
+        else if (this.direction === DIRECTIONS.DOWN) angle = Math.PI;
+        else if (this.direction === DIRECTIONS.LEFT) angle = -Math.PI / 2;
+        ctx.rotate(angle);
+
+        const halfSize = this.size / 2;
+
+        // 🔥 КОРПУС
+        ctx.fillStyle = this.wreckBodyColor || '#444444';
+        ctx.fillRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        ctx.strokeStyle = '#222222';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
+
+        // 🔥 ГУСЕНИЦЫ
+        ctx.fillStyle = this.wreckTrackColor || '#333333';
+        const trackWidth = this.size * 0.2;
+        const trackHeight = this.size * 0.7;
+        const trackY = -trackHeight/2;
+
+        ctx.fillRect(-halfSize * 0.9, trackY, trackWidth, trackHeight);
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        ctx.strokeStyle = '#1A1A1A';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-halfSize * 0.9, trackY, trackWidth, trackHeight);
+        ctx.strokeRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // 🔥 БАШНЯ
+        ctx.fillStyle = this.wreckTurretColor || '#555555';
+        const turretRadius = this.size / 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = '#333333';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 🔥 ДУЛО
+        ctx.fillStyle = this.wreckBarrelColor || '#666666';
+        const barrelWidth = this.size * 0.12;
+        const barrelLength = this.size * 0.5;
+
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        ctx.strokeStyle = '#444444';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        ctx.restore();
+
+
+        // 🔥 3. РИСУЕМ ИСКОРКИ (ПОВЕРХ ТАНКА)
+        this.drawSparks(ctx);
+    }
+
+    // 🔥 УСИЛЕННЫЕ ИСКОРКИ ПРИ АКТИВНОСТИ (сообщение или наведение)
+    createEnhancedSpark() {
+        if (this.sparks.length >= this.maxSparks * 2) return;
+
+        const angle = Math.random() * Math.PI * 2;
+        const distance = this.size * (0.2 + Math.random() * 0.6);
+
+        const spark = {
+            x: Math.cos(angle) * distance,
+            y: Math.sin(angle) * distance,
+            size: 2 + Math.random() * 4, // БОЛЬШЕ
+            speedX: (Math.random() - 0.5) * 2.5, // БЫСТРЕЕ
+            speedY: -2 - Math.random() * 3,      // ВЫШЕ
+            life: 30 + Math.random() * 60,       // ДОЛЬШЕ
+            maxLife: 30 + Math.random() * 60,
+            color: this.sparkColors[Math.floor(Math.random() * this.sparkColors.length)],
+            flicker: Math.random() * Math.PI * 2,
+            isEnhanced: true // Помечаем как усиленную
+        };
+
+        this.sparks.push(spark);
+    }
+
+
+    // 🔥 МЕТОД ДЛЯ СОЗДАНИЯ НОВОЙ ИСКОРКИ
+    createSpark() {
+        if (this.sparks.length >= this.maxSparks) return;
+
+        // Случайная позиция вокруг танка
+        const angle = Math.random() * Math.PI * 2;
+        const distance = this.size * (0.3 + Math.random() * 0.4);
+
+        const spark = {
+            x: Math.cos(angle) * distance,
+            y: Math.sin(angle) * distance,
+            size: 1 + Math.random() * 3, // Размер
+            speedX: (Math.random() - 0.5) * 1.5, // Горизонтальная скорость
+            speedY: -1 - Math.random() * 2,      // Вверх (отрицательная)
+            life: 20 + Math.random() * 40,       // Время жизни
+            maxLife: 20 + Math.random() * 40,
+            color: this.sparkColors[Math.floor(Math.random() * this.sparkColors.length)],
+            flicker: Math.random() * Math.PI * 2 // Для мерцания
+        };
+
+        this.sparks.push(spark);
+    }
+
+    updateSparks() {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        // 🔥 СОЗДАЕМ НОВЫЕ ИСКОРКИ ПЕРИОДИЧЕСКИ
+        this.sparkTimer++;
+        if (this.sparkTimer >= this.sparkInterval) {
+            this.sparkTimer = 0;
+
+            // 50% шанс создать искорку
+            if (Math.random() < 0.5) {
+                this.createSpark();
+            }
+        }
+
+        // 🔥 ОБНОВЛЯЕМ СУЩЕСТВУЮЩИЕ ИСКОРКИ
+        for (let i = this.sparks.length - 1; i >= 0; i--) {
+            const spark = this.sparks[i];
+
+            // Движение
+            spark.x += spark.speedX;
+            spark.y += spark.speedY;
+
+            // Гравитация (легкая)
+            spark.speedY += 0.05;
+
+            // Уменьшаем жизнь
+            spark.life--;
+
+            // Удаляем если умерла
+            if (spark.life <= 0) {
+                this.sparks.splice(i, 1);
+            }
+        }
+    }
+
+    // 🔥 МЕТОД ОТРИСОВКИ ИСКОРОК
+    drawSparks(ctx) {
+        if (!this.isWreck || !this.isDestroyed || this.sparks.length === 0) return;
+
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        this.sparks.forEach(spark => {
+            // 🔥 ПРОЗРАЧНОСТЬ ПО ЖИЗНИ
+            const alpha = spark.life / spark.maxLife;
+
+            // 🔥 МЕРЦАНИЕ
+            const flicker = Math.sin(spark.flicker + Date.now() * 0.01) * 0.3 + 0.7;
+            ctx.globalAlpha = alpha * flicker;
+
+            // 🔥 ЦВЕТ ИСКОРКИ
+            ctx.fillStyle = spark.color;
+
+            // 🔥 РИСУЕМ ИСКОРКУ (крошечный круг)
+            ctx.beginPath();
+            ctx.arc(spark.x, spark.y, spark.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 🔥 СВЕЧЕНИЕ ВОКРУГ ИСКОРКИ
+            if (alpha > 0.5) {
+                const glowRadius = spark.size * 2;
+                const gradient = ctx.createRadialGradient(
+                    spark.x, spark.y, 0,
+                    spark.x, spark.y, glowRadius
+                );
+
+                // Конвертируем hex в rgba для использования с альфа-каналом
+                const rgbColor = this.hexToRgb(spark.color);
+                if (rgbColor) {
+                    // Первый цветовой стоп - непрозрачный
+                    gradient.addColorStop(0, `rgba(${rgbColor.r}, ${rgbColor.g}, ${rgbColor.b}, ${alpha})`);
+                    // Второй - полностью прозрачный
+                    gradient.addColorStop(1, `rgba(${rgbColor.r}, ${rgbColor.g}, ${rgbColor.b}, 0)`);
+                }
+
+                ctx.globalAlpha = alpha * 0.3;
+                ctx.fillStyle = gradient;
+
+                ctx.beginPath();
+                ctx.arc(spark.x, spark.y, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+
+        ctx.restore();
+    }
+
+    // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ КОНВЕРТАЦИИ HEX В RGB
+    hexToRgb(hex) {
+        // Удаляем # если есть
+        hex = hex.replace(/^#/, '');
+
+        // Проверяем длину
+        if (hex.length === 3) {
+            hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+        }
+
+        const bigint = parseInt(hex, 16);
+        if (isNaN(bigint)) return null;
+
+        return {
+            r: (bigint >> 16) & 255,
+            g: (bigint >> 8) & 255,
+            b: bigint & 255
+        };
+    }
+
+    drawWreckShadow(ctx) {
+        if (!this.isWreck || !this.isDestroyed) return;
+
+        ctx.save();
+
+        // Тень под танком
+        const shadowSize = this.size * 1.2;
+        const shadowY = this.position.y + this.size * 0.3;
+
+        const gradient = ctx.createRadialGradient(
+            this.position.x, shadowY, shadowSize * 0.3,
+            this.position.x, shadowY, shadowSize * 0.8
+        );
+
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.ellipse(
+            this.position.x, shadowY,
+            shadowSize * 0.5, shadowSize * 0.3,
+            0, 0, Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    clearAllEffects() {
+        // 🔥 ОЧИЩАЕМ ВСЕ ВИЗУАЛЬНЫЕ ЭФФЕКТЫ КОТОРЫЕ МОГУТ ВЫЗЫВАТЬ АРТЕФАКТЫ
+
+        // Частицы и эффекты
+        this.iceCrystals = [];
+        this.reverseParticles = [];
+        this.freezeParticles = [];
+        this.tracks = []; // 🔥 ОЧИЩАЕМ СЛЕДЫ!
+
+        // Анимации
+        this.blinkTimer = 0;
+        this.blinkAlpha = 1.0;
+        this.blinkDirection = -1;
+
+        // Таймеры
+        this.beaconRotation = 0;
+        this.beaconFlashTimer = 0;
+
+        // Эффекты состояния
+        this.stuckTimer = 0;
+        this.spawnProtection = 0;
+
+        // 🔥 ОЧЕНЬ ВАЖНО: ОЧИЩАЕМ pathMemory если есть
+        if (this.pathMemory) {
+            this.pathMemory.clear();
+        }
+
+        console.log(`🧹 Очищены все эффекты для огарка ${this.username}`);
+    }
+
     // 🔥 ОТРИСОВКА ОГАРКА (УПРОЩЕННАЯ МОДЕЛЬ)
     drawWreck(ctx) {
         if (!this.isWreck || !this.isDestroyed) return;
@@ -1351,38 +1991,114 @@ class Tank {
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
-        // 🔥 ФИКСИРОВАННАЯ ПРОЗРАЧНОСТЬ ОГАРКА
+        // 🔥 ПРИМЕНЯЕМ ПРОЗРАЧНОСТЬ В ЗАВИСИМОСТИ ОТ ТИПА
         ctx.globalAlpha = this.wreckAlpha;
 
-        // Простая обугленная модель
+        let angle = 0;
+        if (this.direction === DIRECTIONS.RIGHT) angle = Math.PI / 2;
+        else if (this.direction === DIRECTIONS.DOWN) angle = Math.PI;
+        else if (this.direction === DIRECTIONS.LEFT) angle = -Math.PI / 2;
+        ctx.rotate(angle);
+
+        // ОБУГЛЕННЫЙ ВАРИАНТ ТАНКА
         const halfSize = this.size / 2;
 
-        // Корпус
-        ctx.fillStyle = '#2C2C2C';
+        // Корпус (очень темный)
+        ctx.fillStyle = this.type === 'player' ? '#1A1A1A' : '#2C2C2C';
         ctx.fillRect(-halfSize * 0.8, -halfSize * 0.6, this.size * 0.8, this.size * 0.6);
 
-        // Гусеницы
+        // Гусеницы (еще темнее)
         ctx.fillStyle = '#1A1A1A';
-        ctx.fillRect(-halfSize * 0.9, -halfSize * 0.3, this.size * 0.2, this.size * 0.6);
-        ctx.fillRect(halfSize * 0.7, -halfSize * 0.3, this.size * 0.2, this.size * 0.6);
+        const trackWidth = this.size * 0.2;
+        const trackHeight = this.size * 0.7;
+        const trackY = -trackHeight/2;
 
-        // Башня
+        ctx.fillRect(-halfSize * 0.9, trackY, trackWidth, trackHeight);
+        ctx.fillRect(halfSize * 0.7, trackY, trackWidth, trackHeight);
+
+        // Башня (угольная)
         ctx.fillStyle = '#333';
         const turretRadius = this.size / 4;
         ctx.beginPath();
         ctx.arc(0, 0, turretRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // 🔥 СВЕЧЕНИЕ ПРИ АКТИВНОСТИ ОТ ЧАТА
+        // 🔥 ДУЛО (сломанное)
+        ctx.fillStyle = '#555';
+        const barrelWidth = this.size * 0.1;
+        const barrelLength = this.size * 0.5; // Короче обычного
+        ctx.fillRect(-barrelWidth/2, -barrelLength - 2, barrelWidth, barrelLength);
+
+        // 🔥 ЭФФЕКТ ИСКР ПРИ АКТИВНОСТИ ОТ ЧАТА
         if (this.infoBlockChatActivated) {
             const pulse = (Math.sin(Date.now() * 0.005) + 1) * 0.3;
-            ctx.fillStyle = `rgba(255, 200, 0, ${0.3 + pulse * 0.2})`;
+            ctx.fillStyle = `rgba(255, 150, 0, ${0.2 + pulse * 0.2})`;
             ctx.beginPath();
             ctx.arc(0, 0, turretRadius * 1.5, 0, Math.PI * 2);
             ctx.fill();
         }
 
         ctx.restore();
+
+        // 🔥 ОСОБАЯ ОТРИСОВКА ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ С АВАТАРКОЙ
+        if ((this.isViewerTank || this.enemyType === 'VIEWER') && this.avatarImage) {
+            this.drawFadedAvatar(ctx);
+        }
+    }
+
+    drawFadedAvatar(ctx) {
+        if (!this.isWreck || !this.avatarImage || this.avatarError) return;
+
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+
+        // 🔥 ПРИМЕНЯЕМ МГНОВЕННОЕ ЗАТЕМНЕНИЕ
+        ctx.globalAlpha = this.avatarFadeAlpha;
+
+        const avatarSize = this.size;
+        const img = this.avatarImage;
+        const aspectRatio = img.width / img.height;
+
+        let drawWidth, drawHeight, offsetX, offsetY;
+
+        if (aspectRatio > 1) {
+            drawWidth = avatarSize;
+            drawHeight = avatarSize / aspectRatio;
+            offsetX = 0;
+            offsetY = (avatarSize - drawHeight) / 2;
+        } else {
+            drawWidth = avatarSize * aspectRatio;
+            drawHeight = avatarSize;
+            offsetX = (avatarSize - drawWidth) / 2;
+            offsetY = 0;
+        }
+
+        // Создаем круглую маску для аватарки
+        ctx.beginPath();
+        ctx.arc(0, 0, avatarSize / 2, 0, Math.PI * 2);
+        ctx.clip();
+
+        // Отрисовываем бледную аватарку
+        ctx.drawImage(img, -drawWidth/2 + offsetX, -drawHeight/2 + offsetY, drawWidth, drawHeight);
+
+        ctx.restore();
+    }
+
+    // 🔥 МЕТОД ДЛЯ СБРОСА АВАТАРКИ ПРИ НОВОМ РАУНДЕ
+    resetAvatarState() {
+        // Сбрасываем состояние загрузки, но сохраняем изображение
+        this.avatarLoaded = false;
+        this.avatarError = false;
+        this.avatarLoading = false;
+        this.avatarShowProgress = 0;
+
+        // 🔥 ВАЖНО: НЕ обнуляем this.avatarImage!
+        // Он может быть закэширован и использоваться повторно
+
+        // Если был URL - пытаемся перезагрузить
+        if (this.avatarUrl && this.avatarUrl !== '') {
+            this.loadAvatar();
+        }
     }
 
     // 🔥 УПРОЩЕННЫЙ МЕТОД drawEnemyInfoWithAlpha
@@ -2417,9 +3133,11 @@ class Tank {
     }
 
     drawUnifiedEnemyInfoAtPosition(ctx, tankX, tankY) {
+        if (!this.username) return; // 🔥 ДОБАВИЛИ ПРОВЕРКУ
+
         const username = this.username.toUpperCase();
 
-        // 🔥 1. ОБЪЯВЛЯЕМ ИКОНКИ БОНУСОВ ОДИН РАЗ
+        // 🔥 ОБЪЯВЛЯЕМ ИКОНКИ БОНУСОВ
         const BONUS_ICONS = {
             'EXTRA_LIFE': '❤️',
             'SPEED_BOOST': '⚡',
@@ -2431,20 +3149,23 @@ class Tank {
 
         let bonusText = '';
         let bonusWidth = 0;
-        let bonusIcon = '⭐'; // Значение по умолчанию
+        let bonusIcon = '⭐';
 
-        if (this.isViewerTank && this.hasViewerBonus) {
-            bonusIcon = BONUS_ICONS[this.viewerBonusType] || '⭐';
-            bonusText = `[${bonusIcon}]`;
+        // 🔥 ИСПРАВЛЕНИЕ: Проверяем ТОЛЬКО если танк не огарок
+        if (!this.isWreck && !this.isDestroyed) {
+            if (this.isViewerTank && this.hasViewerBonus) {
+                bonusIcon = BONUS_ICONS[this.viewerBonusType] || '⭐';
+                bonusText = `[${bonusIcon}]`;
+            }
         }
 
-        // 🔥 2. ПОДСЧИТАЕМ РЕАЛЬНЫЕ ШИРИНЫ
+        // 🔥 ПОДСЧИТАЕМ РЕАЛЬНЫЕ ШИРИНЫ
         ctx.save();
 
         // Ширина бонуса (если есть)
         if (bonusText) {
             ctx.font = '11px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
-            bonusWidth = ctx.measureText(bonusText).width + 2; // +2 пробел после
+            bonusWidth = ctx.measureText(bonusText).width + 2;
         }
 
         // Ширина имени
@@ -2458,10 +3179,10 @@ class Tank {
         const heartsWidth = this.health * heartWidth;
 
         // Общая ширина содержимого
-        let totalWidth = bonusWidth + nameWidth + heartsWidth + 8; // +8 для пробелов
+        let totalWidth = bonusWidth + nameWidth + heartsWidth + 8;
         const textHeight = 14;
 
-        // 🔥 3. ПРОВЕРИМ СООБЩЕНИЕ
+        // 🔥 ПРОВЕРИМ СООБЩЕНИЕ
         let blockHeight = textHeight + 16;
         let messageText = '';
         let messageWidth = 0;
@@ -2479,47 +3200,48 @@ class Tank {
 
         ctx.restore();
 
-        // 🔥 4. РАССЧИТАЕМ РАЗМЕРЫ БЛОКА
+        // 🔥 РАССЧИТАЕМ РАЗМЕРЫ БЛОКА
         const padding = 8;
         const blockWidth = Math.max(totalWidth, messageWidth) + padding * 2;
 
-        // 🔥 5. НАЙДЕМ ПОЗИЦИЮ БЛОКА
+        // 🔥 НАЙДЕМ ПОЗИЦИЮ БЛОКА
         const {blockX, blockY, preferredSide} = this.findBestInfoPosition(
             tankX, tankY, blockWidth, blockHeight
         );
 
-        // 🔥 6. ОТРИСУЕМ БЛОК
+        // 🔥 ОТРИСУЕМ БЛОК
         this.drawEnemyIconAtPosition(ctx, blockX, blockY, blockWidth, blockHeight, preferredSide);
 
-        // Фон блока
-        const gradient = ctx.createLinearGradient(blockX, blockY, blockX + blockWidth, blockY + blockHeight);
-        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.85)');
-        gradient.addColorStop(1, 'rgba(50, 50, 50, 0.85)');
-
-        ctx.fillStyle = gradient;
+        // 🔥 ФОН БЛОКА (УСИЛЕННЫЙ ДЛЯ ЛУЧШЕЙ ВИДИМОСТИ)
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
         ctx.fillRect(blockX, blockY, blockWidth, blockHeight);
 
-        // Обводка
-        ctx.strokeStyle = this.color + 'CC';
+        // 🔥 ОБВОДКА
+        ctx.strokeStyle = this.color + 'FF'; // Полная непрозрачность
         ctx.lineWidth = 2;
         ctx.strokeRect(blockX, blockY, blockWidth, blockHeight);
 
-        // 🔥 7. ОТРИСУЕМ СОДЕРЖИМОЕ
+        // 🔥 ВНУТРЕННЯЯ БЕЛАЯ ОБВОДКА ДЛЯ КОНТРАСТА
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(blockX + 1, blockY + 1, blockWidth - 2, blockHeight - 2);
+
+        // 🔥 ОТРИСУЕМ СОДЕРЖИМОЕ
         let currentX = blockX + 8;
         const textY = blockY + 14;
 
-        // 7.1 ИКОНКА БОНУСА (если есть)
+        // 1. ИКОНКА БОНУСА (если есть)
         if (bonusText) {
             ctx.font = '11px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
 
-            // Рисуем скобки серым, иконку белым
+            // Рисуем скобки серым
             ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
             ctx.fillText('[', currentX, textY);
             currentX += ctx.measureText('[').width;
 
-            // Иконка (УЖЕ ОПРЕДЕЛЕНА ВЫШЕ - bonusIcon)
+            // Иконка
             ctx.fillStyle = '#FFFFFF';
             ctx.fillText(bonusIcon, currentX, textY);
             currentX += ctx.measureText(bonusIcon).width;
@@ -2527,38 +3249,36 @@ class Tank {
             // Правая скобка
             ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
             ctx.fillText(']', currentX, textY);
-            currentX += ctx.measureText(']').width + 2; // Пробел
+            currentX += ctx.measureText(']').width + 2;
         }
 
-        // 7.2 ИМЯ
+        // 2. ИМЯ
         ctx.font = 'bold 12px Arial';
         ctx.fillStyle = '#FFFFFF';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(username, currentX, textY);
-        currentX += ctx.measureText(username).width + 4; // Пробел
+        currentX += nameWidth + 4;
 
-        // 7.3 СЕРДЕЧКИ ЗДОРОВЬЯ
-        // 🔥 ОШИБКА: используем heartChar ('♥'), а рисуем '❤️'
-        // Исправляем:
+        // 3. СЕРДЕЧКИ ЗДОРОВЬЯ
         ctx.font = '12px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
         ctx.fillStyle = '#FF4444';
         for (let i = 0; i < this.health; i++) {
             ctx.fillText('❤️', currentX, textY);
-            currentX += heartWidth; // Используем заранее рассчитанную ширину
+            currentX += 20; // Фиксированная ширина для эмодзи
         }
 
-        // 🔥 8. СООБЩЕНИЕ (если есть)
+        // 🔥 СООБЩЕНИЕ (если есть)
         if (this.currentMessage && this.messageAlpha > 0.05 && messageText) {
             // Разделительная линия
-            ctx.strokeStyle = this.color + '77';
+            ctx.strokeStyle = this.color + 'AA';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(blockX + 4, blockY + 24);
             ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
             ctx.stroke();
 
-            // Определяем цвет
+            // Цвет текста
             let textColor = `rgba(255, 255, 255, ${this.messageAlpha})`;
             if (messageText.toLowerCase().includes('!танк') || messageText.toLowerCase().includes('!tank')) {
                 textColor = `rgba(0, 255, 0, ${this.messageAlpha})`;
@@ -2570,7 +3290,7 @@ class Tank {
 
             ctx.fillStyle = textColor;
 
-            // Рисуем сообщение
+            // Разделяем текст на части для правильной отрисовки
             const messageParts = this.splitTextWithEmojis(messageText);
             let msgX = blockX + 8;
             const msgY = blockY + 34;
@@ -2590,7 +3310,7 @@ class Tank {
             // Индикатор времени
             if (this.currentMessage) {
                 const elapsed = Date.now() - this.currentMessage.timestamp;
-                const timeProgress = 1 - Math.min(elapsed / 5000, 1);
+                const timeProgress = 1 - Math.min(elapsed / 8000, 1); // 8 секунд
 
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
                 ctx.fillRect(blockX + 8, blockY + blockHeight - 6, blockWidth - 16, 3);
@@ -2601,7 +3321,7 @@ class Tank {
             }
         }
 
-        // 🔥 9. ЛИНИЯ К ТАНКУ
+        // 🔥 ЛИНИЯ К ТАНКУ
         this.drawEnemyConnectionLineToTank(ctx, blockX, blockY, blockWidth, blockHeight, tankX, tankY, preferredSide);
     }
 
@@ -3013,47 +3733,57 @@ class Tank {
 
         switch(side) {
             case 'top':
-                iconX = blockX + blockWidth/2 - iconSize/2; // По центру сверху
+                iconX = blockX + blockWidth/2 - iconSize/2;
                 iconY = blockY - iconSize - 5;
                 break;
             case 'right':
-                iconX = blockX + blockWidth + 5; // Справа от блока
+                iconX = blockX + blockWidth + 5;
                 iconY = blockY + blockHeight/2 - iconSize/2;
                 break;
             case 'left':
-                iconX = blockX - iconSize - 5; // Слева от блока
+                iconX = blockX - iconSize - 5;
                 iconY = blockY + blockHeight/2 - iconSize/2;
                 break;
             case 'bottom':
             default:
-                iconX = blockX + blockWidth/2 - iconSize/2; // По центру снизу
+                iconX = blockX + blockWidth/2 - iconSize/2;
                 iconY = blockY + blockHeight + 5;
                 break;
         }
 
         ctx.save();
 
-        // Обводка цветом танка
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2 + 2, 0, Math.PI * 2);
-        ctx.fill();
+        // 🔥 ВАЖНОЕ ИСПРАВЛЕНИЕ: Проверяем состояние аватарки ПОЛНОСТЬЮ
+        const hasAvatar = (this.isViewerTank || this.enemyType === 'VIEWER') &&
+        this.avatarUrl &&
+        this.avatarUrl !== '' &&
+        !this.avatarError;
 
-        // Белый фон
-        ctx.fillStyle = '#FFFFFF';
-        ctx.beginPath();
-        ctx.arc(iconX + iconSize/2, iconY + iconSize/2, iconSize/2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Отрисовка иконки или аватарки
-
-        this.drawAvatarImageAtPosition(ctx, iconX, iconY, iconSize);
+        if (hasAvatar) {
+            // 🔥 ПРИОРИТЕТ 1: Попытаться нарисовать аватарку
+            if (this.avatarImage && this.avatarLoaded) {
+                // Аватарка загружена - рисуем ее
+                this.drawAvatarImageAtPosition(ctx, iconX, iconY, iconSize);
+            } else if (this.avatarLoading) {
+                // Аватарка загружается - рисуем индикатор
+                this.drawLoadingIndicatorAtPosition(ctx, iconX, iconY, iconSize);
+            } else {
+                // Аватарка не загружена и не загружается - попробуем загрузить
+                console.log(`🔄 Для ${this.username} аватарка не загружена, запускаем загрузку...`);
+                this.loadAvatar();
+                // Пока загружается - рисуем индикатор
+                this.drawLoadingIndicatorAtPosition(ctx, iconX, iconY, iconSize);
+            }
+        } else {
+            // 🔥 ПРИОРИТЕТ 2: Рисуем стандартную иконку
+            this.drawIcon(ctx, iconX, iconY, iconSize);
+        }
 
         ctx.restore();
     }
 
     drawAvatarImageAtPosition(ctx, x, y, size) {
-        if (!this.avatarImage || !this.avatarLoaded) {
+        if (!this.avatarImage || this.avatarError) {
             this.drawLoadingIndicatorAtPosition(ctx, x, y, size);
             return;
         }
@@ -3061,13 +3791,16 @@ class Tank {
         try {
             ctx.save();
 
-            // Создаем круглую маску
+            const centerX = x + size/2;
+            const centerY = y + size/2;
+
+            // 🔥 Создаем круглую маску
             ctx.beginPath();
-            ctx.arc(x + size/2, y + size/2, size/2, 0, Math.PI * 2);
+            ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
             ctx.clip();
 
-            // Плавное появление
-            if (!this.avatarShowProgress) this.avatarShowProgress = 0;
+            // 🔥 Плавное появление
+            if (this.avatarShowProgress === undefined) this.avatarShowProgress = 0;
             this.avatarShowProgress = Math.min(this.avatarShowProgress + 0.1, 1);
             ctx.globalAlpha = this.avatarShowProgress;
 
@@ -3077,52 +3810,143 @@ class Tank {
             let drawWidth, drawHeight, offsetX, offsetY;
 
             if (aspectRatio > 1) {
+                // Широкая картинка
                 drawWidth = size;
                 drawHeight = size / aspectRatio;
                 offsetX = 0;
                 offsetY = (size - drawHeight) / 2;
             } else {
+                // Высокая картинка
                 drawWidth = size * aspectRatio;
                 drawHeight = size;
                 offsetX = (size - drawWidth) / 2;
                 offsetY = 0;
             }
 
+            // Отрисовываем аватарку
             ctx.drawImage(img, x + offsetX, y + offsetY, drawWidth, drawHeight);
+
+            // 🔥 Белая обводка вокруг аватарки
+            ctx.globalAlpha = 1.0;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+            ctx.stroke();
+
             ctx.restore();
 
         } catch (e) {
-            console.log('Ошибка отрисовки аватарки:', e);
+            console.log('❌ Ошибка отрисовки аватарки:', e);
             this.drawLoadingIndicatorAtPosition(ctx, x, y, size);
         }
     }
 
+    // 🔥 УЛУЧШЕННЫЙ ИНДИКАТОР ЗАГРУЗКИ
     drawLoadingIndicatorAtPosition(ctx, x, y, size) {
         ctx.save();
 
         const centerX = x + size/2;
         const centerY = y + size/2;
 
+        // Серый фон круга
+        ctx.fillStyle = '#CCCCCC';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Анимированное кольцо загрузки
         const time = Date.now() * 0.01;
         const progress = (time % 100) / 100;
 
         ctx.translate(centerX, centerY);
         ctx.rotate(progress * Math.PI * 2);
 
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 2;
+        let color = '#FFFFFF';
+        if (this.avatarError) {
+            color = '#FF4444';
+        } else if (this.avatarLoading) {
+            color = '#00BFFF';
+        }
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(0, 0, size/4, 0, Math.PI * 1.5);
         ctx.stroke();
 
         ctx.restore();
 
-        if (!this.avatarError) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.font = 'bold 8px Arial';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('...', centerX, centerY);
+        // Текст состояния
+        ctx.fillStyle = color;
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        let statusText = '...';
+        if (this.avatarError) {
+            statusText = '❌';
+        } else if (this.avatarLoading) {
+            statusText = '↻';
+        }
+
+        ctx.fillText(statusText, centerX, centerY);
+    }
+
+    drawIcon(ctx, x, y, size) {
+        ctx.save();
+
+        const centerX = x + size/2;
+        const centerY = y + size/2;
+
+        // Серый фон круга
+        ctx.fillStyle = '#CCCCCC';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Определяем иконку по типу танка
+        let icon = '⚫';
+
+        if (this.isViewerTank || this.enemyType === 'VIEWER') {
+            icon = '👤';
+        } else {
+            switch(this.enemyType) {
+                case 'BASIC': icon = '🔴'; break;
+                case 'FAST': icon = '🟡'; break;
+                case 'HEAVY': icon = '🟣'; break;
+                case 'SNIPER': icon = '🟢'; break;
+            }
+        }
+
+        // Цветная обводка
+        ctx.strokeStyle = this.color || '#C0392B';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, size/2, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Рисуем иконку
+        ctx.font = `bold ${size * 0.5}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(icon, centerX, centerY);
+
+        ctx.restore();
+    }
+
+    clearWreckState() {
+        if (this.isWreck) {
+            // 🔥 ОЧИЩАЕМ СООБЩЕНИЯ
+            this.chatMessages = [];
+            this.currentMessage = null;
+            this.wreckChatMessage = null;
+
+            // 🔥 СБРАСЫВАЕМ СОСТОЯНИЕ ИНФО-БЛОКА
+            this.infoBlockAlpha = this.infoBlockMaxAlpha;
+            this.infoBlockChatActivated = false;
+            this.infoBlockChatTimer = 0;
+            this.infoBlockHovered = false;
         }
     }
 
@@ -3136,34 +3960,87 @@ class Tank {
         ctx.stroke();
     }
 
+    // 🔥 ОБНОВЛЕННЫЙ МЕТОД ЗАГРУЗКИ АВАТАРКИ
     loadAvatar() {
+        console.log(`=== ЗАГРУЗКА АВАТАРКИ ДЛЯ ${this.username} ===`);
+        console.log(`📁 avatarUrl: ${this.avatarUrl}`);
+        console.log(`✅ isViewerTank: ${this.isViewerTank}`);
+        console.log(`✅ enemyType: ${this.enemyType}`);
+        console.log(`📊 Состояние: loaded=${this.avatarLoaded}, loading=${this.avatarLoading}, error=${this.avatarError}`);
+
         if (!this.avatarUrl || this.avatarUrl === '' || this.avatarUrl === 'undefined') {
             console.log(`❌ Нет URL аватарки для ${this.username}`);
             this.avatarError = true;
             return;
         }
 
-        this.avatarImage = new Image();
-        this.avatarImage.crossOrigin = "anonymous"; // Для CORS если нужно
+        // 🔥 ПРОВЕРЯЕМ ФОРМАТ URL
+        if (!this.avatarUrl.startsWith('http')) {
+            console.log(`❌ Неверный формат URL: ${this.avatarUrl}`);
+            this.avatarError = true;
+            return;
+        }
 
-        this.avatarImage.onload = () => {
-            console.log(`✅ Аватарка загружена для ${this.username}`);
+        if (this.avatarLoading) {
+            console.log(`ℹ️ Аватарка уже загружается`);
+            return;
+        }
+
+        if (this.avatarLoaded && this.avatarImage) {
+            console.log(`ℹ️ Аватарка уже загружена`);
+            return;
+        }
+
+        console.log(`🔄 Начинаем загрузку аватарки: ${this.avatarUrl}`);
+
+        this.avatarLoading = true;
+        this.avatarError = false;
+
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+
+        img.onload = () => {
+            console.log(`✅ Аватарка ЗАГРУЖЕНА для ${this.username}`);
+            console.log(`📐 Размеры: ${img.width}x${img.height}`);
+            this.avatarImage = img;
             this.avatarLoaded = true;
+            this.avatarLoading = false;
             this.avatarError = false;
+            this.avatarShowProgress = 0;
+
+            // 🔥 ОБНОВЛЯЕМ КЭШ
+            if (game && game.viewerSystem) {
+                game.viewerSystem.avatarCache.set(this.userId, {
+                    image: img,
+                    userId: this.userId,
+                    timestamp: Date.now(),
+                                                  url: this.avatarUrl
+                });
+                console.log(`💾 Аватарка сохранена в кэш`);
+            }
         };
 
-        this.avatarImage.onerror = () => {
-            console.log(`❌ Ошибка загрузки аватарки: ${this.avatarUrl}`);
+        img.onerror = (e) => {
+            console.error(`❌ ОШИБКА загрузки аватарки для ${this.username}:`, e);
+            console.error(`❌ URL: ${this.avatarUrl}`);
             this.avatarLoaded = false;
+            this.avatarLoading = false;
             this.avatarError = true;
             this.avatarImage = null;
         };
 
         try {
-            this.avatarImage.src = this.avatarUrl;
-            console.log(`🔄 Загружаем аватарку: ${this.avatarUrl}`);
+            // 🔥 Используем URL с timestamp для предотвращения кэширования
+            const timestamp = Date.now();
+            const urlWithCacheBuster = this.avatarUrl.includes('?')
+            ? `${this.avatarUrl}&t=${timestamp}`
+            : `${this.avatarUrl}?t=${timestamp}`;
+
+            console.log(`🔗 Используем URL: ${urlWithCacheBuster}`);
+            img.src = urlWithCacheBuster;
+
         } catch (error) {
-            console.log(`❌ Ошибка установки src аватарки: ${error}`);
+            console.error(`❌ КРИТИЧЕСКАЯ ошибка:`, error);
             this.avatarError = true;
         }
     }

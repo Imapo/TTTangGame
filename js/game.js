@@ -76,8 +76,6 @@ class Game {
         this.showLevelCompleteStats = false;
         this.levelCompleteTimer = 0;
 
-        this.exitTeleport = null;
-        this.entryTeleport = null;
         this.playerEnteredLevel = true;
         this.levelManuallyClosed = false;
         this.levelComplete = false;
@@ -312,38 +310,6 @@ class Game {
         }, 100);
     }
 
-    resetWindowState() {
-        console.log('🔄 Сброс состояния окон');
-
-        // Сбрасываем все флаги связанные с окнами
-        this.levelManuallyClosed = false;
-        this.levelComplete = false;
-        this.showLevelCompleteScreen = false;
-        this.showLevelCompleteStats = false;
-        this.showGameOverScreen = false;
-        this.gameOver = false;
-        this.baseDestroyed = false;
-
-        // Закрываем все окна физически
-        window.closeGameScreens();
-
-        // Гарантируем что окна скрыты
-        setTimeout(() => {
-            const levelComplete = document.getElementById('levelComplete');
-            const gameOver = document.getElementById('gameOver');
-
-            if (levelComplete) {
-                levelComplete.style.display = 'none';
-                levelComplete.classList.remove('force-visible');
-            }
-
-            if (gameOver) {
-                gameOver.style.display = 'none';
-                gameOver.classList.remove('force-visible');
-            }
-        }, 50);
-    }
-
     // 🔥 ЕЩЕ ОДИН МЕТОД: Завершение текущего уровня с показом статистики (для обычной игры)
     completeCurrentLevel() {
         console.log('✅ Завершение текущего уровня со статистикой');
@@ -500,7 +466,6 @@ class Game {
             this.lastAICheck = now;
             this.updateEnemyAI();
         }
-        if (this.frameCount % 60 === 0) this.updateDebugPerformance();
     }
 
     updateEnemyVisionChecks() {
@@ -534,13 +499,6 @@ class Game {
                 enemy.updateEnemyAI(this.map, allTanks, allFragments, this.player);
             }
         }
-    }
-
-    updateDebugPerformance() {
-        const fps = this.deltaTime > 0 ? Math.round(1000 / this.deltaTime) : 0;
-        const enemies = this.enemyManager.enemies.length;
-        const bullets = this.bullets.length;
-        const effects = this.effectManager.explosions.length + this.effectManager.bulletExplosions.length;
     }
 
     loadPlayerStats() {
@@ -653,64 +611,6 @@ class Game {
 
         document.body.appendChild(debugMenu);
         this.setupDebugEventListeners();
-    }
-
-    setupDebugEventListeners() {
-        document.getElementById('debugApplyLevel').addEventListener('click', () => {
-            const selectedLevel = parseInt(document.getElementById('debugLevelSelect').value);
-            this.setGameLevel(selectedLevel);
-        });
-
-        document.getElementById('debugSpawnEnemy').addEventListener('click', () => this.debugSpawnTestEnemy());
-
-        // УДАЛИТЕ старые обработчики и добавьте атрибуты onclick в HTML выше
-
-        document.getElementById('debugShowVision').addEventListener('change', (e) => this.debugShowVision = e.target.checked);
-        document.getElementById('debugShowAILog').addEventListener('change', (e) => this.debugAILog = e.target.checked);
-        document.getElementById('debugGodMode').addEventListener('change', (e) => {
-            this.debugGodMode = e.target.checked;
-            if (this.debugGodMode && this.player) this.player.activateShield(999999);
-        });
-
-            document.getElementById('debugAddLife').addEventListener('click', () => this.debugAddLife());
-            document.getElementById('debugToggleMenu').addEventListener('click', () => {
-                const menu = document.getElementById('debugMenu');
-                menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-            });
-
-            document.querySelectorAll('.debugBonusBtn').forEach(btn => {
-                btn.addEventListener('click', (e) => this.debugAddBonus(e.target.dataset.bonus));
-            });
-
-            document.getElementById('debugResetStats').addEventListener('click', () => {
-                if (confirm('Точно сбросить всю статистику?')) this.resetPlayerStats();
-            });
-
-                document.getElementById('debugShowZoneBorders').addEventListener('change', (e) => ZONE_SYSTEM.SHOW_ZONE_BORDERS = e.target.checked);
-                document.getElementById('debugShowZoneNumbers').addEventListener('change', (e) => ZONE_SYSTEM.SHOW_ZONE_NUMBERS = e.target.checked);
-                document.getElementById('debugShowZoneInfo').addEventListener('change', (e) => this.debugShowZoneInfo = e.target.checked);
-                document.getElementById('debugShowBaseZones').addEventListener('change', (e) => window.BASE_ZONE_SYSTEM.SHOW_BASE_ZONES = e.target.checked);
-                document.getElementById('debugShowMemory').addEventListener('change', (e) => {
-                    if (this.enemyManager && this.enemyManager.enemies) {
-                        this.enemyManager.enemies.forEach(enemy => {
-                            if (enemy.ai) enemy.ai.debugShowMemory = e.target.checked;
-                        });
-                    }
-                });
-    }
-
-    // НОВЫЙ МЕТОД: ПРИНУДИТЕЛЬНЫЙ ПЕРЕХОД НА СЛЕДУЮЩИЙ УРОВЕНЬ
-    forceNextLevel() {
-        console.log('🚀 Принудительный переход на следующий уровень');
-
-        // Помечаем текущий уровень как завершенный
-        this.levelComplete = true;
-        this.enemiesDestroyed = TOTAL_ENEMIES_PER_LEVEL;
-        this.enemiesToSpawn = 0;
-
-        // Завершаем уровень
-        this.closeLevelStats();
-        this.startNextLevel();
     }
 
     closeLevelStats() {
@@ -905,6 +805,34 @@ class Game {
         this.player = new Tank(224, 750);
         this.destroyedViewerTanks = new Set();
 
+        // 🔥 ВАЖНО: Очищаем только живых врагов, огарки остаются
+        // (но они будут удалены при превышении лимита)
+        const aliveEnemies = this.enemyManager.enemies.filter(enemy =>
+        !enemy.isWreck || !enemy.isDestroyed
+        );
+
+        // Если огарков слишком много (больше 20), удаляем самые старые
+        if (aliveEnemies.length < this.enemyManager.enemies.length) {
+            const wrecks = this.enemyManager.enemies.filter(enemy =>
+            enemy.isWreck && enemy.isDestroyed
+            );
+
+            if (wrecks.length > 20) {
+                // Удаляем самые старые огарки (можно отслеживать по timer)
+                wrecks.sort((a, b) => (a.wreckTimer || 0) - (b.wreckTimer || 0));
+                const toRemove = wrecks.slice(20); // Оставляем 20 самых свежих
+
+                toRemove.forEach(wreck => {
+                    const index = this.enemyManager.enemies.indexOf(wreck);
+                    if (index !== -1) {
+                        this.enemyManager.enemies.splice(index, 1);
+                    }
+                });
+
+                console.log(`🗑️ Удалено ${toRemove.length} старых огарков`);
+            }
+        }
+
         if (this.playerLevel > 1) {
             this.player.playerLevel = this.playerLevel;
             this.player.experience = this.playerExperience;
@@ -968,43 +896,6 @@ class Game {
         console.log(`✅ Уровень ${this.level} инициализирован`);
     }
 
-    // 🔥 НОВЫЙ МЕТОД: Полное завершение уровня при закрытии окна
-    completeLevelOnClose() {
-        console.log('🔚 Полное завершение уровня при закрытии окна');
-
-        // Помечаем уровень как завершенный
-        this.levelComplete = true;
-
-        // Останавливаем спавн новых врагов
-        this.enemiesToSpawn = 0;
-
-        // Удаляем всех существующих врагов
-        if (this.enemyManager) {
-            // Уничтожаем всех врагов с эффектами
-            this.enemyManager.enemies.forEach(enemy => {
-                if (!enemy.isDestroyed) {
-                    // Эффект уничтожения
-                    this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'tank');
-                    this.soundManager.play('tankExplosion');
-                }
-            });
-
-            // Очищаем массивы
-            this.enemyManager.enemies = [];
-            this.enemyManager.spawnAnimations = [];
-        }
-
-        // Очищаем пули
-        this.bullets = [];
-
-        // Останавливаем все анимации и таймеры
-        if (this.enemyManager.stopSpawning) {
-            this.enemyManager.stopSpawning();
-        }
-
-        console.log('✅ Уровень полностью завершен');
-    }
-
     activateTimeStop(duration = null) {
         // Используем переданную длительность или дефолтную
         const freezeDuration = duration !== null ? duration : this.timeStopDuration;
@@ -1060,9 +951,6 @@ class Game {
         this.frameCount++;
 
         this.handleInput();
-
-        if (!this.playerEnteredLevel) this.checkPlayerEntry();
-        else if (this.waitingForExit) this.checkPlayerExit();
 
         if (this.levelComplete && this.soundManager && !this.isPlayerMoving) {
             this.soundManager.stopLoop('engineMoving');
@@ -1160,7 +1048,20 @@ class Game {
 
         // 🔥 ПРОВЕРЯЕМ НАВЕДЕНИЕ МЫШКИ
         if (this.mousePosition) {
-            this.checkAllWreckHovers(this.mousePosition.x, this.mousePosition.y);
+            let anyHovered = false;
+
+            this.enemyManager.enemies.forEach(enemy => {
+                if (enemy.isWreck && enemy.isDestroyed) {
+                    const hovered = enemy.handleWreckHover(
+                        this.mousePosition.x,
+                        this.mousePosition.y
+                    );
+                    if (hovered) anyHovered = true;
+                }
+            });
+
+            // Меняем курсор
+            this.canvas.style.cursor = anyHovered ? 'pointer' : 'default';
         }
     }
 
@@ -1372,85 +1273,113 @@ class Game {
         for (let j = this.enemyManager.enemies.length - 1; j >= 0; j--) {
             const enemy = this.enemyManager.enemies[j];
 
-            // 🔥 ПРОПУСКАЕМ ОГАРКИ - ПО НИМ НЕЛЬЗЯ СТРЕЛЯТЬ
+            // 🔥 ПРОПУСКАЕМ ОГАРКИ
             if (enemy.isWreck && enemy.isDestroyed) {
-                console.log(`🎯 Пуля прошла мимо огарка ${enemy.username}`);
                 continue;
             }
 
             if (bulletBounds.intersects(enemy.getBounds())) {
                 const healthBefore = enemy.health;
                 const isHeavyTank = enemy.enemyType === 'HEAVY';
-                const isViewerTank = enemy.enemyType === 'VIEWER' || enemy.isViewerTank;
-                const hadBonus = enemy.hasBonus;
-                const bonusType = enemy.bonusType;
+                const isViewerTank = enemy.isViewerTank || enemy.enemyType === 'VIEWER';
+
+                // 🔥 ВАЖНО: Сохраняем был ли враг жив ДО попадания
+                const wasAlive = !enemy.isDestroyed;
 
                 const destructionResult = enemy.takeDamage();
 
-                // ЗВУК ПРИ ПОПАДАНИИ
-                if ((isViewerTank && healthBefore > 1 && enemy.health > 0) ||
-                    (isHeavyTank && enemy.health > 0)) {
-                    this.soundManager.play('heavyTankHit');
-                this.effectManager.addHitEffect(enemy.position.x, enemy.position.y);
+                // 🔥 ИСПРАВЛЕНИЕ: ИГРАЕМ ЗВУК ПРИ ЛЮБОМ ПОПАДАНИИ (если враг был жив)
+                if (wasAlive) {
+                    if (healthBefore > 1 && enemy.health > 0) {
+                        // Не смертельное попадание - звук попадания
+                        if (isHeavyTank || isViewerTank) {
+                            this.soundManager.play('heavyTankHit');
+                        } else {
+                            this.soundManager.play('bulletHit');
+                        }
+
+                        // Визуальный эффект попадания
+                        this.effectManager.addHitEffect(enemy.position.x, enemy.position.y);
                     }
+                }
 
-                    // 🔥 ОБРАБОТКА УНИЧТОЖЕНИЯ
-                    if (destructionResult === true || destructionResult === 'bonus') {
-                        // ОБЫЧНЫЙ ВРАГ
-                        this.processRegularEnemyDestruction(enemy, hadBonus, bonusType);
-                        this.enemyManager.enemies.splice(j, 1);
+                // 🔥 ЕСЛИ ТАНК ПРЕВРАТИЛСЯ В ОГАРОК
+                if (destructionResult === 'wreck') {
+                    console.log(`🔥 Танк ${enemy.username || enemy.enemyType} стал огарком`);
 
-                        // 🔥 УВЕЛИЧИВАЕМ СЧЕТЧИК
-                        this.enemiesDestroyed++;
-                        this.score += 100;
-                        this.updateUI();
+                    // Смертельное попадание - звук взрыва
+                    this.soundManager.play('tankExplosion');
+                    this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'wreck');
+                    this.screenShake = 15;
 
-                        this.bullets.splice(index, 1);
-                        return false;
+                    // Увеличиваем счетчики
+                    this.enemiesDestroyed++;
+                    this.score += 100;
+                    this.updateUI();
 
-                    } else if (destructionResult === 'wreck') {
-                        // 🔥 ТАНК ЗРИТЕЛЯ ПРЕВРАЩАЕТСЯ В ОГАРОК
-                        console.log(`🔥 Танк зрителя ${enemy.username} превращен в огарок`);
-
-                        // 🔥 ВАЖНО: УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ ТОЛЬКО 1 РАЗ
-                        this.enemiesDestroyed++;
-                        this.score += 100;
-                        this.updateUI();
-
-                        // 🔥 ДОБАВЬТЕ ЭТО: Увеличиваем счётчик в EnemyManager тоже
-                        if (this.enemyManager) {
-                            this.enemyManager.destroyedEnemies = (this.enemyManager.destroyedEnemies || 0) + 1;
-                        }
-
-                        // Добавляем в список уничтоженных
-                        if (isViewerTank) {
-                            if (!this.destroyedViewerTanks) this.destroyedViewerTanks = new Set();
-                            this.destroyedViewerTanks.add(enemy.userId);
-                        }
-
+                    // Дополнительная обработка для зрителей
+                    if (isViewerTank && this.viewerSystem) {
+                        this.viewerSystem.destroyedViewerTanks.add(enemy.userId);
                         this.markEnemyDestroyed(enemy);
-
-                        // Эффект превращения
-                        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'wreck');
-                        this.screenShake = 15;
-                        this.soundManager.play('tankExplosion');
-
-                        // Если был бонус - спавним
-                        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
-
-                        // 🔥 НЕ УДАЛЯЕМ ИЗ МАССИВА! Танк теперь огарок
-
-                        this.bullets.splice(index, 1);
-                        return false;
                     }
 
                     this.bullets.splice(index, 1);
                     return false;
+                }
+
+                this.bullets.splice(index, 1);
+                return false;
             }
         }
         return true;
     }
 
+    // 🔥 НОВЫЙ МЕТОД: ПРЕВРАЩЕНИЕ В ОГАРОК
+    convertToWreck(enemy, hadBonus, bonusType) {
+        // Помечаем как огарок
+        enemy.isWreck = true;
+        enemy.isDestroyed = true;
+
+        // 🔥 ДЛЯ ТАНКОВ ЗРИТЕЛЕЙ - МГНОВЕННО ДЕЛАЕМ БЛЕДНЫМИ
+        if (enemy.isViewerTank || enemy.enemyType === 'VIEWER') {
+            this.instantlyFadeViewerWreck(enemy);
+        } else {
+            // Для ИИ танков - стандартное затемнение
+            enemy.fadeAlpha = 0.5;
+        }
+
+        // Добавляем в список уничтоженных
+        this.markEnemyDestroyed(enemy);
+
+        // Эффект превращения
+        this.effectManager.addExplosion(enemy.position.x, enemy.position.y, 'wreck');
+        this.screenShake = 15;
+        this.soundManager.play('tankExplosion');
+
+        // Если был бонус - спавним
+        if (hadBonus && bonusType) this.bonusManager.spawnBonusFromTank(enemy);
+
+        // 🔥 ОЧЕНЬ ВАЖНО: Не удаляем из массива enemies!
+        console.log(`✅ Танк ${enemy.username || enemy.enemyType} стал огарком (всего огарков: ${
+            this.enemyManager.enemies.filter(e => e.isWreck).length
+        })`);
+    }
+
+    // 🔥 НОВЫЙ МЕТОД: МГНОВЕННОЕ ЗАТЕМНЕНИЕ ТАНКА ЗРИТЕЛЯ
+    instantlyFadeViewerWreck(enemy) {
+        if (!enemy) return;
+
+        // 🔥 МГНОВЕННОЕ ЗАТЕМНЕНИЕ (без анимации)
+        enemy.wreckFadeAlpha = 0.3; // Очень бледный
+        enemy.avatarFadeAlpha = 0.2; // Аватарка почти невидима
+        enemy.nameFadeAlpha = 0.4; // Имя полупрозрачное
+
+        // 🔥 ОСТАНАВЛИВАЕМ ВСЕ АНИМАЦИИ
+        if (enemy.animationTimer) clearTimeout(enemy.animationTimer);
+        if (enemy.fadeAnimation) clearInterval(enemy.fadeAnimation);
+
+        console.log(`⚡ Танк зрителя ${enemy.username} мгновенно затемнен`);
+    }
 
 
     // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ УНИЧТОЖЕНИЯ ОБЫЧНЫХ ВРАГОВ
@@ -1466,32 +1395,6 @@ class Game {
         this.playerExperience = this.player.experience;
         this.playerLevel = this.player.playerLevel;
         this.savePlayerProgress();
-    }
-
-    turnIntoWreck() {
-        if (this.isDestroyed || this.type !== 'enemy' || !this.isViewerTank) return;
-
-        console.log(`💀 Танк ${this.username} превращается в огарок`);
-
-        this.isDestroyed = true;
-        this.isWreck = true;
-        this.wreckAlpha = 0.7;
-        this.infoBlockAlpha = this.infoBlockMaxAlpha || 1.0;
-
-        // Останавливаем движение и стрельбу
-        this.speed = 0;
-        this.canShoot = false;
-
-        // Сбрасываем все активные эффекты
-        this.hasBonus = false;
-        this.isInvincible = false;
-        this.hasAutoAim = false;
-        this.isFrozen = false;
-
-        // Удаляем щит если есть
-        this.shield = null;
-
-        console.log(`🔥 ${this.username} теперь огарок. Инфо-блок будет тускнеть`);
     }
 
     handleEnemyBulletCollision(bullet, index, bulletBounds) {
@@ -1988,13 +1891,9 @@ class Game {
         const enemiesLeft = this.enemiesToSpawn > 0 ? this.enemiesToSpawn : 0;
         const activeEnemies = this.getActiveEnemiesCount();
 
-        console.log(`🎯 Проверка завершения: врагов осталось спавнить ${enemiesLeft}, активно ${activeEnemies}`);
-
         if (enemiesLeft === 0 &&
             activeEnemies === 0 &&
             this.enemyManager.spawnAnimations.length === 0) {
-
-            console.log('✅ УРОВЕНЬ ЗАВЕРШЕН! Все враги уничтожены');
 
         // Устанавливаем флаг только один раз
         if (!this.levelComplete) {
@@ -2497,69 +2396,6 @@ class Game {
 
         this.level++;
         this.initLevel();
-
-        if (exitX !== null && exitY !== null) {
-            this.createEntryTeleport(exitX, exitY);
-            this.placePlayerAtTeleport(exitX, exitY);
-        }
-    }
-
-    placePlayerAtTeleport(teleportX, teleportY) {
-        this.player.position.x = teleportX;
-        this.player.position.y = teleportY;
-        this.player.activateShield(3000);
-    }
-
-    placePlayerNearEntry(entryPosition) {
-        const offset = 80;
-        const centerX = CANVAS_WIDTH / 2;
-        const centerY = CANVAS_HEIGHT / 2;
-        const directionX = entryPosition.x - centerX;
-        const directionY = entryPosition.y - centerY;
-        const length = Math.sqrt(directionX * directionX + directionY * directionY);
-        const normalizedX = directionX / length;
-        const normalizedY = directionY / length;
-
-        this.player.position.x = entryPosition.x + normalizedX * offset;
-        this.player.position.y = entryPosition.y + normalizedY * offset;
-        this.player.direction = this.calculateDirectionToCenter(this.player.position);
-        this.player.activateShield(3000);
-    }
-
-    calculateDirectionToCenter(position) {
-        const centerX = CANVAS_WIDTH / 2;
-        const centerY = CANVAS_HEIGHT / 2;
-        const dx = centerX - position.x;
-        const dy = centerY - position.y;
-        if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? DIRECTIONS.RIGHT : DIRECTIONS.LEFT;
-        else return dy > 0 ? DIRECTIONS.DOWN : DIRECTIONS.UP;
-    }
-
-    placePlayerAtEntry(entryExit) {
-        this.playerEnteredLevel = false;
-        switch (entryExit) {
-            case EXIT_TYPES.TOP:
-                this.player.position.x = CANVAS_WIDTH / 2;
-                this.player.position.y = -this.player.size;
-                this.player.direction = DIRECTIONS.DOWN;
-                break;
-            case EXIT_TYPES.BOTTOM:
-                this.player.position.x = CANVAS_WIDTH / 2;
-                this.player.position.y = CANVAS_HEIGHT + this.player.size;
-                this.player.direction = DIRECTIONS.UP;
-                break;
-            case EXIT_TYPES.LEFT:
-                this.player.position.x = -this.player.size;
-                this.player.position.y = CANVAS_HEIGHT / 2;
-                this.player.direction = DIRECTIONS.RIGHT;
-                break;
-            case EXIT_TYPES.RIGHT:
-                this.player.position.x = CANVAS_WIDTH + this.player.size;
-                this.player.position.y = CANVAS_HEIGHT / 2;
-                this.player.direction = DIRECTIONS.LEFT;
-                break;
-        }
-        this.player.activateShield(3000);
     }
 
     restartGame() {
@@ -3207,21 +3043,6 @@ class Game {
         }
     }
 }
-
-// Глобальная функция для тестирования чата - ВНЕ класса Game
-window.testChat = (id, name, avatar, command) => {
-    if (!game) {
-        console.log('Игра не инициализирована');
-        return;
-    }
-
-    if (command === '!танк') {
-        game.spawnViewerTank(id, name, avatar);
-    } else {
-        console.log(`Неизвестная команда: ${command}`);
-    }
-};
-
 
 // === ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ВЗАИМОДЕЙСТВИЯ ===
 window.testChat = (id, name, avatar, command) => {

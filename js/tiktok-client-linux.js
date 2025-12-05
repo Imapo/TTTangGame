@@ -43,28 +43,11 @@ class TikTokClient {
             return;
         }
 
-        // 🔥 ДИАГНОСТИКА: выводим ID зрителя и список всех танков
-        console.log(`🔍 Получено сообщение типа: ${data.type}`);
-        console.log(`   Зритель: ${data.username} (ID: ${data.userId})`);
-
         if (this.game.viewerSystem && this.game.viewerSystem.game && this.game.viewerSystem.game.enemyManager) {
             const allTanks = this.game.viewerSystem.game.enemyManager.enemies;
             const viewerTanks = allTanks.filter(tank =>
             (tank.enemyType === 'VIEWER' || tank.isViewerTank) && !tank.isDestroyed
             );
-
-            console.log(`📊 СТАТИСТИКА ТАНКОВ:`);
-            console.log(`   Всего танков на поле: ${allTanks.length}`);
-            console.log(`   Танков зрителей: ${viewerTanks.length}`);
-
-            if (viewerTanks.length > 0) {
-                viewerTanks.forEach((tank, index) => {
-                    console.log(`   ${index + 1}. "${tank.username}" (ID: ${tank.userId || 'нет ID'})`);
-                    console.log(`      userId танка: ${tank.userId}`);
-                    console.log(`      userId зрителя: ${data.userId}`);
-                    console.log(`      Совпадение: ${tank.userId === data.userId ? '✅ ДА' : '❌ НЕТ'}`);
-                });
-            }
         }
 
         switch (data.type) {
