@@ -2468,7 +2468,7 @@ class Game {
         document.getElementById('level').textContent = this.level;
 
         // 🔥 ПРОСТОЕ РЕШЕНИЕ: используем enemiesToSpawn
-        document.getElementById('tanksLeft').textContent = this.enemiesToSpawn;
+        document.getElementById('tanksLeft').textContent = `${this.enemiesToSpawn} из ${this.totalEnemies}`;
     }
 
     updatePlayerStats() {
