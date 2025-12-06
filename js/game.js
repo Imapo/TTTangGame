@@ -2467,8 +2467,12 @@ class Game {
         document.getElementById('lives').textContent = this.lives;
         document.getElementById('level').textContent = this.level;
 
-        // 🔥 ПРОСТОЕ РЕШЕНИЕ: используем enemiesToSpawn
-        document.getElementById('tanksLeft').textContent = `${this.enemiesToSpawn} из ${this.totalEnemies}`;
+        // 🔥 ИСПРАВЛЕНИЕ: Показываем сколько осталось УНИЧТОЖИТЬ, а не заспавнить
+        const destroyed = this.enemiesDestroyed || 0;
+        const total = this.totalEnemies || 20; // всего танков на уровне
+        const remaining = Math.max(0, total - destroyed);
+
+        document.getElementById('tanksLeft').textContent = `${remaining} из ${total}`;
     }
 
     updatePlayerStats() {

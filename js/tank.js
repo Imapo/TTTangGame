@@ -43,8 +43,10 @@ class Tank {
         this.isSubscriber = false; // Подписчик ли
         this.viewerName = ''; // Имя для отображения
 
+        this.playerLevel = level;
+
         if (type === 'player') {
-            this.playerLevel = level;
+
             this.experience = 0;
 
             // Всегда применяем апгрейд для игрока
@@ -81,6 +83,9 @@ class Tank {
 
         this.isDestroyed = true;
         this.isWreck = true;
+
+        const hadBonus = this.hasBonus;
+        const bonusType = this.bonusType;
 
         // 🔥 ИСПРАВЛЕНИЕ 1: БОЛЬШАЯ ПРОЗРАЧНОСТЬ МОДЕЛИ
         this.wreckAlpha = 0.7;           // Было 0.3 - СЛИШКОМ ПРОЗРАЧНО!
@@ -123,12 +128,28 @@ class Tank {
         // 🔥 ОСТАНАВЛИВАЕМ ВСЁ
         this.speed = 0;
         this.canShoot = false;
-        this.hasBonus = false;
+        this.hasBonus = false; // 🔥 СБРАСЫВАЕМ БОНУС!
         this.isInvincible = false;
         this.hasAutoAim = false;
         this.isFrozen = false;
         this.isReversed = false;
         this.shield = null;
+
+        // 🔥 СОЗДАЕМ БОНУС ЕСЛИ ОН БЫЛ
+        if (hadBonus && bonusType && window.game && window.game.bonusManager) {
+            console.log(`🎁 СОЗДАЕМ БОНУС ОТ ОГАРКА: ${bonusType.id}`);
+
+            // Создаем объект с данными для бонус менеджера
+            const tankData = {
+                hasBonus: true,
+                bonusType: bonusType,
+                position: this.position.clone(),
+                username: this.username || this.enemyType
+            };
+
+            // Вызываем создание бонуса
+            window.game.bonusManager.spawnBonusFromTank(tankData);
+        }
 
         // 🔥 ОЧИЩАЕМ ЭФФЕКТЫ (это может быть причиной артефактов!)
         this.chatMessages = [];
@@ -1202,14 +1223,25 @@ class Tank {
 
     // Bonus and power-up methods
     determineBonus() {
-        if (Math.random() < (BONUS_TANK_CHANCE || 0.2)) {
+        const chance = BONUS_TANK_CHANCE || 0.2;
+        console.log(`🎲 Проверка бонуса для танка ${this.enemyType || 'unknown'}: шанс ${chance}`);
+
+        if (Math.random() < chance) {
             this.hasBonus = true;
             const bonusTypes = Object.values(BONUS_TYPES || {
-                LIFE: {id: 'LIFE', symbol: '❤️', color: '#FF4081'},
-                SHIELD: {id: 'SHIELD', symbol: '🛡️', color: '#00BFFF'},
-                TIME_STOP: {id: 'TIME_STOP', symbol: '⏰', color: '#00FFFF'}
+                'LIFE': {id: 'LIFE', symbol: '❤️', color: '#FF4081'},
+                'SHIELD': {id: 'SHIELD', symbol: '🛡️', color: '#00BFFF'},
+                'TIME_STOP': {id: 'TIME_STOP', symbol: '⏰', color: '#00FFFF'}
             });
-            this.bonusType = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
+
+            if (bonusTypes.length > 0) {
+                this.bonusType = bonusTypes[Math.floor(Math.random() * bonusTypes.length)];
+                console.log(`🎁 Танк ${this.username || this.enemyType} получил бонус: ${this.bonusType.id}`);
+            } else {
+                console.log(`❌ Нет доступных типов бонусов!`);
+            }
+        } else {
+            console.log(`❌ Танк не получил бонус (не повезло)`);
         }
     }
 
@@ -1438,10 +1470,6 @@ class Tank {
 
         this.drawTracks(ctx);
 
-        if (this.type === 'enemy' && this.ai && this.ai.debugShowMemory) {
-            this.drawPathMemory(ctx);
-        }
-
         ctx.save();
         ctx.translate(this.position.x, this.position.y);
 
@@ -1532,7 +1560,7 @@ class Tank {
             messageWidth = this.measureTextWithEmojis(ctx, messageText);
         }
 
-        const totalWidth = Math.max(nameWidth + heartsWidth + 20, messageWidth + 20);
+        const totalWidth = Math.max(nameWidth + 15, messageWidth + 20);
         const blockHeight = textHeight + padding * 2 + messageHeight;
 
         // 🔥 ПОЗИЦИЯ (над огарком)
@@ -1559,14 +1587,6 @@ class Tank {
         ctx.textBaseline = 'middle';
         ctx.fillText(username.toUpperCase(), currentX, textY);
         currentX += nameWidth + 8;
-
-        // 🔥 СЕРДЕЧКИ
-        ctx.font = '12px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
-        ctx.fillStyle = '#FF4444';
-        for (let i = 0; i < hearts; i++) {
-            ctx.fillText('❤️', currentX, textY);
-            currentX += 16;
-        }
 
         // 🔥 СООБЩЕНИЕ (если есть)
         if (this.currentMessage && this.currentMessage.isForWreck) {
@@ -2190,39 +2210,37 @@ class Tank {
         const trackHeight = this.size * 0.9;
         const trackY = -trackHeight/2;
 
-        // Левая гусеница с ШИРОКИМИ траками
-        this.drawHeavyTrack(ctx, -halfSize * 1.5, trackY, trackWidth, trackHeight);
+        // Левая гусеница
+        this.drawHeavyTrack(ctx, -halfSize * 1.0, trackY, trackWidth, trackHeight); // Было 1.2
 
         // Правая гусеница
-        this.drawHeavyTrack(ctx, halfSize * 0.9, trackY, trackWidth, trackHeight);
+        this.drawHeavyTrack(ctx, halfSize * 0.4, trackY, trackWidth, trackHeight); // Было 0.6
 
-        // 3. МНОГООПОРНАЯ ПОДВЕСКА (много маленьких катков)
+        // 3. КАТКИ (тоже ближе)
         ctx.fillStyle = '#7F8C8D';
         const smallRollerCount = 8;
         const smallRollerRadius = this.size * 0.04;
 
-        // Левые катки
+        // Левые катки (ближе)
         for (let i = 0; i < smallRollerCount; i++) {
-            const x = -halfSize * 1.05;
+            const x = -halfSize * 0.85; // БЫЛО 1.05
             const y = trackY + (i * (trackHeight / (smallRollerCount - 1)));
 
-            // Каток
             ctx.beginPath();
             ctx.arc(x, y, smallRollerRadius, 0, Math.PI * 2);
             ctx.fill();
 
-            // Поддерживающий ролик сверху
             if (i < smallRollerCount - 1) {
                 const topY = y + (trackHeight / (smallRollerCount - 1)) / 2;
                 ctx.beginPath();
-                ctx.arc(x - trackWidth * 0.3, topY, smallRollerRadius * 0.7, 0, Math.PI * 2);
+                ctx.arc(x - trackWidth * 0.2, topY, smallRollerRadius * 0.7, 0, Math.PI * 2); // БЫЛО 0.3
                 ctx.fill();
             }
         }
 
-        // Правые катки
+        // Правые катки (ближе)
         for (let i = 0; i < smallRollerCount; i++) {
-            const x = halfSize * 1.1;
+            const x = halfSize * 0.85; // БЫЛО 1.1
             const y = trackY + (i * (trackHeight / (smallRollerCount - 1)));
 
             ctx.beginPath();
@@ -2232,7 +2250,7 @@ class Tank {
             if (i < smallRollerCount - 1) {
                 const topY = y + (trackHeight / (smallRollerCount - 1)) / 2;
                 ctx.beginPath();
-                ctx.arc(x + trackWidth * 0.3, topY, smallRollerRadius * 0.7, 0, Math.PI * 2);
+                ctx.arc(x + trackWidth * 0.2, topY, smallRollerRadius * 0.7, 0, Math.PI * 2); // БЫЛО 0.3
                 ctx.fill();
             }
         }
@@ -2863,45 +2881,28 @@ class Tank {
             else if (track.direction === DIRECTIONS.LEFT) angle = -Math.PI / 2;
             ctx.rotate(angle);
 
+            // 🔥 УЛУЧШЕННЫЕ СЛЕДЫ:
             const baseAlpha = track.isPlayer ? 0.5 : 0.6;
             ctx.globalAlpha = track.alpha * baseAlpha;
+
+            // Для игрока - синие следы, для врага - серые
             ctx.fillStyle = track.isPlayer ? '#4488FF' : '#666666';
 
-            const trackWidth = this.size * 0.5;
-            const trackHeight = this.size * 0.06;
-            const spacing = this.size * 0.25;
+            // 🔥 БОЛЕЕ ЧЕТКИЕ СЛЕДЫ:
+            const gusenicaWidth = this.size * 0.2;    // Ширина одной гусеницы
+            const trackHeight = this.size * 0.06;     // Высота следа
+            const distanceBetweenGusenicas = this.size * 0.6; // Расстояние между гусеницами
 
-            ctx.fillRect(-trackWidth/2, -spacing/2, trackWidth, trackHeight);
-            ctx.fillRect(-trackWidth/2, spacing/2 - trackHeight, trackWidth, trackHeight);
+            const leftTrackX = -this.size * 0.55;  // Левее центра
+            const rightTrackX = this.size * 0.35;  // Правее центра
+
+            // Левый след
+            ctx.fillRect(leftTrackX, -trackHeight/2, gusenicaWidth, trackHeight);
+
+            // Правый след
+            ctx.fillRect(rightTrackX, -trackHeight/2, gusenicaWidth, trackHeight);
 
             ctx.restore();
-        });
-
-        ctx.restore();
-    }
-
-    drawPathMemory(ctx) {
-        if (this.type !== 'enemy' || this.aiLevel !== ENEMY_AI_LEVELS.BASIC) return;
-
-        ctx.save();
-
-        this.pathMemory.forEach((memory, key) => {
-            const [gridX, gridY] = key.split(',').map(Number);
-            const timeSinceVisit = this.memoryTimer - memory.timestamp;
-
-            if (timeSinceVisit < TRACK_SYSTEM.MEMORY_DECAY_TIME) {
-                const alpha = 0.3 * (1 - timeSinceVisit / TRACK_SYSTEM.MEMORY_DECAY_TIME);
-                const intensity = Math.min(memory.visits / 5, 1);
-
-                ctx.globalAlpha = alpha;
-                ctx.fillStyle = `rgba(255, ${255 - intensity * 200}, 0, ${alpha})`;
-                ctx.fillRect(
-                    gridX * TRACK_SYSTEM.MEMORY_GRID_SIZE - TRACK_SYSTEM.MEMORY_GRID_SIZE/2,
-                    gridY * TRACK_SYSTEM.MEMORY_GRID_SIZE - TRACK_SYSTEM.MEMORY_GRID_SIZE/2,
-                    TRACK_SYSTEM.MEMORY_GRID_SIZE,
-                    TRACK_SYSTEM.MEMORY_GRID_SIZE
-                );
-            }
         });
 
         ctx.restore();
@@ -3239,17 +3240,17 @@ class Tank {
 
             // Рисуем скобки серым
             ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
-            ctx.fillText('[', currentX, textY);
+            ctx.fillText('[', currentX, textY - 2);
             currentX += ctx.measureText('[').width;
 
             // Иконка
             ctx.fillStyle = '#FFFFFF';
-            ctx.fillText(bonusIcon, currentX, textY);
+            ctx.fillText(bonusIcon, currentX, textY - 2);
             currentX += ctx.measureText(bonusIcon).width;
 
             // Правая скобка
             ctx.fillStyle = 'rgba(200, 200, 200, 0.8)';
-            ctx.fillText(']', currentX, textY);
+            ctx.fillText(']', currentX, textY - 2);
             currentX += ctx.measureText(']').width + 2;
         }
 
@@ -3264,9 +3265,10 @@ class Tank {
         // 3. СЕРДЕЧКИ ЗДОРОВЬЯ
         ctx.font = '12px "Segoe UI Emoji", "Apple Color Emoji", sans-serif';
         ctx.fillStyle = '#FF4444';
+        ctx.textBaseline = 'middle';
         for (let i = 0; i < this.health; i++) {
-            ctx.fillText('❤️', currentX, textY);
-            currentX += 20; // Фиксированная ширина для эмодзи
+            ctx.fillText('❤️', currentX, textY - 2);
+            currentX += 7; // Фиксированная ширина для эмодзи
         }
 
         // 🔥 СООБЩЕНИЕ (если есть)

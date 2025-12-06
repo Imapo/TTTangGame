@@ -102,6 +102,10 @@ class EnemyManager {
     }
 
     spawnEnemy() {
+        // 🔥 ДОБАВЬ ПРОВЕРКУ В НАЧАЛЕ:
+        if (this.spawnAnimations.length > 0) {
+            return null; // Уже есть анимация спавна
+        }
         // 🔥 ПРОВЕРЯЕМ СНАЧАЛА, МОЖНО ЛИ СПАВНИТЬ
         const activeEnemies = this.enemies.filter(enemy =>
         !enemy.isDestroyed || !enemy.isWreck
@@ -289,6 +293,15 @@ class EnemyManager {
                     });
                 }
 
+                if (enemy.hasBonus && enemy.bonusType && this.game?.bonusManager) {
+                    this.game.bonusManager.spawnBonusFromTank({
+                        hasBonus: enemy.hasBonus,
+                        bonusType: enemy.bonusType,
+                        position: enemy.position.clone(),
+                                                              username: enemy.username
+                    });
+                }
+
                 // 🔥 ВАЖНО: УВЕЛИЧИВАЕМ СЧЕТЧИК УНИЧТОЖЕННЫХ
                 this.destroyedEnemies = (this.destroyedEnemies || 0) + 1;
 
@@ -391,7 +404,8 @@ class EnemyManager {
         this.game.enemiesToSpawn > 0 &&
         !this.game.levelComplete &&
         !this.game.baseDestroyed &&
-        (Date.now() - this.lastRespawnTime >= RESPAWN_DELAY);
+        (Date.now() - this.lastRespawnTime >= RESPAWN_DELAY) &&
+        this.spawnAnimations.length === 0; // 🔥 НЕЛЬЗЯ спавнить если уже есть анимация!
 
         if (canSpawn) {
             // 🔥 ПРОВЕРЯЕМ: МОЖЕМ ЛИ СПАВНИТЬ ЗРИТЕЛЯ ВМЕСТО ОБЫЧНОГО ВРАГА?
