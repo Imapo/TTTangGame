@@ -19,7 +19,7 @@
             <div class="score">🎯 Очки: <span id="score">0</span></div>
             <div class="lives">❤️ Жизни: <span id="lives">3</span></div>
             <div class="level">🚀 Уровень: <span id="level">1</span></div>
-            <div class="tank-counter">🎯 Танки: <span id="tanksLeft">20</span>/20</div>
+            <div class="tank-counter">🎯 Танки: <span id="tanksLeft">20</span></div>
 
             <div class="player-stats">
                 <div class="player-level">⭐ Ур.<span id="playerLevel">1</span></div>
@@ -43,11 +43,7 @@
         <div class="level-complete" id="levelComplete">
             <div class="level-complete-header">
                 <h2>Уровень пройден!</h2>
-                <button class="close-stats-btn" onclick="game.closeLevelStats()">×</button>
-            </div>
-            <div class="level-basic-info">
-                <p>Танки уничтожены: <span id="destroyedTanks">0</span>/20</p>
-                <p>Очки: <span id="levelScore">0</span></p>
+                <button class="close-stats-btn" onclick="closeGameScreens(); event.stopPropagation(); return false;">×</button>
             </div>
             <div class="level-leader-stats" id="levelLeaderStats">
                 <div class="leader-header">
@@ -57,27 +53,18 @@
                     <!-- Статистика будет здесь -->
                 </div>
             </div>
+            <!-- 🔥 ДОБАВЛЯЕМ ТАЙМЕР -->
+
         </div>
 
         <!-- Экран Game Over -->
         <div class="game-over" id="gameOver">
             <div class="game-over-header">
                 <h2>💀 Игра окончена!</h2>
+                <button class="close-stats-btn" onclick="closeGameScreens(); event.stopPropagation(); return false;">×</button>
             </div>
 
             <div class="game-over-content">
-                <div class="game-over-stats">
-                    <div class="stat-item">
-                        <span class="stat-label">🏆 Ваш счет:</span>
-                        <span class="stat-value" id="finalScore">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">🚀 Достигнут уровень:</span>
-                        <span class="stat-value" id="finalLevel">1</span>
-                    </div>
-                </div>
-
-                <!-- ИСПРАВЛЕНИЕ: используем УНИКАЛЬНЫЕ ID для Game Over -->
                 <div class="game-over-leader-stats" id="gameOverLeaderStats">
                     <div class="leader-header">
                         <h3 id="gameOverLeaderTitle">🥇 Лидер этого раунда</h3>
@@ -85,6 +72,15 @@
                     <div class="leader-content" id="gameOverLeaderContent">
                         <!-- Статистика будет здесь -->
                     </div>
+                </div>
+
+                <!-- 🔥 ДОБАВЛЯЕМ ТАЙМЕР -->
+                <div class="auto-timer" id="gameOverTimer">
+                    <div class="timer-text">Новая игра через: <span class="timer-count">5</span>с</div>
+                    <div class="timer-progress">
+                        <div class="timer-progress-bar"></div>
+                    </div>
+                    <button class="cancel-timer-btn" onclick="cancelAutoTransition('gameOver')">✕ Отменить авто-переход</button>
                 </div>
 
                 <div class="game-over-actions">
