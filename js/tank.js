@@ -477,7 +477,7 @@ class Tank {
         const messageY = -this.size - 85; // Выше информационного блока
 
         // Фон сообщения
-        const messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
+        const messageText = this.currentMessage.message;
         ctx.font = 'bold 11px Arial';
         const textWidth = ctx.measureText(messageText).width;
         const textHeight = 14;
@@ -1571,7 +1571,8 @@ class Tank {
         // 🔥 СООБЩЕНИЕ (если есть)
         if (this.currentMessage && this.currentMessage.isForWreck) {
             const messageText = this.truncateTextWithEmojis(
-                `${this.currentMessage.username}: ${this.currentMessage.message}`,
+                // 🔥 ИЗМЕНЕНИЕ: Только текст сообщения, без ника
+                this.currentMessage.message, // Было: `${this.currentMessage.username}: ${this.currentMessage.message}`
                 30
             );
 
@@ -2124,7 +2125,7 @@ class Tank {
         const messageY = this.position.y - this.size - 60;
 
         // Текст сообщения
-        const messageText = `${this.wreckChatMessage.username}: ${this.wreckChatMessage.message}`;
+        const messageText = this.wreckChatMessage.message;
 
         // Подготавливаем контекст
         ctx.save();
@@ -3278,20 +3279,29 @@ class Tank {
             ctx.lineTo(blockX + blockWidth - 4, blockY + 24);
             ctx.stroke();
 
+            // 🔥 ИЗМЕНЕНИЕ: Берем только текст сообщения, без ника
+            const messageTextOnly = this.currentMessage.message; // Только текст, без ника
+
             // Цвет текста
             let textColor = `rgba(255, 255, 255, ${this.messageAlpha})`;
-            if (messageText.toLowerCase().includes('!танк') || messageText.toLowerCase().includes('!tank')) {
+            if (messageTextOnly.toLowerCase().includes('!танк') || messageTextOnly.toLowerCase().includes('!tank')) {
                 textColor = `rgba(0, 255, 0, ${this.messageAlpha})`;
-            } else if (messageText.includes('!') || messageText.includes('!!')) {
+            } else if (messageTextOnly.includes('!') || messageTextOnly.includes('!!')) {
                 textColor = `rgba(255, 200, 0, ${this.messageAlpha})`;
-            } else if (messageText.includes('?')) {
+            } else if (messageTextOnly.includes('?')) {
                 textColor = `rgba(100, 200, 255, ${this.messageAlpha})`;
             }
 
             ctx.fillStyle = textColor;
 
+            // 🔥 ИЗМЕНЕНИЕ: Обрезаем если нужно
+            let displayText = messageTextOnly;
+            if (this.getTextLengthWithEmojis(displayText) > 35) {
+                displayText = this.truncateTextWithEmojis(displayText, 35);
+            }
+
             // Разделяем текст на части для правильной отрисовки
-            const messageParts = this.splitTextWithEmojis(messageText);
+            const messageParts = this.splitTextWithEmojis(displayText);
             let msgX = blockX + 8;
             const msgY = blockY + 34;
 
@@ -3471,7 +3481,7 @@ class Tank {
 
         // Определяем позицию сообщения в зависимости от стороны блока
         let messageX, messageY;
-        const messageText = `${this.currentMessage.username}: ${this.currentMessage.message}`;
+        const messageText = this.currentMessage.message;
         ctx.font = 'bold 11px Arial';
         const textWidth = ctx.measureText(messageText).width;
         const textHeight = 12;

@@ -20,6 +20,7 @@ class ViewerSystem {
 
         this.usedInRound = new Set(); // Зрители, уже игравшие в этом раунде
         this.maxPoolSize = 10;
+        this.reverseParticles = [];
 
         this.initGiftSystem();
     }
@@ -1042,6 +1043,9 @@ class ViewerSystem {
         this.reverseStartTime = Date.now();
         this.reverseDuration = duration;
 
+        // 🔥 ДОБАВЛЯЕМ ИНИЦИАЛИЗАЦИЮ ПУСТОГО МАССИВА
+        this.reverseParticles = [];
+
         // ПОЛНАЯ СИНХРОНИЗАЦИЯ С ТАНКОМ (как в заморозке)
         this.game.player.isReversed = true;
         this.game.player.reverseStartTime = Date.now();
@@ -1152,6 +1156,12 @@ class ViewerSystem {
     // ОБНОВЛЕНИЕ СОСТОЯНИЯ РЕВЕРСА
     updateReverseState() {
         if (!this.playerReversed) return;
+
+        // 🔥 ДОБАВЛЯЕМ ПРОВЕРКУ НА НАЛИЧИЕ МАССИВА
+        if (!this.reverseParticles) {
+            this.reverseParticles = [];
+            return;
+        }
 
         const currentTime = Date.now();
         const elapsed = currentTime - this.reverseStartTime;
@@ -1327,6 +1337,7 @@ class ViewerSystem {
             this.game.player.canShoot = this.game.player.originalCanShoot;
         }
 
+        // 🔥 ОБЯЗАТЕЛЬНО ОЧИЩАЕМ МАССИВ
         this.reverseParticles = [];
 
         this.game.soundManager.play('playerUnfreeze');
